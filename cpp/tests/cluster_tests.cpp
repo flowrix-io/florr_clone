@@ -39,6 +39,8 @@ struct Cluster {
     HarnessFiles files;
     GameServer gateway;
     std::vector<std::unique_ptr<GameServer>> servers;
+    /// Each server's own port, in `servers`' order.
+    std::vector<std::uint16_t> serverPorts;
     std::uint16_t port = 0;
     std::uint16_t linkPort = 0;
     double clock = 0;
@@ -61,7 +63,6 @@ struct Cluster {
         bool up = false;
         for (std::uint16_t candidate = 47200; candidate < 47240 && !up; ++candidate) {
             config.port = candidate;
-            config.clusterPort = static_cast<std::uint16_t>(candidate + 100);
             up = gateway.start(config, error);
         }
         if (!up) {
@@ -69,7 +70,8 @@ struct Cluster {
             return;
         }
         port = config.port;
-        linkPort = config.clusterPort;
+        // Servers dial the game's own port.
+        linkPort = config.port;
         for (int i = 0; i < count; ++i) addServer(std::string(1, static_cast<char>('A' + i)));
         ready = stepUntil({}, [&] {
             const auto linked = [](const auto& s) { return s->linked(); };
@@ -78,10 +80,13 @@ struct Cluster {
         });
     }
 
+    /// `publicHost`: the proxied hostname its players are sent to (on its own
+    /// port here, where there is no proxy to answer on the gateway's).
     GameServer& addServer(const std::string& name, const std::string& secret = "a secret between servers",
-                          const std::string& copyPath = "") {
+                          const std::string& copyPath = "", const std::string& publicHost = "") {
         ServerConfig config;
         config.copyPath = copyPath;
+        config.publicHost = publicHost;
         config.dataDir = flix::testsupport::dataDir();
         config.worldSeed = 999;
         config.botCount = 0;
@@ -90,9 +95,20 @@ struct Cluster {
         config.clusterSecret = secret;
         config.gatewayPort = linkPort;
         config.shardName = name;
+        // Its own port, which its players are sent to: the gateway relays
+        // none of their traffic.
         servers.push_back(std::make_unique<GameServer>());
         std::string error;
-        CHECK(servers.back()->start(config, error));
+        bool up = false;
+        for (std::uint16_t candidate = static_cast<std::uint16_t>(port + 200); !up && candidate < port + 260;
+             ++candidate) {
+            config.port = candidate;
+            if (!publicHost.empty()) config.publicPort = candidate;
+            up = servers.back()->start(config, error);
+            if (!up) servers.back() = std::make_unique<GameServer>();
+        }
+        CHECK(up);
+        serverPorts.push_back(config.port);
         return *servers.back();
     }
 
@@ -133,6 +149,16 @@ struct Cluster {
         if (!stepUntil({&client}, [&] { return client.status() == NetClient::Status::Ready; })) return false;
         client.requestLogin(name, kPassword);
         return stepUntil({&client}, [&] { return client.status() == NetClient::Status::LoggedIn; });
+    }
+
+    /// A client whose socket went with its server: back at the gateway, it
+    /// signs in again, as the app does on a reconnection.
+    bool signInAgain(NetClient& client, const char* name, std::vector<NetClient*> all = {}) {
+        all.push_back(&client);
+        if (!stepUntil(all, [&] { return client.reconnected; }, 3000)) return false;
+        client.reconnected = false;
+        client.requestLogin(name, kPassword);
+        return stepUntil(all, [&] { return client.status() == NetClient::Status::LoggedIn; });
     }
 
     bool join(NetClient& client, std::vector<NetClient*> all, const std::string& door = "") {
@@ -574,6 +600,113 @@ TEST(a_biome_moves_between_servers_under_the_people_in_it) {
     CHECK(alice.status() == NetClient::Status::Playing);
 }
 
+TEST(a_player_who_came_through_the_proxy_is_never_sent_to_a_servers_own_port) {
+    Cluster c("cluster-proxied", 2, seedTwo);
+    CHECK(apart(c));
+    NetClient alice;
+    CHECK(c.signIn(alice, "alice"));
+    // As the gateway sees a socket from a Cloudflare edge carrying the
+    // visitor's address (account_limit_tests has the headers themselves).
+    Session* session = GameServerPeer::sessionOf(c.gateway, "alice");
+    CHECK(session != nullptr);
+    if (session == nullptr) return;
+    session->elsewhere.viaProxy = true;
+    // Neither server has a hostname behind the proxy: she stays where she is,
+    // and is told.
+    alice.joinGame(1920, 1080, "", "flower");
+    CHECK(c.stepUntil({&alice}, [&] { return heard(alice, "cannot be reached"); }));
+    c.step(20, {&alice});
+    CHECK(alice.status() == NetClient::Status::LoggedIn);
+    CHECK(GameServerPeer::bodyOf(*c.serverFor("garden"), "alice") == NULL_ENTITY);
+    CHECK_EQ(c.gateway.leaseCount(), std::size_t{0});
+
+    // A server that has one: she goes there, and plays.
+    c.addServer("C", "a secret between servers", "", "127.0.0.1");
+    CHECK(c.stepUntil({&alice}, [&] { return c.servers.back()->linked(); }));
+    std::string why;
+    CHECK(c.gateway.assignBiomes({"garden"}, "C", why));
+    CHECK(c.stepUntil({&alice}, [&] { return c.gateway.serverOfBiome("garden") == "C"; }));
+    CHECK(c.join(alice, {}));
+    CHECK(GameServerPeer::bodyOf(*c.servers.back(), "alice") != NULL_ENTITY);
+    CHECK(c.stepUntil({&alice}, [&] { return alice.view().self().netId != 0; }));
+}
+
+TEST(an_admin_gives_a_server_the_domain_proxied_players_reach_it_at) {
+    Cluster c("cluster-domain", 2, seedTwo);
+    CHECK(apart(c));
+    NetClient admin, alice;
+    CHECK(c.signIn(admin, "admin1"));
+    CHECK(c.signIn(alice, "alice"));
+    Session* session = GameServerPeer::sessionOf(c.gateway, "alice");
+    CHECK(session != nullptr);
+    if (session == nullptr) return;
+    // Through Cloudflare, and neither server knows the name it has there.
+    session->elsewhere.viaProxy = true;
+    const std::string garden = c.gateway.serverOfBiome("garden");
+    std::size_t at = 0;
+    while (at < c.servers.size() && std::string(1, static_cast<char>('A' + at)) != garden) ++at;
+    CHECK(at < c.servers.size());
+    if (at >= c.servers.size()) return;
+    alice.joinGame(1920, 1080, "", "flower");
+    CHECK(c.stepUntil({&alice, &admin}, [&] { return heard(alice, "cannot be reached"); }));
+
+    // What is not a hostname is refused, and changes nothing.
+    admin.sendChat("/admin shards domain " + garden + " not/a:host");
+    CHECK(c.stepUntil({&alice, &admin}, [&] { return heard(admin, "is not a hostname"); }));
+    c.step(20, {&alice, &admin});
+    // Here, where no proxy answers, its own port stands in for the 443 a
+    // proxied hostname is reached on.
+    const std::string domain = "127.0.0.1:" + std::to_string(c.serverPorts[at]);
+    admin.sendChat("/admin shards domain " + garden + " https://" + domain + "/");
+    CHECK(c.stepUntil({&alice, &admin}, [&] { return heard(admin, "Looking at whether " + domain); }));
+    // The gateway goes round by it, and finds that server there.
+    CHECK(c.stepUntil({&alice, &admin}, [&] { return heard(admin, domain + " reaches " + garden); }));
+    // Kept with the game, not with the server.
+    CHECK_EQ(c.gateway.database().storedTable("cluster")["domains"][std::string(1, static_cast<char>('a' + at))].asString(), domain);
+    CHECK(c.join(alice, {&admin}));
+    CHECK(GameServerPeer::bodyOf(*c.servers[at], "alice") != NULL_ENTITY);
+    CHECK(c.stepUntil({&alice, &admin}, [&] { return alice.view().self().netId != 0; }));
+
+    c.step(20, {&alice, &admin});
+    admin.sendChat("/admin shards domain");
+    CHECK(c.stepUntil({&alice, &admin}, [&] { return heard(admin, garden + ": " + domain + ", reaches it"); }));
+    c.step(20, {&alice, &admin});
+    // The gateway's own, which every server is told of.
+    admin.sendChat("/admin shards domain gateway play.example.com");
+    CHECK(c.stepUntil({&alice, &admin}, [&] { return heard(admin, "The gateway is play.example.com"); }));
+    CHECK_EQ(c.gateway.database().storedTable("cluster")["address"].asString(), std::string("play.example.com"));
+}
+
+TEST(a_domain_that_leads_elsewhere_or_nowhere_takes_no_biomes) {
+    Cluster c("cluster-reach", 2, seedTwo);
+    CHECK(apart(c));
+    NetClient admin;
+    CHECK(c.signIn(admin, "admin1"));
+    const std::string garden = c.gateway.serverOfBiome("garden");
+    std::size_t at = 0;
+    while (at < c.servers.size() && std::string(1, static_cast<char>('A' + at)) != garden) ++at;
+    CHECK(at < c.servers.size());
+    if (at >= c.servers.size()) return;
+    const std::size_t other = 1 - at;
+    // Pointed at the other server's port: somebody answers, and it is not it.
+    const std::string wrong = "127.0.0.1:" + std::to_string(c.serverPorts[other]);
+    admin.sendChat("/admin shards domain " + garden + " " + wrong);
+    CHECK(c.stepUntil({&admin}, [&] { return heard(admin, wrong + " does not reach " + garden); }));
+    CHECK(heard(admin, "not this one"));
+    // So its biomes go to a server players can reach.
+    CHECK(c.stepUntil({&admin}, [&] {
+        const std::string now = c.gateway.serverOfBiome("garden");
+        return !now.empty() && now != garden;
+    }, 600));
+    for (const std::string& biome : c.gateway.biomeNames()) CHECK(c.gateway.serverOfBiome(biome) != garden);
+    c.step(20, {&admin});
+    // Nobody there at all: the same.
+    admin.sendChat("/admin shards domain " + garden + " 127.0.0.1:1");
+    CHECK(c.stepUntil({&admin}, [&] { return heard(admin, "127.0.0.1:1 does not reach " + garden); }));
+    admin.sendChat("/admin shards domain");
+    CHECK(c.stepUntil({&admin}, [&] { return heard(admin, "its biomes are on the gateway"); }));
+}
+
 TEST(a_lost_servers_players_come_back_on_another) {
     Cluster c("cluster-lost", 3, seedTwo);
     CHECK(apart(c));
@@ -592,12 +725,24 @@ TEST(a_lost_servers_players_come_back_on_another) {
         config.clusterSecret = "not the one any more";
         config.gatewayPort = c.linkPort;
         std::string error;
-        CHECK(c.servers[i]->start(config, error));
+        // A port of its own, not the default one something else may hold.
+        bool up = false;
+        for (std::uint16_t candidate = static_cast<std::uint16_t>(c.port + 300); !up && candidate < c.port + 360;
+             ++candidate) {
+            config.port = candidate;
+            up = c.servers[i]->start(config, error);
+            if (!up) c.servers[i] = std::make_unique<GameServer>();
+        }
+        CHECK(up);
     }
     CHECK(c.stepUntil({&alice}, [&] {
         const std::string now = c.gateway.serverOfBiome("garden");
         return !now.empty() && now != was;
     }));
+    // Its socket was that server's, and went with it: the client is back at
+    // the gateway, signs in, and plays on whoever has the garden now.
+    CHECK(c.signInAgain(alice, "alice"));
+    CHECK(c.join(alice, {}));
     CHECK(c.stepUntil({&alice}, [&] {
         return GameServerPeer::bodyOf(*c.serverFor("garden"), "alice") != NULL_ENTITY;
     }));
@@ -729,6 +874,8 @@ TEST(an_admin_assigns_biomes_and_the_assignment_outlives_the_server) {
     c.servers.erase(c.servers.begin() + 1);
     c.addServer("B");
     CHECK(c.stepUntil({&admin}, [&] { return all("B"); }));
+    // The admin's flower was on B, and so was the socket.
+    CHECK(c.signInAgain(admin, "admin1"));
 
     c.step(40, {&admin});
     admin.sendChat("/admin shards unassign all");
@@ -746,6 +893,73 @@ TEST(an_admin_assigns_biomes_and_the_assignment_outlives_the_server) {
 // ---------------------------------------------------------------------------
 // The link itself
 // ---------------------------------------------------------------------------
+
+TEST(a_membership_from_when_servers_linked_on_a_port_of_their_own_says_so) {
+    HarnessFiles files("membership-old-port");
+    const std::string path = cluster::membershipPathFor(files.dbPath);
+    {
+        std::FILE* f = std::fopen(path.c_str(), "wb");
+        CHECK(f != nullptr);
+        if (f == nullptr) return;
+        std::fputs("{\"role\":\"shard\",\"key\":\"correct-horse-battery-staple\",\"name\":\"east\","
+                   "\"id\":\"abcd\",\"port\":3100,\"gateway\":\"10.0.0.1\",\"gatewayPort\":3100}\n",
+                   f);
+        std::fclose(f);
+    }
+    std::string note;
+    cluster::Membership m = cluster::Membership::load(path, note);
+    CHECK(note.empty());
+    CHECK(m.role == cluster::Membership::Role::Shard);
+    CHECK(m.oldLinkPort);
+    CHECK_EQ(m.gatewayPort, std::uint16_t{3100});
+    // Written again, it is of now: the gateway's port is its game port.
+    m.gatewayPort = 3000;
+    m.oldLinkPort = false;
+    std::string error;
+    CHECK(m.save(path, error));
+    const cluster::Membership again = cluster::Membership::load(path, note);
+    CHECK(!again.oldLinkPort);
+    CHECK_EQ(again.gatewayPort, std::uint16_t{3000});
+    CHECK_EQ(again.gatewayHost, std::string("10.0.0.1"));
+}
+
+TEST(a_server_link_is_refused_by_a_game_port_with_nobody_to_link) {
+    // A server on its own with no key, and a server's WebSocket at /link.
+    HarnessFiles files("link-no-key");
+    GameServer server;
+    ServerConfig config;
+    config.dataDir = flix::testsupport::dataDir();
+    config.databasePath = files.dbPath;
+    config.botCount = 0;
+    config.hourlyRifts = false;
+    std::string error;
+    bool up = false;
+    for (std::uint16_t candidate = 47500; candidate < 47540 && !up; ++candidate) {
+        config.port = candidate;
+        up = server.start(config, error);
+    }
+    CHECK(up);
+    if (!up) return;
+    struct Quiet : net::TransportHandler {
+        bool closed = false;
+        void onConnect(net::Connection&) override {}
+        void onMessage(net::Connection&, ByteReader&) override {}
+        void onDisconnect(net::Connection&, const std::string&) override { closed = true; }
+    } quiet;
+    net::Dialer dialer;
+    dialer.serverLink = true;
+    CHECK(dialer.connect("127.0.0.1", config.port, error));
+    const double end = monotonicMillis() + 3000.0;
+    while (!quiet.closed && monotonicMillis() < end) {
+        dialer.poll(quiet, 0);
+        server.step();
+    }
+    CHECK(quiet.closed);
+    server.stop();
+    while (server.step()) {
+    }
+    server.shutdown();
+}
 
 TEST(chacha20_poly1305_is_rfc_8439s) {
     // Section 2.8.2, whole.
@@ -934,10 +1148,10 @@ constexpr const char* kKey = "correct-horse-battery-staple";
 bool link(Pair& p) {
     NetClient admin, boss;
     if (!p.signIn(admin, p.a.port, "admin1") || !p.signIn(boss, p.b.port, "boss2")) return false;
-    const std::string door = std::to_string(p.a.port + 200);
-    if (!p.say(admin, "/admin cluster key " + std::string(kKey) + " " + door, "can connect here")) return false;
-    if (!p.say(boss, "/admin cluster key " + std::string(kKey) + " " + std::to_string(p.b.port + 200),
-               "Key set")) {
+    // The game's own port: servers dial it as players do.
+    const std::string door = std::to_string(p.a.port);
+    if (!p.say(admin, "/admin cluster key " + std::string(kKey), "can connect here")) return false;
+    if (!p.say(boss, "/admin cluster key " + std::string(kKey), "Key set")) {
         return false;
     }
     // The key is nowhere on anybody's screen.
@@ -1009,23 +1223,133 @@ TEST(two_servers_are_linked_by_a_key_and_a_command_and_unlinked_by_another) {
     CHECK(p.until({&boss}, [&] { return heard(boss, "on its own, has a key"); }, 5.0));
 }
 
+TEST(the_gateways_own_simulation_takes_its_players_on_the_gateways_port) {
+    Pair p("own-a", "own-b");
+    CHECK(p.a.up && p.b.up);
+    CHECK(link(p));
+    GameServer* own = p.a.host.simulation();
+    CHECK(own != nullptr);
+    if (own == nullptr) return;
+    std::string name;
+    for (const std::string& n : p.sa()->serverNames()) {
+        if (n != "east") name = n;
+    }
+    NetClient admin, alice;
+    CHECK(p.signIn(admin, p.a.port, "admin1"));
+    CHECK(p.say(admin, "/admin shards assign " + name + " garden", "Assigned garden to " + name));
+    CHECK(p.until({&admin}, [&] { return p.sa()->serverOfBiome("garden") == name; }));
+    // It listens on no port of its own: the gateway's proxied hostname reaches
+    // only the gateway's.
+    {
+        net::Dialer probe;
+        std::string error;
+        if (probe.connect("127.0.0.1", static_cast<std::uint16_t>(p.a.port + 1), error)) {
+            net::TransportHandler nobody;
+            for (int i = 0; i < 200 && probe.state() == net::Dialer::State::Connecting; ++i) probe.poll(nobody, 2);
+        }
+        CHECK(probe.state() != net::Dialer::State::Connected);
+    }
+    CHECK(p.signIn(alice, p.a.port, "alice"));
+    alice.joinGame(1920, 1080, "", "flower");
+    CHECK(p.until({&alice, &admin}, [&] { return alice.status() == NetClient::Status::Playing; }, 10.0));
+    CHECK(p.until({&alice, &admin}, [&] { return !alice.view().entities().empty(); }, 10.0));
+    CHECK(GameServerPeer::bodyOf(*own, "alice") != NULL_ENTITY);
+    // Chat is the gateway's, asked of it over the link.
+    alice.sendChat("hello from the gateway's own garden");
+    CHECK(p.until({&alice, &admin}, [&] { return heard(admin, "hello from the gateway's own garden"); }, 5.0));
+}
+
+TEST(a_gateway_simulates_what_no_server_players_can_reach_would_have) {
+    // A gateway started without a simulation, behind a proxy (it has a
+    // domain), and a server nobody has given one.
+    HarnessFiles files("reach-own");
+    seedTwo(files.dbPath);
+    ServerConfig config;
+    config.dataDir = flix::testsupport::dataDir();
+    config.databasePath = files.dbPath;
+    config.botCount = 0;
+    config.passwordCost = crypto::kBcryptMinCost;
+    config.hourlyRifts = false;
+    config.role = ServerConfig::Role::Gateway;
+    config.clusterSecret = "a secret between servers";
+    config.expectedShards = 1;
+    config.publicHost = "play.example.com";
+    ServerHost host;
+    bool up = false;
+    for (std::uint16_t candidate = 47460; candidate < 47480 && !up; ++candidate) {
+        config.port = candidate;
+        std::string error;
+        up = host.start(config, true, error);
+    }
+    CHECK(up);
+    if (!up) return;
+    CHECK(host.simulation() == nullptr);
+    GameServer shard;
+    ServerConfig own;
+    own.dataDir = flix::testsupport::dataDir();
+    own.botCount = 0;
+    own.hourlyRifts = false;
+    own.role = ServerConfig::Role::Shard;
+    own.clusterSecret = config.clusterSecret;
+    own.gatewayPort = config.port;
+    own.shardName = "east";
+    bool shardUp = false;
+    for (std::uint16_t candidate = 47480; candidate < 47500 && !shardUp; ++candidate) {
+        own.port = candidate;
+        std::string error;
+        shardUp = shard.start(own, error);
+    }
+    CHECK(shardUp);
+    const auto until = [&](std::vector<NetClient*> clients, auto done, double seconds) {
+        const double end = monotonicMillis() + seconds * 1000.0;
+        while (monotonicMillis() < end) {
+            for (NetClient* c : clients) c->poll(0);
+            host.step();
+            shard.step();
+            if (done()) return true;
+        }
+        return false;
+    };
+    // It starts one of its own, and every biome is there, none on east.
+    CHECK(until({}, [&] { return host.simulation() != nullptr; }, 20.0));
+    CHECK(until({}, [&] {
+        const std::vector<std::string> biomes = host.server()->biomeNames();
+        return std::all_of(biomes.begin(), biomes.end(), [&](const std::string& b) {
+            const std::string at = host.server()->serverOfBiome(b);
+            return !at.empty() && at != "east";
+        });
+    }, 30.0));
+    // Given a domain that leads to it, east is fit to have biomes again.
+    NetClient admin;
+    admin.contentHash = content().contentHash();
+    CHECK(admin.connect("127.0.0.1", config.port));
+    CHECK(until({&admin}, [&] { return admin.status() == NetClient::Status::Ready; }, 5.0));
+    admin.requestLogin("admin1", kPassword);
+    CHECK(until({&admin}, [&] { return admin.status() == NetClient::Status::LoggedIn; }, 5.0));
+    const std::string domain = "127.0.0.1:" + std::to_string(own.port);
+    admin.sendChat("/admin shards domain east " + domain);
+    CHECK(until({&admin}, [&] { return heard(admin, domain + " reaches east"); }, 15.0));
+    admin.sendChat("/admin shards assign east garden");
+    CHECK(until({&admin}, [&] { return host.server()->serverOfBiome("garden") == "east"; }, 20.0));
+}
+
 TEST(a_server_with_another_key_is_not_linked_and_goes_on_as_it_was) {
     Pair p("nolink-a", "nolink-b");
     CHECK(p.a.up && p.b.up);
     NetClient admin, boss;
     CHECK(p.signIn(admin, p.a.port, "admin1"));
     CHECK(p.signIn(boss, p.b.port, "boss2"));
-    const std::string door = std::to_string(p.a.port + 200);
+    const std::string door = std::to_string(p.a.port);
     // Not without a key at all, and not with one that is no key.
     CHECK(p.say(boss, "/admin cluster connect 127.0.0.1:" + door, "Set the key first"));
     CHECK(p.say(boss, "/admin cluster key short", "A key is at least"));
-    CHECK(p.say(admin, "/admin cluster key " + std::string(kKey) + " " + door, "can connect here"));
-    CHECK(p.say(boss, "/admin cluster key some-other-key-entirely " + std::to_string(p.b.port + 200), "Key set"));
+    CHECK(p.say(admin, "/admin cluster key " + std::string(kKey), "can connect here"));
+    CHECK(p.say(boss, "/admin cluster key some-other-key-entirely", "Key set"));
     CHECK(p.say(boss, "/admin cluster connect 127.0.0.1:" + door, "not this server's key"));
     // Nobody there.
     CHECK(p.say(boss, "/admin cluster connect 127.0.0.1:1", "Not linked to 127.0.0.1:1"));
     // Itself.
-    CHECK(p.say(boss, "/admin cluster connect 127.0.0.1:" + std::to_string(p.b.port + 200), "this very server"));
+    CHECK(p.say(boss, "/admin cluster connect 127.0.0.1:" + std::to_string(p.b.port), "this very server"));
     CHECK(p.sa()->role() == ServerConfig::Role::Alone);
     CHECK(p.sb()->role() == ServerConfig::Role::Alone);
     CHECK(boss.status() == NetClient::Status::LoggedIn);

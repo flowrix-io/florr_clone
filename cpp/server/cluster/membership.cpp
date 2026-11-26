@@ -67,9 +67,10 @@ Membership Membership::load(const std::string& path, std::string& note) {
     m.key = root["key"].asString();
     m.name = root["name"].asString();
     m.id = root["id"].asString();
-    m.port = static_cast<std::uint16_t>(root["port"].asInt(kDefaultLinkPort));
+    // Only the files of servers that linked on a port of their own have one.
+    m.oldLinkPort = root["port"].isNumber();
     m.gatewayHost = root["gateway"].asString();
-    m.gatewayPort = static_cast<std::uint16_t>(root["gatewayPort"].asInt(kDefaultLinkPort));
+    m.gatewayPort = static_cast<std::uint16_t>(root["gatewayPort"].asInt(m.gatewayPort));
     const std::string role = root["role"].asString();
     if (!m.key.empty() && role == "gateway") m.role = Role::Gateway;
     if (!m.key.empty() && role == "shard" && !m.gatewayHost.empty()) m.role = Role::Shard;
@@ -82,7 +83,6 @@ bool Membership::save(const std::string& path, std::string& errorOut) const {
     root["key"] = Json(key);
     root["name"] = Json(name);
     root["id"] = Json(id);
-    root["port"] = Json(static_cast<int>(port));
     root["gateway"] = Json(gatewayHost);
     root["gatewayPort"] = Json(static_cast<int>(gatewayPort));
     const std::string text = root.dump(2) + "\n";

@@ -146,16 +146,15 @@ struct ServerConfig {
     /// in a test.
     int passwordCost = 0;
     /// Sharding (cpp/docs/ARCHITECTURE.md). Alone is the whole game in one
-    /// process. The Gateway holds the sockets and the accounts and simulates
-    /// nothing; each Shard dials it and simulates the biomes it is given.
+    /// process. The Gateway holds the accounts and the sockets of clients with
+    /// no flower out, and simulates nothing; each Shard dials it, simulates the
+    /// biomes it is given, and is dialled by the clients playing there.
     enum class Role : std::uint8_t { Alone, Gateway, Shard };
     Role role = Role::Alone;
-    /// The gateway: where its servers dial in. Loopback unless told otherwise.
-    std::string clusterHost = "127.0.0.1";
-    std::uint16_t clusterPort = 3100;
-    /// A shard: the gateway's clusterHost and clusterPort, and a name for logs.
+    /// A shard: the gateway it dials -- its game port, `port` there, which
+    /// takes its servers' links as well as its players -- and a name for logs.
     std::string gatewayHost = "127.0.0.1";
-    std::uint16_t gatewayPort = 3100;
+    std::uint16_t gatewayPort = 3000;
     std::string shardName;
     /// What proves either end to the other. Both refuse an empty one.
     std::string clusterSecret;
@@ -169,6 +168,17 @@ struct ServerConfig {
     std::string copyPath;
     /// A shard: the gateway's own simulation, in its process (ServerHost).
     bool localShard = false;
+    /// Where clients that come through the game's proxy (Cloudflare) reach
+    /// this server: its own hostname there. A port of 0 is whichever port the
+    /// client already uses (443 behind Cloudflare). With no host, only clients
+    /// that dial straight to the ports can be sent to it: a shard is reached at
+    /// the address its link comes from on `port`, a gateway at the one its
+    /// servers dial. Behind Cloudflare, every server needs one.
+    std::string publicHost;
+    std::uint16_t publicPort = 0;
+    /// A shard: its record of the rows lent to it (cluster/lease_journal.h),
+    /// or empty to keep it in memory only.
+    std::string leaseJournalPath;
     /// What `/admin cluster` made of this server, and the file that says so.
     /// An empty path is a server no command links: one whose part was given on
     /// its command line, or that has no file to keep it in.
@@ -319,6 +329,21 @@ public:
     std::size_t leaseCount() const;
     /// A shard: whether the gateway has taken it.
     bool linked() const;
+    /// A shard: the slot the gateway gave it, or 0 until it has.
+    int shardSlot() const;
+    /// The gateway: wants a simulation of its own in this process, for biomes
+    /// no server players can reach is fit to have (ServerHost starts it).
+    bool wantsLocalSimulation() const;
+    /// ServerConfig::maxPollMillis, from now on.
+    void setMaxPollMillis(int millis) { config_.maxPollMillis = millis; }
+    /// The gateway: the simulation in this same process (ServerHost), whose
+    /// clients it hands their sockets over to on its own port; null for none.
+    void setLocalSimulation(GameServer* simulation);
+    /// The gateway's own simulation: a client's socket the gateway was
+    /// holding, which has come to this port with `ticket`, and what it said
+    /// after it, in order.
+    void takeClient(std::unique_ptr<net::Connection> socket, const std::string& ticket,
+                    const std::vector<std::vector<std::byte>>& after);
     const Terrain& terrain() const { return *terrain_; }
     /// Every staged map's annotation layer, and which realm each one is.
     const WorldMaps& worldMaps() const { return worldMaps_; }
@@ -341,8 +366,6 @@ private:
     struct Gateway;
     std::unique_ptr<Gateway> gateway_;
     bool startGateway(std::string& errorOut);
-    /// Reads the links, and drains them.
-    void gwService();
     void gwFlush();
     /// Once per tick: heartbeats, what each server knows of each client,
     /// arrivals that were waiting, and the balance.
@@ -361,9 +384,56 @@ private:
     void gwBeginCopy(int slot);
     void gwServiceCopies(double nowMillis, bool everything = false);
     std::string gwCopyState(int slot) const;
-    /// A client that dialled another server's port, opened and gone.
-    void gwEdgeOpened(int slot, std::uint32_t edge, const std::string& address);
-    void gwEdgeGone(net::ConnectionId);
+    /// The answer to a Hello: whether this build and content are the client's.
+    bool writeWelcome(ByteWriter&, std::uint16_t version, std::uint32_t clientContent) const;
+    /// The sockets at the gateway's own port.
+    void gwDoorOpened(net::Connection&);
+    void gwDoorFrame(net::Connection&, ByteReader&);
+    void gwDoorClosed(net::Connection&, const std::string& reason);
+    /// Where a session's frames go: the client's socket, wherever it is.
+    void gwDeliver(net::ConnectionId client, const std::byte* data, std::size_t size);
+    /// Sends the client's socket to `slot`'s port, or home to this one for 0.
+    void gwRedirect(Session&, int slot);
+    /// Where a client is sent to reach the server in `slot`: its proxied
+    /// hostname, or its own port for a client that dialled straight. False
+    /// when it cannot be reached from where this client is connected.
+    bool gwRedirectTarget(const Session&, int slot, std::string& host, std::uint16_t& port);
+    /// A client back at this port with the ticket it was sent with.
+    void gwAttachHome(net::Connection& socket, Session& greeted, const std::string& ticket);
+    /// Hands the sockets that came to this port for its own simulation over to
+    /// it. Between polls, never inside one.
+    void gwHandOver();
+    /// Where the clients that come through the proxy sign in: the domain an
+    /// admin gave the gateway, else --public-host.
+    void gwOwnAddress(std::string& host, std::uint16_t& port) const;
+    /// `/admin shards domain`.
+    void runDomainCommand(net::Connection&, const std::vector<std::string>& words);
+    /// The domain players who come through the proxy are sent to a server at:
+    /// an admin's, else its own --public-host. False for none.
+    bool gwDomainOf(int slot, std::string& host, std::uint16_t& port) const;
+    /// Whether a server may be given biomes: the players sent to it can get
+    /// there. Its domain, if it has one, must not be one found not to reach
+    /// it; without one it is reachable only where nobody comes through a
+    /// proxy. The gateway's own simulation always is.
+    bool gwPlaceable(int slot) const;
+    /// Looks at each server's domain: when it changes, and again now and then
+    /// (ReachCheck).
+    void gwServiceReach(double nowMillis);
+    void gwStartReach(int slot, const std::string& host, std::uint16_t port, double nowMillis);
+    /// `answered`: 1 it answers, -1 it does not, 0 it cannot be looked at.
+    void gwSettleReach(int slot, int answered, const std::string& why, double nowMillis);
+    void gwReadDomains();
+    void gwWriteDomains();
+    /// The session's own connection closed: so does its socket, wherever.
+    void gwClientClosed(net::ConnectionId);
+    /// Ends a session whose socket is gone.
+    void gwDropClient(net::ConnectionId);
+    /// The gateway's journal has a server's lease journal up to `seq`.
+    void gwNoteTaken(int slot, std::uint64_t seq);
+    void gwRecovered(int slot, ByteReader&);
+    /// A SquadUpdate or squad invitation `slot` sent the client: where its
+    /// squad is.
+    void gwNoteSquad(Session&, int slot, std::uint8_t message, std::uint8_t first);
     /// The last of `/admin cluster disconnect`: a server of one, once every
     /// other has gone.
     void gwServiceDisband(double nowMillis);
@@ -424,6 +494,10 @@ private:
     std::unique_ptr<Probe> probe_;
     void openDoor();
     void doorMessage(net::Connection&, ByteReader&);
+    /// A socket of the game's port opened at /link, by a server dialling to
+    /// join this one: a dialler of the door, if there is one, and closed
+    /// otherwise.
+    bool doorTakes(net::Connection&);
     void probeOpened();
     void probeMessage(ByteReader&);
     void probeEnded(std::string why);
@@ -455,9 +529,22 @@ private:
     void shLinkLost(const std::string& reason);
     void shCopyMessage(std::uint8_t message, ByteReader&);
     void shServiceCopy(double nowMillis);
-    void shEdgeOpened(net::Connection&);
-    void shEdgeFrame(net::Connection&, ByteReader&);
-    void shEdgeClosed(net::Connection&);
+    /// The sockets at this server's own port: clients the gateway sent here.
+    void shDoorOpened(net::Connection&);
+    void shDoorFrame(net::Connection&, ByteReader&);
+    void shDoorClosed(net::Connection&);
+    void shAttach(net::Connection& socket, const std::string& ticket);
+    /// A frame from a client at this port: carried out here, or asked of the
+    /// gateway.
+    void shClientFrame(net::ConnectionId client, ByteReader&);
+    /// Where a session's frames go: its socket here, or the gateway's to place.
+    void shDeliver(net::ConnectionId client, const std::byte* data, std::size_t size);
+    /// Closes the client's socket at this port, if it has one, saying nothing.
+    void shCloseDoor(Session&);
+    /// Whether the body stands where the market can be used, as a fence finds.
+    bool shAtMarket(Session&);
+    /// The rows the lease journal holds that the gateway never took.
+    void shRecover(std::uint64_t taken);
     /// Told by the gateway to be a server of one again.
     void shLeave();
     void shSend(const ByteWriter&);

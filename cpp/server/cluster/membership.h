@@ -12,21 +12,25 @@
 
 namespace flix::cluster {
 
-inline constexpr std::uint16_t kDefaultLinkPort = 3100;
+/// The port servers once linked on, apart from the game's. A file written
+/// then has it; servers link on the game's own port now.
+inline constexpr std::uint16_t kOldLinkPort = 3100;
 
 struct Membership {
     /// `Alone` is a server of one, with or without a key to be linked by.
     enum class Role : std::uint8_t { Alone, Gateway, Shard };
     Role role = Role::Alone;
     std::string key;
-    /// Where other servers dial this one.
-    std::uint16_t port = kDefaultLinkPort;
     std::string name;
     /// See cluster::Greeting::id.
     std::string id;
-    /// A shard: whom it dials.
+    /// A shard: whom it dials -- the gateway's game port.
     std::string gatewayHost;
-    std::uint16_t gatewayPort = kDefaultLinkPort;
+    std::uint16_t gatewayPort = 3000;
+    /// Read from a file written when servers linked on a port of their own:
+    /// `gatewayPort` is that port, not the gateway's game port (ServerHost
+    /// moves it).
+    bool oldLinkPort = false;
 
     /// Reads `path`. A missing file is a server that has never been linked; a
     /// file that cannot be read is said in `note` and taken for one too.

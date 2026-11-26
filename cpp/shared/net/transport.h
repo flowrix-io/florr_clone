@@ -14,7 +14,11 @@
 // -- the framing, the backlog rule and the TransportHandler contract are one
 // implementation shared by both:
 //
-//   native       a TCP socket and poll(), as described above.
+//   native       a TCP socket and poll(), as described above. A socket that
+//                opens with an HTTP upgrade instead is a WebSocket
+//                (net/websocket.h) carrying the same framing -- the link
+//                between two servers of a sharded game, which is always
+//                one (Dialer::serverLink); a native client's is plain TCP.
 //   emscripten   whatever the JavaScript runtime has, via net/web_channel.h:
 //                WebTransport when the runtime and the server both offer it,
 //                WebSocket otherwise, and an in-page loopback when the server
@@ -50,6 +54,10 @@ public:
     /// Empty but for a WebSocket accepted by the web backend. Client-written:
     /// see clientAddress() (server/account_limits.h) for which parts count.
     const ForwardedHeaders& forwarded() const { return forwarded_; }
+    /// The path a WebSocket was opened at ("/ws" for a page, "/link" for the
+    /// link between two servers of a sharded game); empty for a connection
+    /// that is not one.
+    const std::string& path() const { return path_; }
     int fd() const { return fd_; }
     bool open() const { return fd_ >= 0 || sink_ != nullptr; }
     /// True for a connection with no transport of its own: see Listener::adopt.
@@ -57,6 +65,9 @@ public:
     /// The largest frame this end accepts. kMaxFrameBytes for a client; the
     /// link between two servers of a sharded game raises it.
     std::uint32_t maxFrameBytes = kMaxFrameBytes;
+    /// Listener::maxPendingBytes for this connection alone, or 0 for the
+    /// listener's: the link between two servers, on the game's own port.
+    std::size_t maxPendingBytes = 0;
 
     /// Queues a frame. Never blocks; the bytes leave in later drains.
     void send(const ByteWriter& message);
@@ -106,7 +117,10 @@ private:
     /// queued. Zero on a socket, where the kernel's buffer is not ours to see;
     /// the web backend's real backpressure signal.
     std::size_t transportBuffered() const;
-    bool wantsWrite() const { return outboundSent_ < outbound_.size(); }
+    bool wantsWrite() const;
+    /// Known to be what it is: plain framing or an open WebSocket, not still
+    /// in a handshake. A listener announces a connection (onConnect) once it is.
+    bool ready() const;
     /// Drops what has already gone out. Called at the end of every write
     /// drain, by both backends.
     void compactOutbound();
@@ -132,6 +146,10 @@ private:
     /// Where an adopted connection's frames go; null for a real one.
     std::function<void(const std::byte*, std::size_t)> sink_;
     ForwardedHeaders forwarded_;
+    std::string path_;
+    /// Has been handed to the handler (onConnect), so its end is reported.
+    bool announced_ = false;
+    double acceptedMillis_ = 0;
     bool closing_ = false;
     /// When closeGracefully() was first called, on the transport's steady clock.
     double closingSinceMillis_ = 0;
@@ -158,6 +176,27 @@ private:
     std::vector<std::byte> outbound_;
     std::size_t outboundSent_ = 0;
     std::uint64_t streamWritten_ = 0;
+
+    /// What the socket itself carries, natively. Raw: the framing above, as it
+    /// is. Otherwise a WebSocket around it, or the handshake before one: an
+    /// accepted socket is Sniffing until its first bytes say which.
+    enum class Wire : std::uint8_t { Raw, Sniffing, ServerHandshake, ClientHandshake, WebSocket };
+    Wire wire_ = Wire::Raw;
+    /// This end dialled, so it masks what it sends.
+    bool wsClient_ = false;
+    std::string wsKey_;
+    /// Bytes off the socket not yet unwrapped, and bytes for it already wrapped.
+    std::vector<std::byte> wireIn_;
+    std::vector<std::byte> wireOut_;
+    std::size_t wireOutSent_ = 0;
+    /// A dialler: starts the upgrade to `path` on a socket that has just connected.
+    void beginClientHandshake(const std::string& path);
+    /// Unwraps what wireIn_ holds into inbound_ (and answers handshakes, pings
+    /// and closes into wireOut_). False when the peer is done or broke the rules.
+    bool unwrap(std::string& errorOut);
+    /// Wraps what outbound_ holds into wireOut_.
+    void wrap();
+    bool writeWire(std::string& errorOut);
 };
 
 /// Callbacks a transport owner implements. All are invoked from poll().
@@ -212,6 +251,17 @@ public:
     /// reporting it: the owner is the one letting go.
     void abandon(ConnectionId id);
 
+    /// Hands a real connection over to another listener in this process,
+    /// socket, buffers and all, unreported: `release` it here and `take` it
+    /// there. Never from inside this listener's own poll(), which is walking
+    /// its connections. How a gateway gives a client that is going to its own
+    /// simulation that simulation's socket, on the gateway's port.
+    std::unique_ptr<Connection> release(ConnectionId id);
+    /// Takes one `release`d by another listener, under a new id of this one's,
+    /// announced to nobody; its close is reported like any other's. Serviced
+    /// by poll() even on a listener that was never started.
+    Connection& take(std::unique_ptr<Connection> connection);
+
     /// Why the port could not be listened on, where that is only known after
     /// start() has returned: Node says so from its event loop. Else empty.
     std::string lateError() const;
@@ -231,6 +281,14 @@ public:
 
     /// Connection::maxFrameBytes of every connection accepted from here on.
     std::uint32_t maxFrameBytes = kMaxFrameBytes;
+
+    /// Natively: a socket may be a WebSocket (net/websocket.h) rather than the
+    /// plain framing -- the link between two servers of a sharded game, at
+    /// /link. Each accepted socket is then announced (onConnect) only once its
+    /// first bytes have said which, and with its path; one that says nothing
+    /// for long is let go of unannounced. Set on the game's own port. The web
+    /// backend's sockets are all WebSockets, and this changes nothing there.
+    bool webSockets = false;
 
     /// TLS material for the web backend, set before start(). Both empty means
     /// the conventional pair names are looked for in the working directory;
@@ -306,6 +364,19 @@ public:
     const std::string& error() const { return error_; }
     /// Connection::maxFrameBytes of the next connect().
     std::uint32_t maxFrameBytes = kMaxFrameBytes;
+    /// The link between two servers of a sharded game, not a player's
+    /// connection: always a WebSocket, at /link, in both backends (natively,
+    /// net/websocket.h; on the web, web::connect's `link`). It is Connected,
+    /// and announced, once the upgrade has been answered.
+    bool serverLink = false;
+    /// A WebSocket at this path instead, plain the same way (`serverLink` wins
+    /// over it): the gateway's check that a server's domain reaches it
+    /// (/reach). Empty for a player's connection.
+    std::string webSocketPath;
+    /// That WebSocket over TLS (wss): through Cloudflare, as a player's page
+    /// reaches a domain. The web backend only; natively connect() refuses it,
+    /// since this build speaks no TLS.
+    bool secure = false;
     /// As Listener::beforeWrite.
     std::function<void()> beforeWrite;
     /// Bytes queued and not yet handed over.
@@ -336,6 +407,11 @@ private:
     std::string error_;
     std::vector<std::byte> frameScratch_;
     bool announced_ = false;
+    /// The path of the WebSocket this dials, or empty for plain framing.
+    std::string wsPath() const;
+    /// Natively: connected, and waiting on the WebSocket upgrade (serverLink).
+    bool upgrading_ = false;
+    double upgradeSinceMillis_ = 0;
 };
 
 } // namespace flix::net

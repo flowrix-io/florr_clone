@@ -682,7 +682,7 @@ constexpr ChangelogEntry kChangelog[] = {
         "Doubled Eternal to Apex craft chance",
         "Super mobs drop more Ultras and fewer Mythics",
         "Doubled Magic Leaf and Magic Orb mana regen",
-        "Antennae zoom animation is twice as fast"
+        "Antennae zoom animation is twice as fast",
       }
     },
     {"November 25, 2026",

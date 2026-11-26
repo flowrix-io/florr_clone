@@ -48,17 +48,23 @@ ByteWriter begin(ToServer message) {
 // ---------------------------------------------------------------------------
 
 void GameServer::openDoor() {
+    // Whoever was dialling is let go of with it.
+    if (door_) {
+        for (const auto& entry : door_->diallers) listener_.close(entry.first);
+    }
     door_.reset();
     if (config_.membership.key.empty()) return;
     door_ = std::make_unique<Door>(*this);
-    net::Listener& listener = door_->listener;
-    listener.bindHost = config_.bindHost;
-    listener.certPath = "none";
-    listener.keyPath = "none";
-    if (!listener.start(config_.membership.port, door_->error)) {
-        std::fprintf(stderr, "[cluster] cannot be linked to: port %u: %s\n",
-                     static_cast<unsigned>(config_.membership.port), door_->error.c_str());
+}
+
+bool GameServer::doorTakes(net::Connection& c) {
+    // No key, or too many at once: nothing to say to it.
+    if (!door_ || door_->diallers.size() >= Door::kMaxDiallers) {
+        c.closeGracefully();
+        return false;
     }
+    door_->diallers[c.id()].sinceMillis = monotonicMillis();
+    return true;
 }
 
 void GameServer::doorMessage(net::Connection& c, ByteReader& reader) {
@@ -214,17 +220,9 @@ void GameServer::serviceLinking() {
         if (p.ready || !p.verdict.empty()) probeEnded(p.verdict);
     }
     if (!door_) return;
-    door_->listener.poll(*door_, 0);
-    if (door_->error.empty()) {
-        door_->error = door_->listener.lateError();
-        if (!door_->error.empty()) {
-            std::fprintf(stderr, "[cluster] cannot be linked to: %s\n", door_->error.c_str());
-        }
-    }
     for (const auto& [id, dialler] : door_->diallers) {
-        if (now - dialler.sinceMillis > kDoorPatienceMillis) door_->listener.close(id);
+        if (now - dialler.sinceMillis > kDoorPatienceMillis) listener_.close(id);
     }
-    door_->listener.flush();
     if (door_->openingAtMillis < 0 || now < door_->openingAtMillis) return;
     door_->openingAtMillis = -1;
     Membership m = config_.membership;
@@ -252,14 +250,6 @@ bool GameServer::relink(Membership membership, std::string& errorOut) {
 
 void GameServer::gwServiceDisband(double now) {
     Gateway& g = *gateway_;
-    if (const std::string late = g.listener.lateError(); !late.empty() && exitCode_ == 0) {
-        // Nothing can join, this process's own simulation included: a gateway
-        // of nothing. Out, for the supervisor to try again.
-        std::fprintf(stderr, "[cluster] the cluster port cannot be listened on: %s\n", late.c_str());
-        exitCode_ = kRestartExit;
-        stop();
-        return;
-    }
     if (g.disbandAtMillis < 0) return;
     if (g.remoteServers() > 0 && now < g.disbandAtMillis) return;
     g.disbandAtMillis = -1;
@@ -313,19 +303,16 @@ void GameServer::runClusterCommand(Session& session, net::Connection& connection
             runShardsCommand(session, connection, {"shards"});
         } else if (mine.key.empty()) {
             out("This server is on its own and has no key. /admin cluster help");
-        } else if (door_ && !door_->error.empty()) {
-            out("This server has a key, but others cannot dial it: port " +
-                std::to_string(mine.port) + ": " + door_->error);
         } else {
-            out("This server is on its own, has a key, and can be linked to at port " +
-                std::to_string(mine.port) + ".");
+            out("This server is on its own, has a key, and can be linked to at its game port, " +
+                std::to_string(config_.port) + ".");
         }
         return;
     }
     if (sub == "help") {
         out("cluster                              how this server is linked");
-        out("cluster key <key> [port]             set the key (the same on both servers)");
-        out("cluster key new [port]               make one up, and show it to you");
+        out("cluster key <key>                    set the key (the same on both servers)");
+        out("cluster key new                      make one up, and show it to you");
         out("cluster key off                      forget it: nothing can link to this server");
         out("cluster connect <host[:port]> [name] join the server there, as [name]");
         out("cluster disconnect <server|all>      undo it, from the server that was joined");
@@ -353,8 +340,12 @@ void GameServer::runClusterCommand(Session& session, net::Connection& connection
             out("Still connecting. Try again in a moment.");
             return;
         }
-        if (words.size() < 3 || words.size() > 4) {
-            out("Usage: cluster key <key>|new|off [port]");
+        if (words.size() == 4) {
+            out("Servers link on the game's own port now: cluster key <key>|new|off");
+            return;
+        }
+        if (words.size() != 3) {
+            out("Usage: cluster key <key>|new|off");
             return;
         }
         Membership m = mine;
@@ -365,13 +356,6 @@ void GameServer::runClusterCommand(Session& session, net::Connection& connection
             out("A key is at least " + std::to_string(cluster::kMinLinkKey) +
                 " characters. \"cluster key new\" makes a good one.");
             return;
-        }
-        if (words.size() == 4) {
-            std::string host;
-            if (!cluster::parseAddress("x:" + words[3], host, m.port)) {
-                out("\"" + words[3] + "\" is not a port.");
-                return;
-            }
         }
         if (m.id.empty()) m.id = crypto::secureRandom().hex(8);
         if (m.name.empty()) m.name = "server-" + m.id.substr(0, 4);
@@ -389,12 +373,8 @@ void GameServer::runClusterCommand(Session& session, net::Connection& connection
         // To this connection and nowhere else: not the log, not the backlog.
         if (made) out("The key is " + m.key + " -- set it on the other server too.");
         else out("Key set.");
-        if (door_ && !door_->error.empty()) {
-            out("Other servers cannot dial this one (port " + std::to_string(m.port) + ": " +
-                door_->error + "), but it can connect to them.");
-        } else {
-            out("Other servers with it can connect here, at port " + std::to_string(m.port) + ".");
-        }
+        out("Other servers with it can connect here, at this server's game port, " +
+            std::to_string(config_.port) + ".");
         return;
     }
 
@@ -412,7 +392,8 @@ void GameServer::runClusterCommand(Session& session, net::Connection& connection
             return;
         }
         Membership m = mine;
-        m.gatewayPort = cluster::kDefaultLinkPort;
+        // The other server's game port: by default the one this server's is.
+        m.gatewayPort = config_.port;
         if (words.size() < 3 || words.size() > 4 ||
             !cluster::parseAddress(words[2], m.gatewayHost, m.gatewayPort)) {
             out("Usage: cluster connect <host[:port]> [name]");

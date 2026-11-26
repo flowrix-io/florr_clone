@@ -68,6 +68,7 @@ EM_JS(void, flix_net_init, (), {
         state: 0,
         peer: "",
         forwardedFor: "",
+        path: "",
         realIp: "",
         cfConnectingIp: "",
         error: "",
@@ -109,9 +110,13 @@ EM_JS(void, flix_net_init, (), {
 
 // --- client ----------------------------------------------------------------
 
-EM_JS(int, flix_ch_connect, (const char* hostPtr, int port), {
+EM_JS(int, flix_ch_connect, (const char* hostPtr, int port, const char* pathPtr, int wss), {
   const net = Module.flixNet;
   const host = UTF8ToString(hostPtr);
+  // A WebSocket at this path and nothing else: /link, or /reach. Empty for a
+  // player's connection, which finds out what the server offers.
+  const path = UTF8ToString(pathPtr);
+  const link = path !== "";
 
   // A listener in this very page takes precedence over the network, exactly
   // as a native connect() to 127.0.0.1 reaches whatever is bound on that port
@@ -148,7 +153,13 @@ EM_JS(int, flix_ch_connect, (const char* hostPtr, int port), {
   // A page dials its own scheme: a document served over https may not open a
   // ws:// socket, and https is also the only context WebTransport exists in.
   // Node has no page, so it asks for the plain one.
-  const secure = typeof location !== "undefined" && location.protocol === "https:";
+  // A server of a sharded game dialling another's game port for the link
+  // between them (`link`) always asks for plain WebSocket at /link, which the
+  // port answers whatever certificate it has: the link is sealed by the
+  // cluster key, not by TLS, and needs no certificate anybody vouches for.
+  // The gateway's check of a server's domain (`wss`) goes the way a player's
+  // page would: over TLS, through Cloudflare.
+  const secure = link ? !!wss : typeof location !== "undefined" && location.protocol === "https:";
   const origin = (secure ? "https://" : "http://") + host + ":" + port;
   const channel = net.channel();
   const id = net.alloc(channel);
@@ -160,7 +171,7 @@ EM_JS(int, flix_ch_connect, (const char* hostPtr, int port), {
   ]);
 
   const openWebSocket = () => {
-    const url = origin.replace(/^http/, "ws") + "/ws";
+    const url = origin.replace(/^http/, "ws") + (link ? path : "/ws");
     // The page has always had WebSocket; Node has had it as a global since
     // 22, which is the floor the deployment already sets for other reasons.
     // There is deliberately no npm fallback -- see the server half below.
@@ -251,7 +262,7 @@ EM_JS(int, flix_ch_connect, (const char* hostPtr, int port), {
 
   (async () => {
     let info = null;
-    if (!webTransportRemembered()) {
+    if (!link && !webTransportRemembered()) {
       try {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), net.infoTimeoutMs);
@@ -659,7 +670,7 @@ EM_JS(int, flix_ch_listen,
   // than leaving a process alive on sockets nobody will read again.
   const open = new Set();
 
-  server.on("upgrade", (request, socket, head) => {
+  const upgrade = (request, socket, head) => {
     const refuse = (status, reason, extra) => {
       socket.write("HTTP/1.1 " + status + " " + reason + "\r\n" +
                    (extra || "") + "Connection: close\r\n\r\n");
@@ -711,6 +722,8 @@ EM_JS(int, flix_ch_listen,
     channel.forwardedFor = hops.slice(-8).join(",").slice(-400);
     channel.realIp = header("x-real-ip");
     channel.cfConnectingIp = header("cf-connecting-ip");
+    // Which socket this is: "/link" is another server of a sharded game.
+    channel.path = (request.url || "/").split("?")[0].slice(0, 200);
     channel.state = 1;
     channel.sender = (bytes) => socket.write(encode(0x2, bytes));
     // What Node is holding and has not handed to the kernel: the same question
@@ -857,20 +870,57 @@ EM_JS(int, flix_ch_listen,
     listener.pending.push(net.alloc(channel));
     // The HTTP parser may have read past the handshake into the first frame.
     if (held.length) { try { consume(null); } catch (e) { drop(e, 1011); } }
-  });
+  };
+  server.on("upgrade", upgrade);
+
+  // The other servers of a sharded game dial this same port for their link,
+  // plainly (flix_ch_connect's `link`), whatever certificate it has: so a
+  // port that speaks https also takes plain connections, told apart by their
+  // first byte (a TLS handshake's is 0x16), and of those only a WebSocket at
+  // /link. Everything a person's browser asks for stays https.
+  let front = server;
+  if (tcpTls) {
+    const plain = require("http").createServer((request, response) => {
+      response.writeHead(400, { "Content-Type": "text/plain" });
+      response.end("this port speaks https\n");
+    });
+    plain.on("upgrade", (request, socket, head) => {
+      if ((request.url || "/").split("?")[0] !== "/link") {
+        socket.write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+      upgrade(request, socket, head);
+    });
+    // How long a socket may say nothing before it is let go of: until its
+    // first byte nobody else has it to time it out.
+    const kFirstByteMs = 15000;
+    front = require("net").createServer((socket) => {
+      socket.setTimeout(kFirstByteMs, () => socket.destroy());
+      socket.on("error", () => { });
+      socket.once("data", (chunk) => {
+        socket.setTimeout(0);
+        socket.pause();
+        socket.unshift(chunk);
+        (chunk[0] === 0x16 ? server : plain).emit("connection", socket);
+        process.nextTick(() => socket.resume());
+      });
+    });
+  }
 
   // EADDRINUSE and its kind arrive here, after listen() has returned. Fatal on
   // the game's own port, as it always was; the link between servers is an
   // addition to a running game, and its owner is told (Listener::lateError).
-  server.on("error", (e) => {
+  front.on("error", (e) => {
     net.fail(listener, e && e.message ? e.message : e);
     if (!wantsNone) throw e;
   });
-  server.listen(port, bindHost || undefined);
+  front.listen(port, bindHost || undefined);
   listener.closer = () => {
     for (const socket of open) { try { socket.destroy(); } catch (e) { } }
     open.clear();
-    try { server.close(); } catch (e) { }
+    try { front.close(); } catch (e) { }
+    if (front !== server) { try { server.close(); } catch (e) { } }
   };
 
   // WebTransport is best-effort and entirely optional: the QUIC stack is a
@@ -1033,7 +1083,7 @@ EM_JS(void, flix_ch_close, (int id), {
 // this header would have no reason to expect it imposes.
 EM_JS(void, flix_ch_text, (int id, int which, char* out, int capacity), {
   const slot = Module.flixNet.get(id);
-  const fields = ["peer", "error", "forwardedFor", "realIp", "cfConnectingIp"];
+  const fields = ["peer", "error", "forwardedFor", "realIp", "cfConnectingIp", "path"];
   const value = !slot || !fields[which] ? "" : String(slot[fields[which]] || "");
   stringToUTF8(value, out, capacity);
 });
@@ -1054,7 +1104,7 @@ void ensureInit() {
 /// handler caps the headers -- and a caller that wanted more would be logging
 /// a JavaScript exception, which is worth truncating rather than allocating
 /// for. `which` indexes flix_ch_text's field list: 0 the peer, 1 the close
-/// reason, 2-4 the forwarding headers.
+/// reason, 2-4 the forwarding headers, 5 the WebSocket's path.
 std::string text(int channel, int which) {
     char buffer[512] = {0};
     flix_ch_text(channel, which, buffer, static_cast<int>(sizeof buffer));
@@ -1063,9 +1113,9 @@ std::string text(int channel, int which) {
 
 } // namespace
 
-int connect(const std::string& host, std::uint16_t port) {
+int connect(const std::string& host, std::uint16_t port, const std::string& path, bool secure) {
     ensureInit();
-    return flix_ch_connect(host.c_str(), static_cast<int>(port));
+    return flix_ch_connect(host.c_str(), static_cast<int>(port), path.c_str(), secure ? 1 : 0);
 }
 
 int listen(std::uint16_t port, const std::string& bindHost, const std::string& certPath,
@@ -1105,6 +1155,8 @@ ForwardedHeaders forwarded(int channel) {
     return headers;
 }
 
+std::string path(int channel) { return text(channel, 5); }
+
 } // namespace flix::net::web
 
 #else   // !__EMSCRIPTEN__
@@ -1114,7 +1166,7 @@ namespace flix::net::web {
 // Natively there is no JavaScript runtime and transport.cpp uses real sockets;
 // these exist so the API links on both builds and a caller can use it without
 // an #ifdef of its own. Every one of them fails.
-int connect(const std::string&, std::uint16_t) { return kInvalid; }
+int connect(const std::string&, std::uint16_t, const std::string&, bool) { return kInvalid; }
 int listen(std::uint16_t, const std::string&, const std::string&, const std::string&,
            const std::string&) {
     return kInvalid;
@@ -1128,6 +1180,7 @@ void close(int) {}
 std::string peer(int) { return {}; }
 std::string error(int) { return {}; }
 ForwardedHeaders forwarded(int) { return {}; }
+std::string path(int) { return {}; }
 
 } // namespace flix::net::web
 

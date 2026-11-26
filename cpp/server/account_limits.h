@@ -183,6 +183,13 @@ std::string clientAddress(const std::string& peer, const net::ForwardedHeaders& 
 /// ranges (https://www.cloudflare.com/ips/).
 bool isCloudflareAddress(const std::string& address);
 
+/// Whether a socket from `peer` came through a proxy this server trusts (a
+/// Cloudflare edge, or nginx or a tunnel on this machine) rather than straight
+/// to the port: one that does carries the proxy's forwarding headers. A
+/// client that came that way is never sent to a server's own port, which is
+/// reachable only straight (cluster/gateway.cpp gwRedirectTarget).
+bool cameThroughProxy(const std::string& peer, const net::ForwardedHeaders& headers);
+
 /// The key an address is limited under.
 ///
 /// Takes a bare address or the transport's `host:port` peer string, drops the

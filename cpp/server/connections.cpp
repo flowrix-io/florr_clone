@@ -6,9 +6,11 @@
 #include <cstdio>
 #include <vector>
 
+#include "server/cluster/linking.h"
 #include "server/routine_log_policy.h"
 #include "server/text.h"
 #include "shared/game/config.h"
+#include "shared/net/websocket.h"
 
 namespace flix {
 
@@ -57,6 +59,20 @@ net::Connection* GameServer::connectionForUser(const std::string& username) {
 }
 
 void GameServer::onConnect(net::Connection& connection) {
+    // Another server, at this port for the link between them: only a server
+    // on its own, with a key, waiting to be joined, has anything to say to
+    // one (a gateway's port takes them in gwDoorOpened). Not a session.
+    if (connection.path() == net::ws::kLinkPath) {
+        if (!gateway_ && !shard_) doorTakes(connection);
+        else connection.closeGracefully();
+        return;
+    }
+    // A gateway checking a domain that leads here, to a server that is none of
+    // its: nothing to answer.
+    if (connection.path() == net::ws::kReachPath) {
+        connection.closeGracefully();
+        return;
+    }
     Session session;
     session.connection = connection.id();
     session.connectedAtMillis = monotonicMillis();
@@ -66,9 +82,10 @@ void GameServer::onConnect(net::Connection& connection) {
 }
 
 void GameServer::onDisconnect(net::Connection& connection, const std::string&) {
-    // This server is done with the client, and the socket is the gateway's.
+    if (door_ && door_->diallers.erase(connection.id()) != 0) return;
+    // This server is done with the client: so is its socket, wherever it is.
     if (shard_) shClientClosed(connection.id());
-    if (gateway_) gwEdgeGone(connection.id());
+    if (gateway_) gwClientClosed(connection.id());
     endSession(connection.id());
 }
 
@@ -121,10 +138,16 @@ void GameServer::reapUngreeted() {
 }
 
 void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
+    // A server dialling to join this one: not a session.
+    if (door_ && door_->diallers.count(connection.id()) != 0) {
+        doorMessage(connection, reader);
+        return;
+    }
     Session* session = sessionFor(connection.id());
     if (!session) return;
 
     const auto id = static_cast<net::ClientMessage>(reader.u8());
+
 
     // Nothing but the handshake is accepted until the protocol has been agreed.
     // A client that skips it cannot reach any game logic at all.
@@ -310,16 +333,23 @@ void GameServer::handleHello(Session& session, net::Connection& connection, Byte
     if (!reader.ok()) { connection.closeGracefully(); return; }
 
     ByteWriter w;
+    const bool ok = writeWelcome(w, version, clientContent);
+    connection.send(w);
+    if (!ok) {
+        connection.closeGracefully();
+        return;
+    }
+    session.stage = SessionStage::Anonymous;
+}
+
+bool GameServer::writeWelcome(ByteWriter& w, std::uint16_t version, std::uint32_t clientContent) const {
     w.u8(static_cast<std::uint8_t>(net::ServerMessage::Welcome));
     w.u16(net::kProtocolVersion);
-
     if (version != net::kProtocolVersion) {
         w.boolean(false);
         w.str("This client speaks protocol " + std::to_string(version) + "; the server speaks " +
               std::to_string(net::kProtocolVersion) + ". Please update.");
-        connection.send(w);
-        connection.closeGracefully();
-        return;
+        return false;
     }
     if (clientContent != content().contentHash()) {
         // Mob and petal stats are read from JSON by both sides. If the two read
@@ -327,15 +357,11 @@ void GameServer::handleHello(Session& session, net::Connection& connection, Byte
         // far better to say so at connect time.
         w.boolean(false);
         w.str("Your game content does not match the server's. Please update.");
-        connection.send(w);
-        connection.closeGracefully();
-        return;
+        return false;
     }
-
     w.boolean(true);
     w.str("");
-    connection.send(w);
-    session.stage = SessionStage::Anonymous;
+    return true;
 }
 
 void GameServer::handlePing(net::Connection& connection, ByteReader& reader) {

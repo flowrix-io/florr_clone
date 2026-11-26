@@ -1,5 +1,5 @@
-// A simulation server of a sharded game: its players' sockets are the
-// gateway's and their rows are on loan. See server/cluster/shard.h and
+// A simulation server of a sharded game: its players are sent to its port by
+// the gateway, and their rows are on loan. See server/cluster/shard.h and
 // cpp/docs/ARCHITECTURE.md, "Sharding".
 
 #include "server/cluster/shard.h"
@@ -11,7 +11,9 @@
 
 #include "server/auto_update.h"
 #include "server/cluster/row_merge.h"
+#include "server/account_limits.h"
 #include "server/crypto.h"
+#include "shared/net/websocket.h"
 #include "server/game_server_internal.h"
 #include "server/systems/dungeons.h"
 #include "server/systems/loot.h"
@@ -64,19 +66,32 @@ bool GameServer::startShard(std::string& errorOut) {
         hosted_.realm[static_cast<std::size_t>(i)] = ubiquitousRealm(static_cast<Realm>(i));
     }
     shard_ = std::make_unique<Shard>(*this);
-    if (config_.membership.role == cluster::Membership::Role::Shard) {
-        shard_->edge = std::make_unique<Shard::Edge>(*this);
-        net::Listener& door = shard_->edge->listener;
-        door.certPath = config_.certPath;
-        door.keyPath = config_.keyPath;
-        door.webRoot = config_.webRoot;
-        door.bindHost = config_.bindHost;
-        if (!door.start(config_.port, errorOut)) return false;
+    // Every server takes its own players' sockets: the gateway relays none.
+    shard_->door = std::make_unique<Shard::Door>(*this);
+    net::Listener& door = shard_->door->listener;
+    door.certPath = config_.certPath;
+    door.keyPath = config_.keyPath;
+    door.webRoot = config_.webRoot;
+    door.bindHost = config_.bindHost;
+    // A client in plain framing, or the gateway checking this server's domain
+    // with a WebSocket at /reach.
+    door.webSockets = true;
+    // The gateway's own simulation has no port: its clients come to the
+    // gateway's, the only one its proxied hostname reaches, and the gateway
+    // hands their sockets over in this process (takeClient).
+    if (!config_.localShard && !door.start(config_.port, errorOut)) {
+        errorOut = "port " + std::to_string(config_.port) + ": " + errorOut;
+        return false;
     }
+    if (!shard_->journal.open(config_.leaseJournalPath, errorOut)) return false;
     shard_->dialer.maxFrameBytes = cluster::kLinkMaxFrame;
+    // The gateway's game port, as a WebSocket at /link, plainly whatever
+    // certificate the port has.
+    shard_->dialer.serverLink = true;
     shard_->dialer.beforeWrite = [this] { shSendRows(); };
-    // The other way the rows leave first: a client's frames are handed to the
-    // link here, so what they show has to be on it already.
+    // The rows go into the lease journal, and onto the link, before any byte
+    // that shows them leaves for a client: the sessions' frames are drained
+    // to their sockets only after this.
     listener_.beforeWrite = [this] { shSendRows(); };
     return true;
 }
@@ -102,7 +117,11 @@ void GameServer::shService(int timeoutMillis) {
             }
         }
     }
-    s.dialer.poll(*this->shard_, timeoutMillis);
+    // Two sets of sockets and one wait, as on the gateway: the short one on
+    // the players', whose input should not sit behind the link's silence.
+    s.dialer.poll(*this->shard_, 0);
+    if (s.door) s.door->listener.poll(*s.door, std::min(timeoutMillis, 1));
+    s.dialer.poll(*this->shard_, 0);
     if (s.dialer.state() == net::Dialer::State::Connecting ||
         s.dialer.state() == net::Dialer::State::Connected) {
         if (now - s.lastHeardMillis > cluster::kLinkSilenceMillis) {
@@ -110,9 +129,9 @@ void GameServer::shService(int timeoutMillis) {
             shLinkLost("it went silent");
         }
     }
-    // Frames queued for players by whatever the link just delivered.
+    // The sessions: a close to report, a frame queued for a socket.
     listener_.poll(*this, 0);
-    if (s.edge) s.edge->listener.poll(*s.edge, 0);
+    s.journal.sync(now);
 }
 
 void GameServer::shFlush() {
@@ -120,7 +139,7 @@ void GameServer::shFlush() {
     listener_.flush();
     shSendRows();
     shard_->dialer.flush();
-    if (shard_->edge) shard_->edge->listener.flush();
+    if (shard_->door) shard_->door->listener.flush();
 }
 
 void GameServer::shLinkOpened(net::Connection&) {
@@ -130,6 +149,9 @@ void GameServer::shLinkOpened(net::Connection&) {
     s.greeting = linkGreeting();
     s.greeting.copy = !config_.copyPath.empty();
     s.greeting.local = config_.localShard;
+    s.greeting.publicHost = config_.publicHost;
+    s.greeting.publicPort = config_.publicPort;
+    s.greeting.port = config_.port;
     ByteWriter w = begin(ToGateway::Hello);
     s.greeting.write(w);
     s.dialer.send(w);
@@ -141,11 +163,15 @@ void GameServer::shLinkLost(const std::string& reason) {
     s.welcomed = false;
     s.slot = 0;
     s.cipher = cluster::LinkCipher{};
-    // Whoever came by this server's port was the gateway's to answer.
-    if (s.edge) s.edge->listener.each([](net::Connection& c) { c.closeGracefully(); });
-    // Nothing here is ours any more. The rows went back with every change
-    // that was ever shown; the players are the gateway's, which is putting
-    // them somewhere else; and the biomes are about to be dealt out again.
+    // Without the gateway nobody here can be answered for: every client goes
+    // back to it to sign in again (and waits there for it, if it is the one
+    // that is gone).
+    if (s.door) s.door->listener.each([](net::Connection& c) { c.closeGracefully(); });
+    if (s.door) s.door->sockets.clear();
+    s.expected.clear();
+    // Nothing here is ours any more. Every row went back over the link or is
+    // in the lease journal, which goes back the moment the link is up again;
+    // the biomes are about to be dealt out again.
     std::vector<net::ConnectionId> all;
     for (const auto& entry : sessions_) all.push_back(entry.first);
     for (const net::ConnectionId id : all) {
@@ -227,13 +253,32 @@ void GameServer::shLinkMessage(ByteReader& frame) {
                 if (!s.cipher.started()) return;
                 s.slot = reader.u8();
                 const std::int64_t mazeDay = reader.i64();
+                const std::uint64_t taken = reader.u64();
+                s.gatewayPublicHost = reader.str();
+                s.gatewayPublicPort = reader.u16();
+                s.gatewayDirectPort = reader.u16();
                 if (!reader.ok()) return;
+                // Straight, it is wherever this server dials it -- unless that
+                // is this machine, which the client knows by its own name.
+                const std::string& dialled = config_.gatewayHost;
+                const bool loopback = dialled.rfind("127.", 0) == 0 || dialled == "localhost" || dialled == "::1";
+                s.gatewayDirectHost = loopback ? std::string() : dialled;
                 s.welcomed = true;
                 s.dialDelayMillis = 250;
                 netIds_.startFrom(cluster::netIdBase(s.slot));
                 setActiveMazeDay(mazeDay);
                 std::printf("[cluster] joined the gateway at %s:%u\n", config_.gatewayHost.c_str(),
                             static_cast<unsigned>(config_.gatewayPort));
+                shRecover(taken);
+                return;
+            }
+            case ToServer::Address: {
+                if (!s.cipher.started()) return;
+                const std::string host = reader.str();
+                const std::uint16_t port = reader.u16();
+                if (!reader.ok()) return;
+                s.gatewayPublicHost = host;
+                s.gatewayPublicPort = port;
                 return;
             }
             case ToServer::Refused: {
@@ -267,15 +312,44 @@ void GameServer::shLinkMessage(ByteReader& frame) {
         case ToServer::CopyComplete:
             shCopyMessage(static_cast<std::uint8_t>(message), reader);
             break;
-        case ToServer::EdgeFrame: {
-            const std::uint32_t edge = reader.u32();
-            net::Connection* client = s.edge ? s.edge->listener.find(edge) : nullptr;
-            if (reader.ok() && client != nullptr) client->send(reader.rest(), reader.remaining());
+        case ToServer::Deliver: {
+            // The gateway's word to a client of ours, behind what this server
+            // has queued for it.
+            const net::ConnectionId id = reader.u32();
+            net::Connection* client = reader.ok() ? listener_.find(id) : nullptr;
+            if (client != nullptr && reader.remaining() > 0) client->send(reader.rest(), reader.remaining());
             break;
         }
-        case ToServer::EdgeClose: {
-            const std::uint32_t edge = reader.u32();
-            if (reader.ok() && s.edge) s.edge->listener.close(edge);
+        case ToServer::Expect: {
+            const net::ConnectionId id = reader.u32();
+            const std::string ticket = reader.str();
+            Session* session = reader.ok() ? sessionFor(id) : nullptr;
+            if (session == nullptr || ticket.empty()) break;
+            session->expected = true;
+            session->transit.clear();
+            session->transitBytes = 0;
+            s.expected[ticket] = Shard::Ticket{id, monotonicMillis() + cluster::kAttachPatienceMillis};
+            break;
+        }
+        case ToServer::Handled: {
+            const net::ConnectionId id = reader.u32();
+            Session* session = reader.ok() ? sessionFor(id) : nullptr;
+            if (session == nullptr) break;
+            session->awaitingGateway = false;
+            // What it sent behind the request, in order, until another such.
+            while (true) {
+                session = sessionFor(id);
+                if (session == nullptr || session->awaitingGateway || session->heldForGateway.empty()) break;
+                const std::vector<std::byte> frame = std::move(session->heldForGateway.front());
+                session->heldForGateway.pop_front();
+                ByteReader held(frame);
+                shClientFrame(id, held);
+            }
+            break;
+        }
+        case ToServer::RowsTaken: {
+            const std::uint64_t seq = reader.u64();
+            if (reader.ok()) s.journal.taken(seq);
             break;
         }
         case ToServer::Leave: shLeave(); break;
@@ -303,6 +377,10 @@ void GameServer::shLinkMessage(ByteReader& frame) {
             departSquad(*session, nullptr, squadDisplayName(squadIdOf(*session)));
             dropBody(*session);
             if (session->lease != 0) shReturnLease(*session, nullptr);
+            // What it was still to be told -- a redirect home, say -- before
+            // the connection is let go of, and the socket with it.
+            listener_.flush();
+            if (Session* still = sessionFor(id)) shCloseDoor(*still);
             listener_.abandon(id);
             endSession(id);
             break;
@@ -332,20 +410,7 @@ void GameServer::shLinkMessage(ByteReader& frame) {
             const std::uint32_t fence = reader.u32();
             if (!reader.ok()) break;
             Session* session = sessionFor(id);
-            bool atMarket = false;
-            if (session != nullptr) {
-                if (session->playing()) persistPlayer(*session);
-                const bool standing = session->playing() && world_.isAlive(session->entity) &&
-                                      !world_.has<Dead>(session->entity);
-                if (const Transform* at = standing ? world_.tryGet<Transform>(session->entity) : nullptr) {
-                    if (npcs_->findService(world_, NpcService::Market, at->position, at->realm,
-                                           kNpcServiceReach + kNpcServiceSlack) != NULL_ENTITY) {
-                        session->marketAccess = true;
-                    }
-                    atMarket = session->marketAccess && session->controlling == 0 &&
-                               session->controlledBy == 0 && !session->arena && !session->eventKit;
-                }
-            }
+            const bool atMarket = session != nullptr && shAtMarket(*session);
             shReturnIdle();
             // Everything asked for before the fence, on the link ahead of its
             // answer: the rows, and the replies.
@@ -412,6 +477,7 @@ void GameServer::shSendRows() {
             const auto lent = s.leased.find(userId);
             const Session* session = lent != s.leased.end() ? sessionFor(lent->second) : nullptr;
             if (session == nullptr || session->lease == 0) return;
+            s.journal.changed(userId, session->lease, text);
             rows.str(userId);
             rows.u32(session->lease);
             rows.u32(session->patchAck);
@@ -425,7 +491,11 @@ void GameServer::shSendRows() {
             shSend(w);
         });
     if (count == 0) return;
+    // On this server's disk before any byte that shows them leaves; on the
+    // link for the gateway, which says when they are on its own.
+    s.journal.flush();
     ByteWriter w = begin(ToGateway::Rows);
+    w.u64(s.journal.lastSeq());
     w.u16(count);
     w.raw(rows.data(), rows.size());
     shSend(w);
@@ -442,11 +512,7 @@ void GameServer::shClient(net::ConnectionId id, ByteReader& reader) {
     if (session == nullptr) {
         net::Connection& connection =
             listener_.adopt(id, info.address, [this, id](const std::byte* data, std::size_t size) {
-                ByteWriter w(size + 8);
-                w.u8(static_cast<std::uint8_t>(ToGateway::ClientFrame));
-                w.u32(id);
-                w.raw(data, size);
-                shSend(w);
+                shDeliver(id, data, size);
             });
         onConnect(connection);
         session = sessionFor(id);
@@ -493,6 +559,7 @@ void GameServer::shGrant(ByteReader& reader) {
     Session* session = sessionFor(id);
     net::Connection* connection = listener_.find(id);
     if (!reader.ok() || session == nullptr || connection == nullptr) return;
+    s.journal.granted(session->userId, lease, row);
     database_.putProgressText(session->userId, std::move(row), false);
     s.leased[session->userId] = id;
     session->lease = lease;
@@ -626,12 +693,16 @@ void GameServer::shReturnLease(Session& session, const FlowerState* onward) {
     // The frames already queued for it first, with the rows behind them.
     listener_.flush();
     shSendRows();
+    const std::string row = database_.progressText(session.userId);
+    const std::uint64_t seq = s.journal.returned(session.userId, session.lease, row);
+    s.journal.flush();
     ByteWriter w = begin(ToGateway::LeaseReturned);
+    w.u64(seq);
     w.u32(session.connection);
     w.str(session.userId);
     w.u32(session.lease);
     w.u32(session.patchAck);
-    w.blob(database_.progressText(session.userId));
+    w.blob(row);
     w.u32(session.profileRevision);
     w.f64(oracleWaitMillis(session.userId));
     w.f64(traderWaitMillis(session.userId));
@@ -699,6 +770,8 @@ void GameServer::shTempAdminEnded(net::ConnectionId id) {
 }
 
 void GameServer::shClientClosed(net::ConnectionId id) {
+    // Its socket here goes with it, and the gateway ends the session.
+    if (Session* session = sessionFor(id)) shCloseDoor(*session);
     ByteWriter w = begin(ToGateway::ClientClose);
     w.u32(id);
     shSend(w);
@@ -1025,30 +1098,318 @@ void GameServer::restoreBossClock(const std::string& biome, double nowMillis) {
 // ---------------------------------------------------------------------------
 // Clients at this server's own port
 // ---------------------------------------------------------------------------
+//
+// The gateway signs a client in and, when its flower comes here, sends its
+// socket here with a ticket (ToServer::Expect, ServerMessage::Redirect). The
+// socket says Hello and Attach; from then on it is the session the gateway
+// numbered, and nothing between the two passes through anyone else.
 
-void GameServer::shEdgeOpened(net::Connection& client) {
-    if (!shard_->welcomed) {
-        // Nobody to ask yet. It will dial again.
-        client.closeGracefully();
+void GameServer::shDoorOpened(net::Connection& socket) {
+    if (shard_->welcomed && socket.path() == net::ws::kReachPath) {
+        // The gateway, come round through this server's domain to see that
+        // it leads here.
+        Shard::Door::Socket reach;
+        reach.reach = true;
+        shard_->door->sockets[socket.id()] = reach;
         return;
     }
-    ByteWriter w = begin(ToGateway::EdgeOpen);
-    w.u32(client.id());
-    w.str(clientAddress(client.peer(), client.forwarded()));
+    // Servers link to the gateway, never to one of its servers.
+    if (!shard_->welcomed || socket.path() == net::ws::kLinkPath) {
+        // Nobody signed in can have been sent here yet: it goes back to the
+        // gateway.
+        socket.closeGracefully();
+        return;
+    }
+    shard_->door->sockets[socket.id()] = Shard::Door::Socket{};
+}
+
+void GameServer::shDoorFrame(net::Connection& socket, ByteReader& reader) {
+    Shard& s = *shard_;
+    const auto at = s.door->sockets.find(socket.id());
+    if (at == s.door->sockets.end() || socket.closing()) return;
+    if (at->second.client != 0) {
+        shClientFrame(at->second.client, reader);
+        return;
+    }
+    if (at->second.reach) {
+        // One nonce of the gateway's, answered with the key over this link's
+        // greeting: this server, the one linked now, and nobody without the
+        // key. Then nothing more.
+        const std::string nonce = reader.str();
+        if (reader.ok() && nonce.size() == 32) {
+            ByteWriter w;
+            w.str(cluster::linkProof(config_.clusterSecret, "reach", nonce, s.greeting.digest()));
+            socket.send(w);
+        }
+        socket.closeGracefully();
+        return;
+    }
+    const auto kind = static_cast<net::ClientMessage>(reader.u8());
+    if (!at->second.greeted) {
+        // The same handshake as anywhere: this build, this content.
+        if (kind != net::ClientMessage::Hello) {
+            socket.closeGracefully();
+            return;
+        }
+        const std::uint16_t version = reader.u16();
+        const std::uint32_t contentHash = reader.u32();
+        const bool attaching = reader.ok() && reader.remaining() > 0 && reader.boolean();
+        ByteWriter w;
+        const bool ok = reader.ok() && writeWelcome(w, version, contentHash);
+        socket.send(w);
+        if (!ok) {
+            socket.closeGracefully();
+            return;
+        }
+        at->second.greeted = true;
+        if (!attaching) {
+            // Not sent here: signing in is the gateway's, and it is there --
+            // a page served from this port, or a bookmark from before this
+            // server was linked. Nothing it says is passed on. Through the
+            // proxy to the gateway's proxied hostname; straight to its port
+            // only from straight here.
+            const bool viaProxy = cameThroughProxy(socket.peer(), socket.forwarded());
+            if (s.gatewayPublicHost.empty() && viaProxy) {
+                sendNotice(socket, net::NoticeSeverity::Bad,
+                           "This server is part of a larger game, and the game's address is not set up yet.");
+            } else {
+                ByteWriter there;
+                there.u8(static_cast<std::uint8_t>(net::ServerMessage::Redirect));
+                there.str(s.gatewayPublicHost.empty() ? s.gatewayDirectHost : s.gatewayPublicHost);
+                there.u16(s.gatewayPublicHost.empty() ? s.gatewayDirectPort : s.gatewayPublicPort);
+                there.str("");
+                socket.send(there);
+            }
+            socket.closeGracefully();
+        }
+        return;
+    }
+    if (kind != net::ClientMessage::Attach) {
+        socket.closeGracefully();
+        return;
+    }
+    const std::string ticket = reader.str();
+    if (!reader.ok()) {
+        socket.closeGracefully();
+        return;
+    }
+    shAttach(socket, ticket);
+}
+
+int GameServer::shardSlot() const { return shard_ && shard_->welcomed ? shard_->slot : 0; }
+
+void GameServer::takeClient(std::unique_ptr<net::Connection> socket, const std::string& ticket,
+                            const std::vector<std::vector<std::byte>>& after) {
+    if (!shard_ || !shard_->door || !socket) return;
+    Shard& s = *shard_;
+    net::Connection& taken = s.door->listener.take(std::move(socket));
+    // Its Hello was the gateway's to answer, and was answered.
+    s.door->sockets[taken.id()].greeted = true;
+    shAttach(taken, ticket);
+    const net::ConnectionId id = taken.id();
+    for (const std::vector<std::byte>& frame : after) {
+        net::Connection* now = s.door->listener.find(id);
+        if (now == nullptr || now->closing()) return;
+        ByteReader reader(frame.data(), frame.size());
+        shDoorFrame(*now, reader);
+    }
+}
+
+void GameServer::shAttach(net::Connection& socket, const std::string& ticket) {
+    Shard& s = *shard_;
+    const auto found = s.expected.find(ticket);
+    Session* session = nullptr;
+    if (found != s.expected.end()) {
+        if (found->second.expiresMillis >= monotonicMillis()) session = sessionFor(found->second.client);
+        s.expected.erase(found);
+    }
+    ByteWriter w;
+    w.u8(static_cast<std::uint8_t>(net::ServerMessage::Attached));
+    if (session == nullptr || !session->expected || session->door != 0) {
+        // It goes back to the gateway, which signs it in again.
+        w.boolean(false);
+        socket.send(w);
+        socket.closeGracefully();
+        return;
+    }
+    const net::ConnectionId id = session->connection;
+    s.door->sockets[socket.id()].client = id;
+    session->door = socket.id();
+    session->expected = false;
+    w.boolean(true);
+    socket.send(w);
+    // What was said to it on its way, already behind the lease journal.
+    bool sentOn = false;
+    for (const std::vector<std::byte>& frame : session->transit) {
+        socket.send(frame.data(), frame.size());
+        // Sent on again before it got here: nothing after that is this socket's.
+        if (!frame.empty() && static_cast<net::ServerMessage>(frame[0]) == net::ServerMessage::Redirect) {
+            sentOn = true;
+            break;
+        }
+    }
+    session->transit.clear();
+    session->transitBytes = 0;
+    if (sentOn) {
+        shCloseDoor(*session);
+        return;
+    }
+    ByteWriter told = begin(ToGateway::Attached);
+    told.u32(id);
+    shSend(told);
+}
+
+void GameServer::shDoorClosed(net::Connection& socket) {
+    Shard& s = *shard_;
+    const auto at = s.door->sockets.find(socket.id());
+    if (at == s.door->sockets.end()) return;
+    const net::ConnectionId id = at->second.client;
+    s.door->sockets.erase(at);
+    Session* session = id != 0 ? sessionFor(id) : nullptr;
+    if (session == nullptr || session->door != socket.id()) return;
+    session->door = 0;
+    // The client is gone: the gateway ends the session, and says so here.
+    ByteWriter w = begin(ToGateway::ClientClose);
+    w.u32(id);
     shSend(w);
 }
 
-void GameServer::shEdgeFrame(net::Connection& client, ByteReader& reader) {
+void GameServer::shCloseDoor(Session& session) {
+    if (session.door == 0 || !shard_->door) return;
+    if (net::Connection* socket = shard_->door->listener.find(session.door)) socket->closeGracefully();
+    shard_->door->sockets.erase(session.door);
+    session.door = 0;
+}
+
+void GameServer::shClientFrame(net::ConnectionId id, ByteReader& reader) {
+    Session* session = sessionFor(id);
+    net::Connection* client = listener_.find(id);
+    if (session == nullptr || client == nullptr || client->closing() || reader.remaining() == 0) return;
+    const auto kind = static_cast<net::ClientMessage>(reader.rest()[0]);
+    if (kind == net::ClientMessage::Hello || kind == net::ClientMessage::Attach) {
+        // A second handshake on a live socket, as handleHello refuses one.
+        client->closeGracefully();
+        return;
+    }
+    const auto hold = [&] {
+        if (session->heldForGateway.size() >= 256) {
+            client->closeGracefully();
+            return;
+        }
+        session->heldForGateway.emplace_back(reader.rest(), reader.rest() + reader.remaining());
+    };
+    // What the flower does is this server's; so is leaving the world with it.
+    const bool here = session->lease != 0 &&
+                      (cluster::whereHandled(kind) == cluster::Where::There ||
+                       kind == net::ClientMessage::LeaveGame);
+    if (here) {
+        // Behind a purchase whose answer it may need -- but a flower still
+        // steers while it shops.
+        if (session->awaitingGateway && kind != net::ClientMessage::Input &&
+            kind != net::ClientMessage::Ping) {
+            hold();
+            return;
+        }
+        onMessage(*client, reader);
+        return;
+    }
+    // The gateway's to answer. Everything sent before it has been carried
+    // out here; the rows it may be about go ahead of it on the link.
+    const bool awaits = cluster::awaitsGateway(kind) && session->lease != 0;
+    if (awaits && session->awaitingGateway) {
+        hold();
+        return;
+    }
+    const bool atMarket = awaits && shAtMarket(*session);
+    shSendRows();
     ByteWriter w(reader.remaining() + 8);
-    w.u8(static_cast<std::uint8_t>(ToGateway::EdgeFrame));
-    w.u32(client.id());
+    w.u8(static_cast<std::uint8_t>(ToGateway::FromClient));
+    w.u32(id);
+    w.boolean(atMarket);
     w.raw(reader.rest(), reader.remaining());
     shSend(w);
+    if (awaits) session->awaitingGateway = true;
 }
 
-void GameServer::shEdgeClosed(net::Connection& client) {
-    ByteWriter w = begin(ToGateway::EdgeClosed);
-    w.u32(client.id());
+void GameServer::shDeliver(net::ConnectionId id, const std::byte* data, std::size_t size) {
+    Session* session = sessionFor(id);
+    if (session == nullptr || size == 0) return;
+    const auto kind = static_cast<net::ServerMessage>(data[0]);
+    if ((session->door != 0 || session->expected) &&
+        (kind == net::ServerMessage::SquadUpdate || kind == net::ServerMessage::SquadInviteReceived)) {
+        // The gateway does not see this frame, and its squad commands go to
+        // wherever the squad is.
+        ByteWriter note = begin(ToGateway::SquadNote);
+        note.u32(id);
+        note.u8(static_cast<std::uint8_t>(kind));
+        note.u8(size > 1 ? static_cast<std::uint8_t>(data[1]) : 0);
+        shSend(note);
+    }
+    if (session->door != 0) {
+        net::Connection* socket = shard_->door ? shard_->door->listener.find(session->door) : nullptr;
+        if (socket == nullptr) return;
+        socket->send(data, size);
+        if (static_cast<net::ServerMessage>(data[0]) == net::ServerMessage::Redirect) {
+            // Sent on elsewhere: this was the last of this socket.
+            shCloseDoor(*session);
+        }
+        return;
+    }
+    if (session->expected) {
+        // On its way here: kept for it.
+        if (session->transitBytes + size > cluster::kMaxTransitBytes) {
+            session->transit.clear();
+            session->transitBytes = 0;
+            session->expected = false;
+            return;
+        }
+        session->transit.emplace_back(data, data + size);
+        session->transitBytes += size;
+        return;
+    }
+    // A client whose socket is elsewhere -- in a squad here, or answered by an
+    // admin command run here: the gateway knows where.
+    ByteWriter w(size + 8);
+    w.u8(static_cast<std::uint8_t>(ToGateway::ClientFrame));
+    w.u32(id);
+    w.raw(data, size);
+    shSend(w);
+}
+
+bool GameServer::shAtMarket(Session& session) {
+    // Banked first: what the body earned is in the row the gateway spends.
+    if (session.playing()) persistPlayer(session);
+    const bool standing = session.playing() && world_.isAlive(session.entity) && !world_.has<Dead>(session.entity);
+    const Transform* at = standing ? world_.tryGet<Transform>(session.entity) : nullptr;
+    if (at == nullptr) return false;
+    if (npcs_->findService(world_, NpcService::Market, at->position, at->realm,
+                           kNpcServiceReach + kNpcServiceSlack) != NULL_ENTITY) {
+        session.marketAccess = true;
+    }
+    return session.marketAccess && session.controlling == 0 && session.controlledBy == 0 &&
+           !session.arena && !session.eventKit;
+}
+
+void GameServer::shRecover(std::uint64_t taken) {
+    Shard& s = *shard_;
+    // Whatever the gateway has is not to be numbered again.
+    s.journal.startFrom(taken);
+    s.journal.taken(taken);
+    const std::vector<cluster::LeaseJournal::Recovery> rows = s.journal.unacknowledged(taken);
+    // Every lease the journal knows of ended with the link: what is handed
+    // over now is all of them will ever hand over.
+    s.journal.closeAll();
+    if (rows.empty()) return;
+    std::printf("[cluster] handing the gateway %zu row%s it never took\n", rows.size(),
+                rows.size() == 1 ? "" : "s");
+    ByteWriter w = begin(ToGateway::Recovered);
+    w.u64(s.journal.lastSeq());
+    w.u16(static_cast<std::uint16_t>(std::min<std::size_t>(rows.size(), 0xFFFF)));
+    for (std::size_t i = 0; i < rows.size() && i < 0xFFFF; ++i) {
+        w.str(rows[i].user);
+        w.blob(rows[i].base);
+        w.blob(rows[i].row);
+    }
     shSend(w);
 }
 
@@ -1132,6 +1493,9 @@ void GameServer::shTick(double) {
     Shard& s = *shard_;
     const double now = monotonicMillis();
     shServiceCopy(now);
+    for (auto it = s.expected.begin(); it != s.expected.end();) {
+        it = it->second.expiresMillis < now ? s.expected.erase(it) : std::next(it);
+    }
     if (!s.welcomed) return;
     for (auto& entry : sessions_) {
         Session& session = entry.second;

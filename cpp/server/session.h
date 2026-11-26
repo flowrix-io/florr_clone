@@ -324,6 +324,34 @@ struct Session {
         /// Every server that knows this client, and the ClientInfo it has.
         std::map<int, std::vector<std::byte>> told;
 
+        /// Where the client's socket is: 0 for the gateway's own port, or the
+        /// slot of the server whose port it was sent to. Never relayed:
+        /// whatever the gateway says to it goes there.
+        int carrier = 0;
+        /// The server it was at before, whose port may still hand on what it
+        /// sent there before it was told to go.
+        int lastCarrier = 0;
+        /// Sent on again before it got home: where to, once it has (the
+        /// redirect there is the last thing in `outbox`).
+        int pendingCarrier = 0;
+        /// Its socket at the gateway's port, or 0.
+        net::ConnectionId door = 0;
+        /// Sent to `carrier` and not there yet: since when, or 0.
+        double transitSinceMillis = 0;
+        /// What a client on its way back to the gateway shows to be let in.
+        std::string ticket;
+        /// What was said to it on its way back, kept until it arrives.
+        std::deque<std::vector<std::byte>> outbox;
+        std::size_t outboxBytes = 0;
+        /// The frame being carried out came from the server the client is at,
+        /// which had carried out everything sent before it (FromClient): a
+        /// fence is already behind it, and this is what it found.
+        bool viaCarrier = false;
+        bool carrierAtMarket = false;
+        /// Its socket here came through a proxy (Cloudflare): it is only ever
+        /// sent to a server's proxied hostname, never to its own port.
+        bool viaProxy = false;
+
         bool busy() const { return fenced || leaving || entering != nullptr; }
     };
     Elsewhere elsewhere;
@@ -338,6 +366,17 @@ struct Session {
     std::string elsewhereBiome;
     /// The ClientState the gateway was last told.
     std::vector<std::byte> toldState;
+    /// On a simulation server: the client's socket at this server's own port,
+    /// or 0 for a client whose socket is elsewhere.
+    net::ConnectionId door = 0;
+    /// The gateway is sending the client here: what is said to it waits for it.
+    bool expected = false;
+    std::deque<std::vector<std::byte>> transit;
+    std::size_t transitBytes = 0;
+    /// Holding what it sends behind a request the gateway has not yet carried
+    /// out (cluster::awaitsGateway), whose answer they may need.
+    bool awaitingGateway = false;
+    std::deque<std::vector<std::byte>> heldForGateway;
 
     bool authenticated() const {
         return stage == SessionStage::Authenticated || stage == SessionStage::Playing;

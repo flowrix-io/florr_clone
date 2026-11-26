@@ -88,6 +88,7 @@ const char* clientMessageName(std::uint8_t id) {
         case net::ClientMessage::ClaimTrialReward:    return "claimTrialReward";
         case net::ClientMessage::StartTrialChamber:   return "startTrialChamber";
         case net::ClientMessage::GuildSetOfficer:     return "guildSetOfficer";
+        case net::ClientMessage::Attach:              return "attach";
     }
     return "unknown";
 }
@@ -147,6 +148,8 @@ const char* serverMessageName(std::uint8_t id) {
         case net::ServerMessage::TrialProgress:       return "trialProgress";
         case net::ServerMessage::TrialState:          return "trialState";
         case net::ServerMessage::TrialRewardClaimed:  return "trialRewardClaimed";
+        case net::ServerMessage::Redirect:            return "redirect";
+        case net::ServerMessage::Attached:            return "attached";
     }
     return "unknown";
 }
@@ -158,6 +161,11 @@ NetClient::~NetClient() = default;
 
 bool NetClient::connect(const std::string& host, std::uint16_t port) {
     disconnect();
+    // Wherever the last socket had been sent, a connect is to the server the
+    // session lives on.
+    attaching_ = false;
+    redirectPending_ = false;
+    heldWhileAttaching_.clear();
     // Remembered before the dial, so a redial has somewhere to go even when
     // this attempt is the one that failed.
     host_ = host;
@@ -224,7 +232,28 @@ void NetClient::poll(int timeoutMillis) {
     }
     if (status_ == Status::Offline || status_ == Status::Failed) return;
     dialer_.poll(*this, timeoutMillis);
+    // Outside the dialer's own poll, which a redirect's disconnect would pull
+    // the socket out from under.
+    if (moveHomePending_) {
+        moveHomePending_ = false;
+        const std::string host = moveHomeHost_.empty() ? host_ : moveHomeHost_;
+        const std::uint16_t port = moveHomePort_ == 0 ? port_ : moveHomePort_;
+        // Its handshake is a reconnection, so whatever was asked of the server
+        // that sent it here is asked again of this one.
+        connect(host, port);
+        return;
+    } else if (homePending_) {
+        returnHome();
+    } else if (redirectPending_) {
+        followRedirect();
+    }
     dialer_.flush();
+    if (attaching_ && dialer_.state() == net::Dialer::State::Failed) {
+        // The server it was sent to cannot be reached: back to the one the
+        // session started on, which signs it in again.
+        returnHome();
+        return;
+    }
     if (dialer_.state() == net::Dialer::State::Failed && status_ != Status::Failed) {
         status_ = Status::Failed;
         if (lastError_.empty()) lastError_ = dialer_.error();
@@ -245,6 +274,18 @@ void NetClient::send(ByteWriter& w) {
     if (!w.empty()) {
         const auto id = static_cast<std::uint8_t>(w.data()[0]);
         outgoingBytes_[id] += static_cast<std::uint32_t>(w.size() + 4);
+        if (attaching_) {
+            // Between two servers: the new one has not let this socket in
+            // yet. Steering is stale by the time it would arrive; everything
+            // else waits for it.
+            const auto message = static_cast<net::ClientMessage>(id);
+            if (message == net::ClientMessage::Hello || message == net::ClientMessage::Attach) {
+                dialer_.send(w);
+            } else if (message != net::ClientMessage::Input && message != net::ClientMessage::Ping) {
+                heldWhileAttaching_.emplace_back(w.data(), w.data() + w.size());
+            }
+            return;
+        }
     }
     dialer_.send(w);
 }
@@ -252,7 +293,9 @@ void NetClient::send(ByteWriter& w) {
 // -- outgoing ---------------------------------------------------------------
 
 void NetClient::onConnect(net::Connection&) {
-    status_ = Status::Handshaking;
+    // A redirected socket carries on the session as it stood: logged in, or
+    // playing. Only a fresh dial starts over at the handshake.
+    if (!attaching_) status_ = Status::Handshaking;
     forgetSkinRequests();
     // The handshake goes out unprompted: the server answers with Welcome, and
     // until then nothing else this client sends will be accepted.
@@ -260,7 +303,15 @@ void NetClient::onConnect(net::Connection&) {
     beginMessage(w, net::ClientMessage::Hello);
     w.u16(net::kProtocolVersion);
     w.u32(contentHash);
+    w.boolean(attaching_);
     send(w);
+    if (attaching_) {
+        // Sent here by a Redirect: the session goes on, it is not signed in
+        // again.
+        beginMessage(w, net::ClientMessage::Attach);
+        w.str(redirectTicket_);
+        send(w);
+    }
 }
 
 void NetClient::requestRegister(const std::string& username, const std::string& password) {
@@ -1194,6 +1245,8 @@ void NetClient::onMessage(net::Connection& connection, ByteReader& reader) {
             case net::ServerMessage::Notice:
             case net::ServerMessage::Kick:
             case net::ServerMessage::Pong:
+            case net::ServerMessage::Redirect:
+            case net::ServerMessage::Attached:
                 break;
             default:
                 return;
@@ -1202,6 +1255,8 @@ void NetClient::onMessage(net::Connection& connection, ByteReader& reader) {
 
     switch (id) {
         case net::ServerMessage::Welcome:      handleWelcome(reader); break;
+        case net::ServerMessage::Redirect:     handleRedirect(reader); break;
+        case net::ServerMessage::Attached:     handleAttached(reader); break;
         case net::ServerMessage::AuthResult:   handleAuthResult(reader); break;
         case net::ServerMessage::Profile:      handleProfile(reader); break;
         case net::ServerMessage::ProfileDelta: handleProfileDelta(reader); break;
@@ -1283,6 +1338,19 @@ void NetClient::onMessage(net::Connection& connection, ByteReader& reader) {
 }
 
 void NetClient::onDisconnect(net::Connection&, const std::string& reason) {
+    if (attaching_) {
+        // Refused at the door it was sent to, or the door went: home.
+        redirectPending_ = false;
+        attaching_ = false;
+        heldWhileAttaching_.clear();
+        status_ = Status::Failed;
+        lastError_ = reason;
+        view_.clear();
+        resetAdminDashboard();
+        retryDelayMillis_ = 0;
+        retryAtMillis_ = renderClockMillis();
+        return;
+    }
     status_ = Status::Failed;
     lastError_ = reason;
     view_.clear();
@@ -1298,11 +1366,88 @@ void NetClient::onDisconnect(net::Connection&, const std::string& reason) {
     armReconnect();
 }
 
+void NetClient::handleRedirect(ByteReader& reader) {
+    const std::string host = reader.str();
+    const std::uint16_t port = reader.u16();
+    const std::string ticket = reader.str();
+    if (!reader.ok()) return;
+    if (ticket.empty()) {
+        // Not a session moving: the server this client dialled is one of a
+        // sharded game's, and the game is signed in to at host:port. That is
+        // home from now on.
+        moveHomeHost_ = host;
+        moveHomePort_ = port;
+        moveHomePending_ = true;
+        return;
+    }
+    redirectHost_ = host;
+    redirectPort_ = port;
+    redirectTicket_ = ticket;
+    redirectPending_ = true;
+}
+
+void NetClient::followRedirect() {
+    redirectPending_ = false;
+    // An empty host is the one this client first dialled, and port 0 its
+    // port: the gateway's own, whose own simulation takes it there too.
+    const std::string host = redirectHost_.empty() ? host_ : redirectHost_;
+    const std::uint16_t port = redirectPort_ == 0 ? port_ : redirectPort_;
+    dialer_.disconnect();
+    attaching_ = true;
+    heldWhileAttaching_.clear();
+    std::string error;
+    if (!dialer_.connect(host, port, error)) returnHome();
+}
+
+void NetClient::returnHome() {
+    homePending_ = false;
+    redirectPending_ = false;
+    attaching_ = false;
+    heldWhileAttaching_.clear();
+    // A fresh dial, so its handshake is a reconnection and the app resumes the
+    // session this client still holds the token of.
+    const std::string host = host_;
+    const std::uint16_t port = port_;
+    retryDelayMillis_ = 0;
+    connect(host, port);
+}
+
+void NetClient::handleAttached(ByteReader& reader) {
+    const bool ok = reader.boolean();
+    if (!reader.ok() || !attaching_) return;
+    attaching_ = false;
+    if (ok) {
+        // In: what was asked on the way goes now, in order.
+        for (const std::vector<std::byte>& frame : heldWhileAttaching_) {
+            ByteWriter w;
+            w.raw(frame.data(), frame.size());
+            dialer_.send(w);
+        }
+        heldWhileAttaching_.clear();
+        return;
+    }
+    heldWhileAttaching_.clear();
+    if (redirectHost_.empty() && redirectPort_ == 0) {
+        // Sent home with a ticket it no longer honours -- it restarted, say.
+        // This socket is home: sign in again on it, as after any drop.
+        status_ = Status::Ready;
+        reconnected = true;
+        return;
+    }
+    homePending_ = true;
+}
+
 void NetClient::handleWelcome(ByteReader& reader) {
     const std::uint16_t version = reader.u16();
     const bool accepted = reader.boolean();
     const std::string reason = reader.str();
     if (!reader.ok()) return;
+    if (attaching_) {
+        // The servers of one game are one build: a refusal here is a server
+        // mid-update, and the one the session started on knows what to do.
+        if (!accepted) homePending_ = true;
+        return;
+    }
 
     if (!accepted) {
         status_ = Status::Failed;

@@ -119,6 +119,17 @@ TEST(two_headers_that_disagree_about_nginxs_hop_are_both_disbelieved) {
              std::string("127.0.0.1"));
 }
 
+TEST(only_a_trusted_proxys_forwarded_socket_came_through_a_proxy) {
+    // Cloudflare's edge, or nginx or a tunnel on this box, saying who for.
+    CHECK(cameThroughProxy("173.245.48.10:443", headers("", "", "203.0.113.7")));
+    CHECK(cameThroughProxy("127.0.0.1:50000", headers("203.0.113.7")));
+    // Straight to the port: a local client, a LAN one, and a stranger who
+    // writes the headers itself.
+    CHECK(!cameThroughProxy("127.0.0.1:50000", headers("")));
+    CHECK(!cameThroughProxy("192.168.1.20:50000", headers("203.0.113.7")));
+    CHECK(!cameThroughProxy("203.0.113.9:50000", headers("", "", "203.0.113.7")));
+}
+
 TEST(behind_cloudflare_the_visitor_is_the_one_cloudflare_names) {
     // Cloudflare -> nginx -> here. nginx's hop is a Cloudflare edge, so the
     // visitor is CF-Connecting-IP, which Cloudflare overwrites.

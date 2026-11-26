@@ -343,11 +343,15 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
     setActiveMazeDay(currentMazeDay());
 
     listener_.certPath = config.certPath;
+    // Another server may dial it to join (`/admin cluster connect`), as a
+    // WebSocket at /link.
+    listener_.webSockets = true;
     listener_.keyPath = config.keyPath;
     listener_.webRoot = config.webRoot;
     listener_.bindHost = config.bindHost;
-    // A server of a sharded game is reached through the gateway alone.
-    if (!shard && !listener_.start(config.port, errorOut)) return false;
+    // In a sharded game the port is a door the sessions' sockets come in by,
+    // and the sessions are adopted (Gateway::door, Shard::Door).
+    if (!shard && !gateway_ && !listener_.start(config.port, errorOut)) return false;
 
     // Seeded before the first tick can set it: a message may be serviced ahead
     // of the first tick, and a deadline stamped from a zero clock is one that
@@ -385,11 +389,11 @@ void GameServer::shutdown() {
         gwFlush();
     }
     listener_.stop();
-    if (door_) door_->listener.stop();
-    if (gateway_) gateway_->listener.stop();
+    if (gateway_) gateway_->door.stop();
     if (shard_) {
         shard_->dialer.disconnect();
-        if (shard_->edge) shard_->edge->listener.stop();
+        if (shard_->door) shard_->door->listener.stop();
+        shard_->journal.close();
     }
 }
 
@@ -630,13 +634,17 @@ void GameServer::serviceNetwork(int timeoutMillis) {
         return;
     }
     if (gateway_) {
-        // Two sets of sockets and one wait: a short one on the clients', so a
-        // server's snapshot is never left sitting behind it for long.
-        gwService();
-        timeoutMillis = std::min(timeoutMillis, 1);
+        // The game's port, clients and links alike: a short wait, so that a
+        // server's word for a client is never left sitting behind it.
+        gateway_->door.poll(gateway_->doorHandler, std::min(timeoutMillis, 1));
+        gwHandOver();
+        // The sessions: only a close to report, they have no sockets.
+        listener_.poll(*this, 0);
+        gateway_->door.poll(gateway_->doorHandler, 0);
+        gwHandOver();
+        return;
     }
     listener_.poll(*this, timeoutMillis);
-    if (gateway_) gwService();
 }
 
 void GameServer::serviceArrivals() {
@@ -879,6 +887,11 @@ void GameServer::tick(double nowMillis) {
     // XP the snapshot just told everybody about goes with it.
     syncLiveProgress();
     markTickPhase("progress");
+    // What the listener's beforeWrite would do on the first socket it writes
+    // to, done here so the profile tells the journal and the sockets apart.
+    // Same order: on disk before any byte leaves.
+    database_.flushJournal();
+    markTickPhase("journal");
     flushNetwork();
     // Whatever changed this tick with nothing sent about it: see above.
     database_.flushJournal();

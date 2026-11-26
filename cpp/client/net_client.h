@@ -1181,6 +1181,15 @@ private:
     void forgetAccount();
 
     void handleWelcome(ByteReader&);
+    /// A sharded game's server is done with this socket: the session goes on
+    /// at another server's port (net::ServerMessage::Redirect).
+    void handleRedirect(ByteReader&);
+    void handleAttached(ByteReader&);
+    /// Dials where the last Redirect said, as the same session.
+    void followRedirect();
+    /// Gives up on a redirect: dials the server connect() was pointed at, and
+    /// signs in again there.
+    void returnHome();
     void handleAuthResult(ByteReader&);
     void handleProfile(ByteReader&);
     void handleProfileDelta(ByteReader&);
@@ -1286,8 +1295,26 @@ private:
     double retryAtMillis_ = 0;
     double retryDelayMillis_ = 0;
     /// How many handshakes this client has completed. The first is the
-    /// ordinary connect; every one after it is a reconnection.
+    /// ordinary connect; every one after it is a reconnection. A redirect's
+    /// is neither: the session never stopped.
     int handshakes_ = 0;
+    /// Where the last Redirect sent this socket (empty host and port 0: home),
+    /// and the ticket to show there.
+    std::string redirectHost_;
+    std::uint16_t redirectPort_ = 0;
+    std::string redirectTicket_;
+    /// A Redirect to follow, or a failed one to give up on, once the dialer's
+    /// poll has returned.
+    bool redirectPending_ = false;
+    bool homePending_ = false;
+    /// Told that the game is signed in to somewhere else (a Redirect with no
+    /// ticket): where, to dial once the dialer's poll has returned.
+    std::string moveHomeHost_;
+    std::uint16_t moveHomePort_ = 0;
+    bool moveHomePending_ = false;
+    /// Dialled by a Redirect and not yet let in: what is sent meanwhile waits.
+    bool attaching_ = false;
+    std::vector<std::vector<std::byte>> heldWhileAttaching_;
     std::string lastError_;
 
     WorldView view_;

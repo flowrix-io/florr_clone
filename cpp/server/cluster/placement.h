@@ -36,6 +36,9 @@ struct ServerLoad {
     bool up = true;
     /// Its measured tick, in milliseconds: what "overloaded" is read from.
     double tickMillis = 0.0;
+    /// May be dealt every biome: the gateway's own simulation, when it is the
+    /// only server players can reach. Any other is never given all of them.
+    bool takesAll = false;
 };
 
 struct Move {

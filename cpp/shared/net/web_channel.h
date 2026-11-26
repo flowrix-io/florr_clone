@@ -57,8 +57,13 @@ enum class State : int {
 /// Returns a channel in State::Connecting, or kInvalid. The transport is
 /// chosen while it connects: /transport-info is asked what the server offers,
 /// WebTransport is tried when everything allows it, and WebSocket is used
-/// otherwise or after any failure.
-int connect(const std::string& host, std::uint16_t port);
+/// otherwise or after any failure. A `path`: a WebSocket at it and nothing
+/// else, no /transport-info and no WebTransport -- /link, for a server of a
+/// sharded game dialling another's game port for the link between them, plain
+/// WebSocket, which that port takes even when it speaks https (see listen());
+/// /reach, the gateway's check of a server's domain, over TLS (`secure`) as a
+/// player's page would reach it.
+int connect(const std::string& host, std::uint16_t port, const std::string& path = {}, bool secure = false);
 
 /// Starts a server listener on `port`.
 ///
@@ -113,6 +118,10 @@ std::string peer(int channel);
 /// The forwarding headers of the WebSocket upgrade that opened `channel`, as
 /// the client (or a proxy) sent them. Empty for every other kind of channel.
 ForwardedHeaders forwarded(int channel);
+
+/// The path the WebSocket that opened `channel` asked for ("/ws", "/link"), or
+/// empty for every other kind of channel.
+std::string path(int channel);
 
 /// Why a channel closed, when it closed for a reason worth reporting.
 std::string error(int channel);

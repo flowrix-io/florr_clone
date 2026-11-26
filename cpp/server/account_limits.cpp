@@ -292,6 +292,11 @@ bool isCloudflareAddress(const std::string& address) {
     return parseAddress(address, parsed) && isCloudflare(parsed);
 }
 
+bool cameThroughProxy(const std::string& peer, const net::ForwardedHeaders& headers) {
+    Address parsed;
+    return !headers.empty() && parseAddress(peer, parsed) && trustedProxy(parsed);
+}
+
 std::string clientAddress(const std::string& peer, const net::ForwardedHeaders& headers) {
     Address current;
     if (!parseAddress(peer, current)) {

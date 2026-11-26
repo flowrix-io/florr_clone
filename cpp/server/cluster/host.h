@@ -50,6 +50,14 @@ public:
 
 private:
     bool boot(std::string& errorOut);
+    /// The gateway's own simulation, from gatewayConfig_: at boot for
+    /// --simulate, or later, when a server the gateway would use cannot be
+    /// reached (GameServer::wantsLocalSimulation).
+    bool startSimulation(std::unique_ptr<GameServer>& simulation, std::string& errorOut);
+
+    /// The gateway's config as it was started, for its own simulation.
+    ServerConfig gatewayConfig_;
+    double nextSimulationMillis_ = 0;
 
     ServerConfig base_;
     bool pinned_ = false;
