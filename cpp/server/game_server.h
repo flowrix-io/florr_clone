@@ -2289,6 +2289,12 @@ private:
     double debugTickAccumMillis_ = 0;
     double debugTickMaxMillis_ = 0;
     int debugTickSamples_ = 0;
+    /// Snapshots replicate() held back from a connection still draining the
+    /// last ones, since the stats line last printed.
+    std::uint64_t skippedSnapshots_ = 0;
+    /// Printed at most once a minute, so a crowd on slow lines is a line in
+    /// the log rather than the log.
+    double nextSkipLogMillis_ = 0.0;
     double nextDebugStatsMillis_ = 0;
 
     /// Where the current tick's time went: tick() stamps the end of each of

@@ -66,6 +66,9 @@ public:
     /// connection whose backlog grows without bound rather than buying memory
     /// on behalf of a client that has stopped reading.
     std::size_t pendingBytes() const { return outbound_.size() - outboundSent_; }
+    /// Everything sent and not yet gone: queued here plus what the transport
+    /// is still holding (zero for a native socket, see transportBuffered).
+    std::size_t backlogBytes() const { return pendingBytes() + transportBuffered(); }
 
     /// Every byte read off the socket, and every byte handed to it, since it
     /// opened. The two ends of one connection compare these to know whether

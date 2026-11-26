@@ -87,6 +87,10 @@ constexpr double kDeltaSmoothing = 0.1;
 /// A tick this long gets its phase split logged. Three nominal ticks: a
 /// healthy tick is a few milliseconds, and one this long is a visible hitch.
 constexpr double kSlowTickLogMillis = net::kTickMillis * 3.0;
+/// The most a connection may still be holding -- queued here plus what the
+/// socket has not taken -- and be sent another snapshot. A couple of busy
+/// snapshots: past it the player is already behind, and more only queue.
+constexpr std::size_t kSnapshotBacklogBytes = 48u * 1024u;
 
 /// "Legendary Soldier Ant": the killer's tier and its display name.
 ///
@@ -603,6 +607,14 @@ bool GameServer::step() {
                 std::printf("%s\n", slowTickLine_.c_str());
                 std::fflush(stdout);
                 slowTickLine_.clear();
+            }
+            if (skippedSnapshots_ > 0 && tickNow >= nextSkipLogMillis_) {
+                std::printf("[net] %llu snapshots held back from connections behind on their "
+                            "download\n",
+                            static_cast<unsigned long long>(skippedSnapshots_));
+                std::fflush(stdout);
+                skippedSnapshots_ = 0;
+                nextSkipLogMillis_ = tickNow + 60000.0;
             }
             slowTickWorstMillis_ = 0;
         }
@@ -1146,6 +1158,16 @@ void GameServer::replicate(double nowMillis) {
         if (!session.playing()) continue;
         net::Connection* connection = listener_.find(session.connection);
         if (!connection) continue;
+        // A connection still holding what it was sent is not handed more. Sent
+        // anyway, every snapshot waits behind the ones before it: a player on
+        // a slow line sees -- and steers -- a world seconds old, and the queue
+        // only grows until the backlog cap drops them. Skipped, the view is
+        // untouched, so the next snapshot that does go is a delta against the
+        // last one that went and carries everything this one would have.
+        if (connection->backlogBytes() > kSnapshotBacklogBytes) {
+            ++skippedSnapshots_;
+            continue;
+        }
 
         // Revalidate even when a modified client stops reporting its window.
         // Removing camera equipment must revoke the previously granted view.

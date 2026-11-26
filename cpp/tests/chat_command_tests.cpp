@@ -4681,6 +4681,12 @@ TEST(players_online_counts_signed_in_people) {
     NetClient two;
     CHECK(loginAs(h, one, "one", "password7"));
     CHECK(loginAs(h, two, "two", "password7"));
+    // One in a world, one still on the title screen.
+    one.joinGame(1000, 800, {}, "One");
+    CHECK(h.stepUntil({&one, &two}, [&] { return one.selfPlaced(); }));
     CHECK(say(h, one, "/players-online"));
-    CHECK(h.stepUntil({&one, &two}, [&] { return sawText(one, "Players online: <b>2</b>"); }));
+    CHECK(h.stepUntil({&one, &two}, [&] {
+        return sawText(one, "Players online: <b>2</b> (in game: <b>1</b>, on title screen: "
+                            "<b>1</b>)");
+    }));
 }
