@@ -33,7 +33,7 @@ namespace flix::cluster {
 /// Bump whenever anything below changes shape. Checked with the client
 /// protocol's version and the content hash: a gateway takes no server built
 /// from another tree.
-inline constexpr std::uint32_t kLinkVersion = 4;
+inline constexpr std::uint32_t kLinkVersion = 5;
 
 /// A frame between servers carries a whole guild table or a whole account.
 inline constexpr std::uint32_t kLinkMaxFrame = 64u << 20;
@@ -129,6 +129,9 @@ enum class ToServer : std::uint8_t {
     CopyBegin,       ///< the whole database follows
     CopyRows,        ///< u64 seq, u16 n, { u8 table, str key, u8 exists, blob text }*
     CopyComplete,    ///< u64 seq -- all of it has been sent
+    Address,         ///< str host, u16 port -- where clients that come through the
+                     ///< proxy sign in, as Welcome's, since an admin set it
+                     ///< (`/admin shards domain gateway`)
 };
 
 /// The first thing a server says. In the clear, and believed only once the
@@ -150,8 +153,10 @@ struct Greeting {
     /// The gateway's own simulation, in the gateway's own process.
     bool local = false;
     /// Where clients that come through the game's proxy (Cloudflare) reach
-    /// this server: its own hostname there, or empty for none. A port of 0 is
-    /// whichever the client reached the gateway on (443, behind Cloudflare).
+    /// this server: its own hostname there (--public-host), or empty for none.
+    /// A port of 0 is whichever the client reached the gateway on (443, behind
+    /// Cloudflare). A domain an admin gives it on the gateway (`/admin shards
+    /// domain`) wins: a server knows its address, not its name.
     std::string publicHost;
     std::uint16_t publicPort = 0;
     /// The port it takes clients on itself. Only a client that dialled the

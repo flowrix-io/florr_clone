@@ -73,7 +73,10 @@ bool GameServer::startShard(std::string& errorOut) {
     door.keyPath = config_.keyPath;
     door.webRoot = config_.webRoot;
     door.bindHost = config_.bindHost;
-    if (!door.start(config_.port, errorOut)) {
+    // The gateway's own simulation has no port: its clients come to the
+    // gateway's, the only one its proxied hostname reaches, and the gateway
+    // hands their sockets over in this process (takeClient).
+    if (!config_.localShard && !door.start(config_.port, errorOut)) {
         errorOut = "port " + std::to_string(config_.port) + ": " + errorOut;
         return false;
     }
@@ -264,6 +267,15 @@ void GameServer::shLinkMessage(ByteReader& frame) {
                 std::printf("[cluster] joined the gateway at %s:%u\n", config_.gatewayHost.c_str(),
                             static_cast<unsigned>(config_.gatewayPort));
                 shRecover(taken);
+                return;
+            }
+            case ToServer::Address: {
+                if (!s.cipher.started()) return;
+                const std::string host = reader.str();
+                const std::uint16_t port = reader.u16();
+                if (!reader.ok()) return;
+                s.gatewayPublicHost = host;
+                s.gatewayPublicPort = port;
                 return;
             }
             case ToServer::Refused: {
@@ -1158,6 +1170,25 @@ void GameServer::shDoorFrame(net::Connection& socket, ByteReader& reader) {
         return;
     }
     shAttach(socket, ticket);
+}
+
+int GameServer::shardSlot() const { return shard_ && shard_->welcomed ? shard_->slot : 0; }
+
+void GameServer::takeClient(std::unique_ptr<net::Connection> socket, const std::string& ticket,
+                            const std::vector<std::vector<std::byte>>& after) {
+    if (!shard_ || !shard_->door || !socket) return;
+    Shard& s = *shard_;
+    net::Connection& taken = s.door->listener.take(std::move(socket));
+    // Its Hello was the gateway's to answer, and was answered.
+    s.door->sockets[taken.id()].greeted = true;
+    shAttach(taken, ticket);
+    const net::ConnectionId id = taken.id();
+    for (const std::vector<std::byte>& frame : after) {
+        net::Connection* now = s.door->listener.find(id);
+        if (now == nullptr || now->closing()) return;
+        ByteReader reader(frame.data(), frame.size());
+        shDoorFrame(*now, reader);
+    }
 }
 
 void GameServer::shAttach(net::Connection& socket, const std::string& ticket) {

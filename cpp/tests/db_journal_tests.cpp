@@ -521,6 +521,64 @@ TEST(a_player_row_written_as_text_is_byte_for_byte_its_tree) {
     CHECK_EQ(mismatches, 0);
 }
 
+TEST(live_xp_rewrites_a_row_from_its_kept_parts_and_any_other_change_drops_them) {
+    // setLiveProgress runs on every tick a flower's XP or stars move, and its
+    // row is rewritten for the journal each time from the inventory and kill
+    // counts it rendered last. Those must never be what a change to the bag,
+    // the loadout or the kills is written from.
+    Database db;
+    const std::string path = seededDatabase("live-parts", db);
+    const std::string id = "p-live";
+    {
+        PlayerRecord& record = db.progress(id);
+        record.addItem(Rarity::Rare, "petal_rose", 3);
+        record.recordKill("ladybug", Rarity::Common);
+        StoredItem worn;
+        worn.rarity = Rarity::Rare;
+        worn.petalType = "rose";
+        record.loadout.push_back(worn);
+    }
+    const auto fresh = [&] {
+        PlayerRecord copy = *std::as_const(db).findProgress(id);   // a copy keeps no parts
+        CHECK(!copy.rendered.valid);
+        return playerRecordJson(copy).dump(0);
+    };
+    db.setLiveProgress(id, false, 120, 2);
+    CHECK_EQ(db.progressText(id), fresh());
+    CHECK(std::as_const(db).findProgress(id)->rendered.valid);
+    db.setLiveProgress(id, true, 40, 3);
+    CHECK_EQ(db.progressText(id), fresh());
+    CHECK(db.progressText(id).find("\"mazeTotalXP\":40") != std::string::npos);
+
+    // The bag, the loadout and the kills, each through the mutable accessor.
+    db.progress(id).addItem(Rarity::Epic, "petal_stinger", 1);
+    CHECK(!std::as_const(db).findProgress(id)->rendered.valid);
+    db.setLiveProgress(id, false, 121, 2);
+    CHECK_EQ(db.progressText(id), fresh());
+    CHECK(db.progressText(id).find("petal_stinger") != std::string::npos);
+    db.progress(id).loadout.clear();
+    db.setLiveProgress(id, false, 122, 2);
+    CHECK_EQ(db.progressText(id), fresh());
+    db.progress(id).recordKill("bee", Rarity::Common);
+    db.setLiveProgress(id, false, 123, 2);
+    CHECK_EQ(db.progressText(id), fresh());
+    CHECK(db.progressText(id).find("\"bee\"") != std::string::npos);
+
+    // And the journal and the next load agree with all of it.
+    CHECK(db.flushJournal());
+    const std::string copy = journalScratch("live-parts-copy");
+    copyAsKilled(path, copy);
+    Database reloaded;
+    std::string error;
+    CHECK(reloaded.load(copy, error));
+    const PlayerRecord* back = std::as_const(reloaded).findProgress(id);
+    CHECK(back != nullptr);
+    if (back == nullptr) return;
+    CHECK_EQ(back->totalXp, 123.0);
+    CHECK_EQ(back->mazeTotalXp, 40.0);
+    CHECK_EQ(reloaded.progressText(id), db.progressText(id));
+}
+
 TEST(a_backup_restored_after_a_clean_stop_replaces_the_empty_journal_quietly) {
     // A clean stop saves, which leaves the journal a header and nothing else.
     // Restoring a backup over the file then is the documented procedure, and

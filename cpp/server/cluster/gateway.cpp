@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <set>
 
 #include "server/cluster/row_merge.h"
 #include "server/account_limits.h"
@@ -106,6 +107,7 @@ bool GameServer::startGateway(std::string& errorOut) {
     g.startedMillis = monotonicMillis();
     gwBuildBiomes();
     gwReadDistribution();
+    gwReadDomains();
     database_.onRowWritten = [this](Database::Part part, const std::string& key) {
         for (const auto& entry : gateway_->servers) {
             if (!entry.second.copying) continue;
@@ -293,7 +295,8 @@ bool GameServer::gwHandshake(net::Connection& link, ByteReader& reader, std::uin
             break;
         }
         // A name is how an admin says which: one each.
-        for (int n = 2; g.byName(server.name) != nullptr; ++n) {
+        // ("gateway" is the gateway's own, in `/admin shards domain`.)
+        for (int n = 2; g.byName(server.name) != nullptr || lowerCase(server.name) == "gateway"; ++n) {
             server.name = sanitizePlayerName(server.greeting.name) + "-" + std::to_string(n);
         }
         int slot = 1;
@@ -319,15 +322,21 @@ bool GameServer::gwHandshake(net::Connection& link, ByteReader& reader, std::uin
         const std::string straight =
             (server.directHost.empty() ? std::string("(this host)") : server.directHost) + ":" +
             std::to_string(server.directPort);
-        if (server.publicHost.empty()) {
-            std::printf("[cluster] %s joined from %s; clients that dial straight are sent to %s, and it has no "
-                        "--public-host for clients that come through a proxy\n",
-                        server.name.c_str(), link.peer().c_str(), straight.c_str());
+        const auto domain = g.domains.find(lowerCase(server.name));
+        const std::string viaHost = domain != g.domains.end() ? domain->second.host : server.publicHost;
+        const std::uint16_t viaPort = domain != g.domains.end() ? domain->second.port : server.publicPort;
+        if (server.greeting.local) {
+            std::printf("[cluster] %s, this process's own simulation, joined; its clients stay on this port\n",
+                        server.name.c_str());
+        } else if (viaHost.empty()) {
+            std::printf("[cluster] %s joined from %s; clients that dial straight are sent to %s. Players who "
+                        "come through a proxy cannot be sent to it until it has a domain: /admin shards "
+                        "domain %s <its hostname>\n",
+                        server.name.c_str(), link.peer().c_str(), straight.c_str(), server.name.c_str());
         } else {
             std::printf("[cluster] %s joined from %s; clients are sent to %s:%s (straight: %s)\n",
-                        server.name.c_str(), link.peer().c_str(), server.publicHost.c_str(),
-                        server.publicPort != 0 ? std::to_string(server.publicPort).c_str() : "(their port)",
-                        straight.c_str());
+                        server.name.c_str(), link.peer().c_str(), viaHost.c_str(),
+                        viaPort != 0 ? std::to_string(viaPort).c_str() : "(their port)", straight.c_str());
         }
         const Json& taken = std::as_const(database_).storedTable("leaseJournals")[server.journalKey];
         ByteWriter w = begin(ToServer::Welcome);
@@ -336,8 +345,11 @@ bool GameServer::gwHandshake(net::Connection& link, ByteReader& reader, std::uin
         w.u64(static_cast<std::uint64_t>(taken.asDouble()));
         // Where a client that dials that server's own port is sent instead:
         // through the proxy, and straight.
-        w.str(config_.publicHost);
-        w.u16(config_.publicPort);
+        std::string ownHost;
+        std::uint16_t ownPort = 0;
+        gwOwnAddress(ownHost, ownPort);
+        w.str(ownHost);
+        w.u16(ownPort);
         w.u16(config_.port);
         gwSend(slot, w);
         for (const char* key : {"guilds", "chatTerms"}) {
@@ -1249,8 +1261,23 @@ void GameServer::gwDoorOpened(net::Connection& socket) {
 }
 
 bool GameServer::gwRedirectTarget(const Session& session, int slot, std::string& host, std::uint16_t& port) {
-    Gateway::Server* server = gateway_->bySlot(slot);
+    Gateway& g = *gateway_;
+    Gateway::Server* server = g.bySlot(slot);
     if (server == nullptr) return false;
+    if (g.simulation != nullptr && g.simulation->shardSlot() == slot) {
+        // This process's own: back to this port, the way the client came,
+        // and handed over here (gwHandOver).
+        host.clear();
+        port = 0;
+        return true;
+    }
+    // A domain an admin gave it, or the one it was started with.
+    const auto domain = g.domains.find(lowerCase(server->name));
+    if (domain != g.domains.end()) {
+        host = domain->second.host;
+        port = domain->second.port;
+        return true;
+    }
     if (!server->publicHost.empty()) {
         host = server->publicHost;
         port = server->publicPort;
@@ -1263,9 +1290,9 @@ bool GameServer::gwRedirectTarget(const Session& session, int slot, std::string&
         if (!server->warnedUnreachable) {
             server->warnedUnreachable = true;
             std::fprintf(stderr,
-                         "[cluster] %s has no --public-host, so players who come through a proxy cannot be "
-                         "sent to it: give it its own proxied hostname\n",
-                         server->name.c_str());
+                         "[cluster] %s has no domain, so players who come through a proxy cannot be sent to "
+                         "it: give it its own proxied hostname with /admin shards domain %s <hostname>\n",
+                         server->name.c_str(), server->name.c_str());
         }
         return false;
     }
@@ -1278,6 +1305,14 @@ void GameServer::gwDoorFrame(net::Connection& socket, ByteReader& reader) {
     Gateway& g = *gateway_;
     if (g.servers.count(socket.id()) != 0) {
         gwLinkMessage(socket, reader);
+        return;
+    }
+    for (Gateway::HandOver& waiting : g.handOvers) {
+        if (waiting.socket != socket.id()) continue;
+        // The simulation's to hear, once it has the socket. A client says
+        // nothing until it is let in; one that does not is not one of ours.
+        if (waiting.after.size() >= 64) socket.closeGracefully();
+        else waiting.after.emplace_back(reader.rest(), reader.rest() + reader.remaining());
         return;
     }
     const auto at = g.doorOf.find(socket.id());
@@ -1304,6 +1339,9 @@ void GameServer::gwDoorClosed(net::Connection& socket, const std::string& reason
         gwLinkClosed(socket.id(), reason);
         return;
     }
+    g.handOvers.erase(std::remove_if(g.handOvers.begin(), g.handOvers.end(),
+                                     [&](const Gateway::HandOver& h) { return h.socket == socket.id(); }),
+                      g.handOvers.end());
     const auto at = g.doorOf.find(socket.id());
     if (at == g.doorOf.end()) return;
     const net::ConnectionId id = at->second;
@@ -1373,6 +1411,14 @@ void GameServer::gwRedirect(Session& session, int slot) {
         expect.u32(session.connection);
         expect.str(ticket);
         gwSend(slot, expect);
+        if (host.empty() && port == 0 && g.simulation != nullptr) {
+            // To this port, for the simulation in this process.
+            const double now = monotonicMillis();
+            for (auto it = g.toSimulation.begin(); it != g.toSimulation.end();) {
+                it = it->second < now ? g.toSimulation.erase(it) : std::next(it);
+            }
+            g.toSimulation[ticket] = now + cluster::kAttachPatienceMillis;
+        }
         redirect.str(host);
         redirect.u16(port);
     } else {
@@ -1424,6 +1470,23 @@ void GameServer::gwAttachHome(net::Connection& socket, Session& greeted, const s
             break;
         }
     }
+    const auto local = home == nullptr ? g.toSimulation.find(ticket) : g.toSimulation.end();
+    if (local != g.toSimulation.end()) {
+        const bool fresh = local->second >= monotonicMillis();
+        g.toSimulation.erase(local);
+        if (fresh && g.simulation != nullptr) {
+            // Sent to this process's own simulation, which takes the socket as
+            // it is -- between polls, not inside this one. The session the
+            // socket opened here was only its handshake.
+            const net::ConnectionId handshake = greeted.connection;
+            greeted.elsewhere.door = 0;
+            g.doorOf.erase(socket.id());
+            endSession(handshake);
+            listener_.abandon(handshake);
+            g.handOvers.push_back(Gateway::HandOver{socket.id(), ticket, {}});
+            return;
+        }
+    }
     if (home == nullptr) {
         // A ticket from before a restart, or used: the client signs in again
         // on the session the socket already has.
@@ -1455,6 +1518,165 @@ void GameServer::gwAttachHome(net::Connection& socket, Session& greeted, const s
         e.carrier = e.pendingCarrier;
         e.pendingCarrier = 0;
         e.transitSinceMillis = monotonicMillis();
+    }
+}
+
+void GameServer::setLocalSimulation(GameServer* simulation) {
+    if (!gateway_) return;
+    gateway_->simulation = simulation;
+    gateway_->toSimulation.clear();
+    if (simulation == nullptr) gateway_->handOvers.clear();
+}
+
+void GameServer::gwHandOver() {
+    Gateway& g = *gateway_;
+    if (g.handOvers.empty()) return;
+    std::vector<Gateway::HandOver> due;
+    due.swap(g.handOvers);
+    for (Gateway::HandOver& h : due) {
+        std::unique_ptr<net::Connection> socket = g.door.release(h.socket);
+        if (!socket) continue;
+        if (g.simulation == nullptr || socket->closing()) {
+            // Nobody to take it: it signs in again.
+            socket->closeGracefully();
+            g.door.take(std::move(socket));
+            continue;
+        }
+        g.simulation->takeClient(std::move(socket), h.ticket, h.after);
+    }
+}
+
+namespace {
+
+std::string domainText(const std::string& host, std::uint16_t port) {
+    return port == 0 ? host : host + ":" + std::to_string(port);
+}
+
+/// A hostname as an admin types it, with or without a scheme, a port or a
+/// slash: false for anything that is not one.
+bool parseDomain(std::string text, std::string& host, std::uint16_t& port) {
+    text = lowerCase(text);
+    for (const char* scheme : {"https://", "http://", "wss://", "ws://"}) {
+        if (text.rfind(scheme, 0) == 0) text.erase(0, std::char_traits<char>::length(scheme));
+    }
+    while (!text.empty() && text.back() == '/') text.pop_back();
+    port = 0;
+    if (!cluster::parseAddress(text, host, port) || host.size() > 253) return false;
+    for (const char c : host) {
+        if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.' || c == '-')) return false;
+    }
+    return host.front() != '.' && host.front() != '-' && host.back() != '.' && host.back() != '-';
+}
+
+} // namespace
+
+void GameServer::gwOwnAddress(std::string& host, std::uint16_t& port) const {
+    const Gateway& g = *gateway_;
+    host = g.address.host.empty() ? config_.publicHost : g.address.host;
+    port = g.address.host.empty() ? config_.publicPort : g.address.port;
+}
+
+void GameServer::gwReadDomains() {
+    Gateway& g = *gateway_;
+    const Json& table = std::as_const(database_).storedTable("cluster");
+    g.domains.clear();
+    g.address = Gateway::Domain{};
+    Gateway::Domain d;
+    if (table["domains"].isObject()) {
+        for (const auto& [name, value] : table["domains"].members()) {
+            if (parseDomain(value.asString(), d.host, d.port)) g.domains[lowerCase(name)] = d;
+        }
+    }
+    if (parseDomain(table["address"].asString(), d.host, d.port)) g.address = d;
+}
+
+void GameServer::gwWriteDomains() {
+    const Gateway& g = *gateway_;
+    Json domains = Json::object();
+    for (const auto& [name, d] : g.domains) domains[name] = Json(domainText(d.host, d.port));
+    Json& table = database_.rawTable("cluster");
+    table["domains"] = std::move(domains);
+    if (g.address.host.empty()) table.erase("address");
+    else table["address"] = Json(domainText(g.address.host, g.address.port));
+    database_.markDirty();
+}
+
+void GameServer::runDomainCommand(net::Connection& connection, const std::vector<std::string>& words) {
+    Gateway& g = *gateway_;
+    const auto out = [&](const std::string& s) { sendSystem(connection, escapedMarkup(s)); };
+    if (words.size() == 2) {
+        // Every server's, and the gateway's own.
+        std::string host;
+        std::uint16_t port = 0;
+        gwOwnAddress(host, port);
+        out("gateway: " + (host.empty() ? std::string("no domain") : domainText(host, port)));
+        std::set<std::string> told;
+        for (const auto& entry : g.servers) {
+            const Gateway::Server& server = entry.second;
+            if (server.slot == 0) continue;
+            const std::string key = lowerCase(server.name);
+            told.insert(key);
+            const auto d = g.domains.find(key);
+            std::string where;
+            if (server.greeting.local) where = "this process's own: on the gateway's port";
+            else if (d != g.domains.end()) where = domainText(d->second.host, d->second.port);
+            else if (!server.publicHost.empty())
+                where = domainText(server.publicHost, server.publicPort) + " (its --public-host)";
+            else where = "no domain: players who come through the proxy cannot be sent to it";
+            out(server.name + ": " + where);
+        }
+        for (const auto& [name, d] : g.domains) {
+            if (told.count(name) == 0) out(name + ": " + domainText(d.host, d.port) + " (not connected)");
+        }
+        return;
+    }
+    if (words.size() != 4) {
+        out("Usage: shards domain [<server>|gateway <hostname[:port]>|none]");
+        return;
+    }
+    const std::string name = lowerCase(words[2]);
+    const std::string value = lowerCase(words[3]);
+    const bool clear = value == "none" || value == "clear" || value == "off";
+    Gateway::Domain d;
+    if (!clear && !parseDomain(value, d.host, d.port)) {
+        out(words[3] + " is not a hostname. Give the one players reach that server at through Cloudflare, "
+                       "such as shard1.example.com.");
+        return;
+    }
+    if (name == "gateway") {
+        g.address = clear ? Gateway::Domain{} : d;
+        gwWriteDomains();
+        // Every server sends a client that dialled it to sign in here.
+        std::string host;
+        std::uint16_t port = 0;
+        gwOwnAddress(host, port);
+        for (const auto& entry : g.servers) {
+            if (entry.second.slot == 0) continue;
+            ByteWriter w = begin(ToServer::Address);
+            w.str(host);
+            w.u16(port);
+            gwSend(entry.second.slot, w);
+        }
+        out(clear ? "The gateway has no domain now." : "The gateway is " + domainText(d.host, d.port) + ".");
+        return;
+    }
+    Gateway::Server* server = g.byName(name);
+    if (server != nullptr && server->greeting.local) {
+        out(server->name + " is this process's own simulation: its players stay on the gateway's port, and "
+                           "need no domain.");
+        return;
+    }
+    if (clear) g.domains.erase(name);
+    else g.domains[name] = d;
+    gwWriteDomains();
+    if (server != nullptr) server->warnedUnreachable = false;
+    const std::string label = server != nullptr ? server->name : words[2];
+    if (clear) {
+        out(label + " has no domain now" +
+            (server != nullptr && !server->publicHost.empty() ? "; its --public-host is used." : "."));
+    } else {
+        out("Players who come through the proxy are sent to " + label + " at " + domainText(d.host, d.port) +
+            (server == nullptr ? " (it is not connected now)." : "."));
     }
 }
 
@@ -1985,12 +2207,14 @@ void GameServer::runShardsCommand(Session&, net::Connection& connection,
     }
     Gateway& g = *gateway_;
     const std::string sub = words.size() > 1 ? lowerCase(words[1]) : std::string();
+    if (sub == "domain") return runDomainCommand(connection, words);
     const auto usage = [&] {
         out("Usage: shards");
         out("  shards assign <server> <biome> [biome...]   keep biomes on a server");
         out("  shards unassign <biome...|all>              let the balance place them");
         out("  shards move <biome> <server>                move one now, without keeping it there");
         out("  shards balance on|off                       move biomes to even the load, or never");
+        out("  shards domain [<server>|gateway <host>|none] the hostname players reach it at through Cloudflare");
     };
     const auto joined = [](const std::vector<std::string>& all, std::size_t from) {
         std::string text;

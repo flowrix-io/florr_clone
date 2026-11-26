@@ -453,17 +453,33 @@ std::string playerToText(const PlayerRecord& record) {
         return playerToJson(record).dump(0);
     }
     const Json head = playerTree(record, true);
+    // A row that keeps its big parts rendered renders them once and splices
+    // them in after that, until something takes the row mutably.
+    PlayerRecord::RenderedParts& parts = record.rendered;
+    if (parts.keep && !parts.valid) {
+        writeStoredInventory(record, parts.inventory);
+        record.mobKills.dumpTo(parts.mobKills, 0, 0);
+        parts.valid = true;
+    }
+    const bool spliced = parts.keep && parts.valid;
     std::string out;
-    out.reserve(256 + record.inventory.size() * 64 + record.mobKills.size() * 48);
+    out.reserve(spliced ? 256 + parts.inventory.size() + parts.mobKills.size()
+                        : 256 + record.inventory.size() * 64 + record.mobKills.size() * 48);
     char separator = '{';
     for (const std::string& key : head.keys()) {
         out += separator;
         separator = ',';
         jsonEscapeTo(out, key);
         out += ':';
-        if (key == "inventory") writeStoredInventory(record, out);
-        else if (key == "mobKills") record.mobKills.dumpTo(out, 0, 0);
-        else head[key].dumpTo(out, 0, 0);
+        if (key == "inventory") {
+            if (spliced) out += parts.inventory;
+            else writeStoredInventory(record, out);
+        } else if (key == "mobKills") {
+            if (spliced) out += parts.mobKills;
+            else record.mobKills.dumpTo(out, 0, 0);
+        } else {
+            head[key].dumpTo(out, 0, 0);
+        }
     }
     out += '}';
     return out;
@@ -2709,6 +2725,16 @@ PlayerRecord& Database::progress(const std::string& userId) {
     PlayerRecord& record = players_.insert(userId);
     if (fresh) markDirty();
     return record;
+}
+
+void Database::setLiveProgress(const std::string& userId, bool maze, double totalXp, double stars) {
+    PlayerRecord* record = players_.findKeepingParts(userId);
+    if (record == nullptr) record = &progress(userId);
+    record->rendered.keep = true;
+    if (maze) record->mazeTotalXp = totalXp;
+    else record->totalXp = totalXp;
+    record->stars = stars;
+    markDirty();
 }
 
 const PlayerRecord* Database::findProgress(const std::string& userId) const {

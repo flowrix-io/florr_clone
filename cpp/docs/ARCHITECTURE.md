@@ -380,21 +380,42 @@ holds what the client sends behind one that spends until the gateway says
 the game through the proxy, and the servers' own ports (3000, 3002, ...) are
 direct, untrusted connections that a player is never sent to from there. So
 each shard is given its own proxied hostname that reaches its port -- a DNS
-record with an origin rule for the port, or a tunnel -- with `--public-host
-shard1.example.com` (`[:port]`; with no port, the player keeps the one it
-already uses, 443). The gateway's own simulation takes `--simulation-public-host`,
-and the gateway itself `--public-host`, which is where a player who opens a
-shard's address is sent to sign in. Which way a player came is the socket's to
-say (`cameThroughProxy`: a Cloudflare edge, or nginx or a tunnel on the box,
-carrying forwarding headers), and `gwRedirectTarget` picks by it:
+record with an origin rule for the port, or a tunnel. **A server does not know
+that name**: it is linked by its public IP, and Cloudflare's names are
+Cloudflare's. An admin gives it on the gateway, which keeps it in the database
+(`cluster.domains`, by server name) and pushes nothing to the server:
 
-* through the proxy: the server's public hostname, or, if it has none, nowhere
-  -- the flower is not put there, the player is told, and the gateway logs it
-  once;
+    /admin shards domain                          every server's, and the gateway's
+    /admin shards domain east east.example.com    `[:port]`; with no port the
+                                                  player keeps its own, 443
+    /admin shards domain east none                forget it
+    /admin shards domain gateway example.com      the gateway's own (`cluster.address`)
+
+The gateway's own is where a player who opens a shard's address is sent to sign
+in; the servers are told it at Welcome and whenever it changes
+(`ToServer::Address`). A server started with `--public-host` offers that instead,
+for where no admin has said otherwise (the gateway's own `--public-host` the
+same). Which way a player came is the socket's to say (`cameThroughProxy`: a
+Cloudflare edge, or nginx or a tunnel on the box, carrying forwarding headers),
+and `gwRedirectTarget` picks by it:
+
+* the gateway's own simulation: back to the gateway's port, whichever way the
+  player came (below);
+* through the proxy: the server's domain, or, if it has none, nowhere -- the
+  flower is not put there, the player is told, and the gateway logs it once;
 * straight to the gateway's port (development, a LAN): the address the server's
   link came from (or the player's own host, for a server on the gateway's
-  machine) and the server's own port. The gateway's own simulation takes such
-  players on `--simulation-port`, its port + 1 by default.
+  machine) and the server's own port.
+
+**The gateway's own simulation has no port.** Its players are redirected to the
+gateway's own (an empty host and port 0: the one the client dialled), the only
+one the gateway's hostname reaches. The gateway knows the tickets it sent them
+with (`Gateway::toSimulation`); a socket that attaches with one is released by
+the gateway's listener after the poll it spoke in and taken by the
+simulation's (`net::Listener::release` / `take`, `Gateway::handOvers`,
+`GameServer::takeClient`), socket, buffers and all, in the same process. From
+then on it is that simulation's socket exactly as a shard's own would be: the
+gateway relays none of its traffic.
 
 TLS ends at Cloudflare, so a server behind it needs no certificate of its own;
 a page served over https anywhere else needs one on every server it is sent to
@@ -459,8 +480,8 @@ npm run start_cluster -- --shards 2 --shard-hosts s1.example.com,s2.example.com 
 
 export FLIX_CLUSTER_SECRET=...           # the same on every one of them
 node dist/server.js --role gateway --shards 3 --db dist/inventory.json --web-root dist
-node dist/server.js --role shard --gateway 10.0.0.1:3000 --shard-name east --copy dist/copy.json \
-  --public-host east.example.com
+node dist/server.js --role shard --gateway 10.0.0.1:3000 --shard-name east --copy dist/copy.json
+# then, as an admin in the game: /admin shards domain east east.example.com
 ```
 
 The link is authenticated both ways (`cluster::linkProof`, an HMAC challenge
@@ -502,6 +523,8 @@ an admin has:
 /admin shards unassign <biome...|all>       leave them to the balance again
 /admin shards move <biome> <server>         move one, now, and no more than that
 /admin shards balance on|off                let nothing unassigned be moved
+/admin shards domain [<server>|gateway <host[:port]>|none]
+                                            the hostname proxied players reach it at
 ```
 
 An assignment is kept in the database (table `cluster`), so it outlives a

@@ -7,19 +7,21 @@
 // Each is a process of its own -- which is the point: a Node process
 // simulates on one core, and a biome no longer shares it with every other
 // biome. Each simulation server takes its own players on a port of its own,
-// P+2, P+3, ... (P+1 is the gateway's own, should it be given `--simulate`):
-// the gateway signs them in and sends them there, and relays none of their
-// traffic. Behind Cloudflare, players are never sent to those ports: give
-// each shard a proxied hostname of its own that reaches its port (a DNS
-// record with an origin rule for the port, or a tunnel), and list them in
-// order with --shard-hosts; they are sent there on the port they already use
-// (443). Without them, only players who dial the ports straight can play.
+// P+2, P+3, ... (the gateway's own simulation, given `--simulate`, takes its
+// players on P): the gateway signs them in and sends them there, and relays
+// none of their traffic. Behind Cloudflare, players are never sent to those
+// ports: give each shard a proxied hostname of its own that reaches its port
+// (a DNS record with an origin rule for the port, or a tunnel), and tell the
+// gateway which is which, in the game (`/admin shards domain shard-1
+// s1.example.com`, kept in its database) or here, in order, with
+// --shard-hosts; they are sent there on the port they already use (443).
+// Without them, only players who dial the ports straight can play.
 // Any that exits is started again (a server of a sharded game exits to
 // be restarted whenever the gateway is updated), with a growing wait if it
 // will not stay up. Servers on OTHER machines are not this script's: start
 // them there with `--role shard --gateway host:P` (the gateway's game port,
-// which takes servers as well as players) and the same secret, and
-// `--public-host` with their proxied hostname.
+// which takes servers as well as players) and the same secret, and give each
+// its domain with `/admin shards domain`.
 //
 // The secret is FLIX_CLUSTER_SECRET, or one made up for this run; it reaches
 // the children by environment, where `ps` does not show it.

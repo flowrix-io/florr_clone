@@ -624,14 +624,11 @@ void GameServer::persistPlayer(const Session& session) {
     const PlayerProgress* progress = world_.tryGet<PlayerProgress>(session.entity);
     if (!progress) return;
 
-    PlayerRecord& record = database_.progress(session.userId);
     // Onto the track the body was playing on: a maze run's XP is the maze's,
     // and writing it into totalXP would destroy the outside level
     // (src/server/playerManager.ts:975-978).
-    if (session.realm == Realm::Maze) record.mazeTotalXp = progress->totalXp;
-    else record.totalXp = progress->totalXp;
-    record.stars = progress->stars;
-    database_.markDirty();
+    database_.setLiveProgress(session.userId, session.realm == Realm::Maze, progress->totalXp,
+                              progress->stars);
 }
 
 void GameServer::despawnPlayer(Session& session, bool persist) {

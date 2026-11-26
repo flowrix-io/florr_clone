@@ -146,7 +146,42 @@ struct PlayerRecord {
     int talentPoints() const;
     /// The same, on the maze track.
     int mazeTalentPoints() const;
+
+    /// The row's two big parts as its text writes them: the stored inventory
+    /// (the bag with the worn petals added back) and the kill counts. A
+    /// veteran's are tens of kilobytes, and a playing flower's row is
+    /// rewritten for the journal on every tick its XP or stars move
+    /// (GameServer::syncLiveProgress) -- re-rendering them each time was most
+    /// of the server tick's send phase. Kept only for rows that change that
+    /// way (Database::setLiveProgress sets `keep`), and dropped by every
+    /// mutable accessor (forgetRenderedParts), which is what can change them.
+    /// Never copied: a copy can be changed in ways nothing here sees.
+    struct RenderedParts {
+        std::string inventory;
+        std::string mobKills;
+        bool valid = false;
+        bool keep = false;
+        RenderedParts() = default;
+        RenderedParts(const RenderedParts&) {}
+        RenderedParts& operator=(const RenderedParts&) {
+            forget();
+            keep = false;
+            return *this;
+        }
+        void forget() {
+            inventory = std::string();
+            mobKills = std::string();
+            valid = false;
+        }
+    };
+    mutable RenderedParts rendered;
 };
+
+/// What Database::Table calls on a row handed out mutably: the cached parts of
+/// its text that such a change could make stale. Nothing for most rows.
+template <class T>
+void forgetRenderedParts(T&) {}
+inline void forgetRenderedParts(PlayerRecord& record) { record.rendered.forget(); }
 
 /// A registered account. `passwordHash` is a bcrypt string; see verifyPassword
 /// for the one legacy case where it is not.
@@ -294,6 +329,14 @@ public:
     class Table {
     public:
         T* find(const std::string& key) {
+            T* value = findKeepingParts(key);
+            if (value != nullptr) forgetRenderedParts(*value);
+            return value;
+        }
+        /// find() for a change the caller knows leaves the parts of the text
+        /// the value keeps rendered (forgetRenderedParts) as they were: the
+        /// row is still rewritten, and still touched, but from those.
+        T* findKeepingParts(const std::string& key) {
             auto it = byKey_.find(key);
             if (it == byKey_.end()) return nullptr;
             thaw(it->first, it->second);
@@ -320,6 +363,7 @@ public:
             ++it->second.version;
             ++edits_;
             touch(it->first, it->second);
+            forgetRenderedParts(it->second.value);
             return it->second.value;
         }
         /// Files `text` -- a row as text() writes one -- under `key`. Parsed
@@ -848,6 +892,11 @@ public:
     /// changed for the journal, which rewrites the whole row before the next
     /// send: a path that only READS uses findProgress().
     PlayerRecord& progress(const std::string& userId);
+    /// Puts a playing flower's XP (onto the maze track when `maze`) and stars
+    /// on its record: progress() for exactly that change, which keeps the
+    /// rest of the row rendered (PlayerRecord::RenderedParts). It is made on
+    /// every tick either moves, and the row goes into the journal each time.
+    void setLiveProgress(const std::string& userId, bool maze, double totalXp, double stars);
     const PlayerRecord* findProgress(const std::string& userId) const;
 
     /// Claims today's daily-login reward for `userId`, if it is not claimed

@@ -248,6 +248,17 @@ public:
     /// reporting it: the owner is the one letting go.
     void abandon(ConnectionId id);
 
+    /// Hands a real connection over to another listener in this process,
+    /// socket, buffers and all, unreported: `release` it here and `take` it
+    /// there. Never from inside this listener's own poll(), which is walking
+    /// its connections. How a gateway gives a client that is going to its own
+    /// simulation that simulation's socket, on the gateway's port.
+    std::unique_ptr<Connection> release(ConnectionId id);
+    /// Takes one `release`d by another listener, under a new id of this one's,
+    /// announced to nobody; its close is reported like any other's. Serviced
+    /// by poll() even on a listener that was never started.
+    Connection& take(std::unique_ptr<Connection> connection);
+
     /// Why the port could not be listened on, where that is only known after
     /// start() has returned: Node says so from its event loop. Else empty.
     std::string lateError() const;

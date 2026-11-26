@@ -176,12 +176,6 @@ struct ServerConfig {
     /// servers dial. Behind Cloudflare, every server needs one.
     std::string publicHost;
     std::uint16_t publicPort = 0;
-    /// The gateway, when it simulates: the port its own simulation takes
-    /// clients on, or 0 for `port` + 1, and its proxied hostname and port as
-    /// `publicHost` and `publicPort` are for a shard.
-    std::uint16_t simulationPort = 0;
-    std::string simulationPublicHost;
-    std::uint16_t simulationPublicPort = 0;
     /// A shard: its record of the rows lent to it (cluster/lease_journal.h),
     /// or empty to keep it in memory only.
     std::string leaseJournalPath;
@@ -335,6 +329,16 @@ public:
     std::size_t leaseCount() const;
     /// A shard: whether the gateway has taken it.
     bool linked() const;
+    /// A shard: the slot the gateway gave it, or 0 until it has.
+    int shardSlot() const;
+    /// The gateway: the simulation in this same process (ServerHost), whose
+    /// clients it hands their sockets over to on its own port; null for none.
+    void setLocalSimulation(GameServer* simulation);
+    /// The gateway's own simulation: a client's socket the gateway was
+    /// holding, which has come to this port with `ticket`, and what it said
+    /// after it, in order.
+    void takeClient(std::unique_ptr<net::Connection> socket, const std::string& ticket,
+                    const std::vector<std::vector<std::byte>>& after);
     const Terrain& terrain() const { return *terrain_; }
     /// Every staged map's annotation layer, and which realm each one is.
     const WorldMaps& worldMaps() const { return worldMaps_; }
@@ -391,6 +395,16 @@ private:
     bool gwRedirectTarget(const Session&, int slot, std::string& host, std::uint16_t& port);
     /// A client back at this port with the ticket it was sent with.
     void gwAttachHome(net::Connection& socket, Session& greeted, const std::string& ticket);
+    /// Hands the sockets that came to this port for its own simulation over to
+    /// it. Between polls, never inside one.
+    void gwHandOver();
+    /// Where the clients that come through the proxy sign in: the domain an
+    /// admin gave the gateway, else --public-host.
+    void gwOwnAddress(std::string& host, std::uint16_t& port) const;
+    /// `/admin shards domain`.
+    void runDomainCommand(net::Connection&, const std::vector<std::string>& words);
+    void gwReadDomains();
+    void gwWriteDomains();
     /// The session's own connection closed: so does its socket, wherever.
     void gwClientClosed(net::ConnectionId);
     /// Ends a session whose socket is gone.

@@ -81,14 +81,12 @@ bool ServerHost::boot(std::string& errorOut) {
         own.membership = Membership{};
         own.membershipPath.clear();
         own.copyPath.clear();
-        // Its own port: the gateway relays no client's traffic, its own
-        // simulation's included. A client that dialled straight is sent to
-        // the host it found the gateway at, on this port; one that came
-        // through the proxy, to the simulation's own proxied hostname.
-        own.port = config.simulationPort != 0 ? config.simulationPort
-                                              : static_cast<std::uint16_t>(config.port + 1);
-        own.publicHost = config.simulationPublicHost;
-        own.publicPort = config.simulationPublicPort;
+        // No port of its own: its clients come back to the gateway's, the
+        // one its proxied hostname reaches, and the gateway hands it their
+        // sockets in this process (setLocalSimulation). Nothing it is sent
+        // is relayed.
+        own.publicHost.clear();
+        own.publicPort = 0;
         own.leaseJournalPath = config.databasePath.empty() ? std::string() : config.databasePath + ".simulation.leases";
         // Both wait in their sockets; one after the other, so neither for long.
         own.maxPollMillis = 0;
@@ -98,6 +96,7 @@ bool ServerHost::boot(std::string& errorOut) {
     }
     server_ = std::move(server);
     simulation_ = std::move(simulation);
+    if (simulation_) server_->setLocalSimulation(simulation_.get());
     // Told to stop while there was nothing running to be told.
     if (stopping_) server_->stop();
     return true;
@@ -109,6 +108,7 @@ bool ServerHost::restart(std::string& errorOut) {
         if (simulation_) simulation_->shutdown();
         // The database's last save is in its destructor, and the next server
         // reads the file: gone before anything starts.
+        server_->setLocalSimulation(nullptr);
         simulation_.reset();
         server_.reset();
     }
@@ -138,6 +138,7 @@ bool ServerHost::step() {
         if (simulation_ && !simulation_->step()) {
             // Told to stop, or refused: never for good while the gateway is up.
             std::fprintf(stderr, "[cluster] this server's own simulation stopped\n");
+            server_->setLocalSimulation(nullptr);
             simulation_.reset();
             exitCode_ = GameServer::kRestartExit;
             server_->stop();

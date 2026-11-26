@@ -63,9 +63,9 @@ struct GameServer::Gateway {
         bool leaving = false;
         cluster::ServerStats stats;
         bool reported = false;
-        /// Where clients that came through the proxy are sent to reach it
-        /// (Greeting::publicHost): empty for nowhere, and port 0 for the one
-        /// the client is on.
+        /// Where clients that came through the proxy are sent to reach it, if
+        /// no admin has given it a domain (`domains`): Greeting::publicHost,
+        /// empty for nowhere, and port 0 for the one the client is on.
         std::string publicHost;
         std::uint16_t publicPort = 0;
         /// Where clients that dialled the gateway straight are sent: the host
@@ -73,7 +73,7 @@ struct GameServer::Gateway {
         /// machine) and its own port.
         std::string directHost;
         std::uint16_t directPort = 0;
-        /// Has been said to have no public host, once.
+        /// Has been said to have no domain, once.
         bool warnedUnreachable = false;
         /// What its lease journal is known by across restarts: its id, or its
         /// name for a server started by hand without one.
@@ -122,9 +122,36 @@ struct GameServer::Gateway {
         std::uint32_t nextSeq = 1;
     };
 
+    /// A hostname clients reach a server at through the proxy; port 0 for the
+    /// one they are on (443).
+    struct Domain {
+        std::string host;
+        std::uint16_t port = 0;
+    };
+    /// A client's socket that came to this port for the simulation in this
+    /// process: handed over after the poll it arrived in (gwHandOver).
+    struct HandOver {
+        net::ConnectionId socket = 0;
+        std::string ticket;
+        std::vector<std::vector<std::byte>> after;
+    };
+
     GameServer& owner;
     Door doorHandler{owner};
     net::Listener door;
+    /// The simulation in this same process (ServerHost), or null.
+    GameServer* simulation = nullptr;
+    /// The tickets clients were sent to it with, and until when.
+    std::unordered_map<std::string, double> toSimulation;
+    std::vector<HandOver> handOvers;
+    /// What an admin said each server is reached at through the proxy, by its
+    /// name lowercased (`/admin shards domain`); the server's own word
+    /// (--public-host) only where there is none. A server knows its address,
+    /// never the name Cloudflare gives it.
+    std::map<std::string, Domain> domains;
+    /// The same for the gateway itself, where shards send a client that came
+    /// to one of them to sign in.
+    Domain address;
     /// Each client's socket at the door, and the session it is.
     std::unordered_map<net::ConnectionId, net::ConnectionId> doorOf;
     /// The links, by their socket at the door.

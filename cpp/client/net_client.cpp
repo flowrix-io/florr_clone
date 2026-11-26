@@ -1389,7 +1389,7 @@ void NetClient::handleRedirect(ByteReader& reader) {
 void NetClient::followRedirect() {
     redirectPending_ = false;
     // An empty host is the one this client first dialled, and port 0 its
-    // port: the gateway's own, or its own simulation's beside it.
+    // port: the gateway's own, whose own simulation takes it there too.
     const std::string host = redirectHost_.empty() ? host_ : redirectHost_;
     const std::uint16_t port = redirectPort_ == 0 ? port_ : redirectPort_;
     dialer_.disconnect();

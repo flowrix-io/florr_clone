@@ -670,6 +670,24 @@ void Listener::abandon(ConnectionId id) {
     sweepClosed();
 }
 
+std::unique_ptr<Connection> Listener::release(ConnectionId id) {
+    for (auto it = connections_.begin(); it != connections_.end(); ++it) {
+        if ((*it)->id() != id || (*it)->adopted()) continue;
+        std::unique_ptr<Connection> out = std::move(*it);
+        connections_.erase(it);
+        return out;
+    }
+    return nullptr;
+}
+
+Connection& Listener::take(std::unique_ptr<Connection> connection) {
+    connection->id_ = nextId_++;
+    connection->announced_ = true;
+    Connection& ref = *connection;
+    connections_.push_back(std::move(connection));
+    return ref;
+}
+
 void Listener::sweepClosed() {
     connections_.erase(
         std::remove_if(connections_.begin(), connections_.end(),
@@ -787,7 +805,8 @@ bool Listener::service(Connection& c, bool readable, bool writable, TransportHan
 
 int Listener::poll(TransportHandler& handler, int timeoutMillis) {
     pollAdopted(handler);
-    if (listenFd_ < 0) return 0;
+    // A listener that was never started may still hold connections it took.
+    if (listenFd_ < 0 && connections_.empty()) return 0;
     // The timeout is deliberately ignored. Bytes reach a channel from the
     // JavaScript event loop, which only runs when this stack has returned to
     // it, so sleeping here would not wait for data -- it would prevent it.
@@ -795,7 +814,7 @@ int Listener::poll(TransportHandler& handler, int timeoutMillis) {
 
     // Before anything is serviced: see Listener::flush.
     dropFailed(handler);
-    acceptPending(handler);
+    if (listenFd_ >= 0) acceptPending(handler);
 
     int delivered = 0;
     for (std::size_t i = 0; i < connections_.size(); ++i) {
@@ -818,7 +837,8 @@ int Listener::poll(TransportHandler& handler, int timeoutMillis) {
 
 int Listener::poll(TransportHandler& handler, int timeoutMillis) {
     pollAdopted(handler);
-    if (listenFd_ < 0) return 0;
+    // A listener that was never started may still hold connections it took.
+    if (listenFd_ < 0 && connections_.empty()) return 0;
 
     // Before the poll set is built: see Listener::flush. A failed connection
     // has nothing to wait for, and this is also what keeps a socket that is
@@ -827,7 +847,8 @@ int Listener::poll(TransportHandler& handler, int timeoutMillis) {
 
     std::vector<pollfd> fds;
     fds.reserve(connections_.size() + 1);
-    fds.push_back(pollfd{listenFd_, POLLIN, 0});
+    const std::size_t first = listenFd_ >= 0 ? 1 : 0;
+    if (listenFd_ >= 0) fds.push_back(pollfd{listenFd_, POLLIN, 0});
     for (auto& c : connections_) {
         if (!c->open() || c->adopted()) continue;
         short events = POLLIN;
@@ -838,13 +859,13 @@ int Listener::poll(TransportHandler& handler, int timeoutMillis) {
     const int ready = ::poll(fds.data(), static_cast<nfds_t>(fds.size()), timeoutMillis);
     if (ready < 0 && !wouldBlock()) return 0;
 
-    if (ready > 0 && (fds[0].revents & POLLIN)) acceptPending(handler);
+    if (ready > 0 && first == 1 && (fds[0].revents & POLLIN)) acceptPending(handler);
 
     int delivered = 0;
 
     // Walk connections by fd so the poll results line up even though
     // acceptPending() may have appended new entries since fds was built.
-    std::size_t slot = 1;
+    std::size_t slot = first;
     for (std::size_t i = 0; i < connections_.size() && slot < fds.size(); ++i) {
         Connection& c = *connections_[i];
         if (!c.open() || c.adopted() || fds[slot].fd != c.fd()) continue;

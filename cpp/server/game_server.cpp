@@ -625,9 +625,11 @@ void GameServer::serviceNetwork(int timeoutMillis) {
         // The game's port, clients and links alike: a short wait, so that a
         // server's word for a client is never left sitting behind it.
         gateway_->door.poll(gateway_->doorHandler, std::min(timeoutMillis, 1));
+        gwHandOver();
         // The sessions: only a close to report, they have no sockets.
         listener_.poll(*this, 0);
         gateway_->door.poll(gateway_->doorHandler, 0);
+        gwHandOver();
         return;
     }
     listener_.poll(*this, timeoutMillis);
@@ -873,6 +875,11 @@ void GameServer::tick(double nowMillis) {
     // XP the snapshot just told everybody about goes with it.
     syncLiveProgress();
     markTickPhase("progress");
+    // What the listener's beforeWrite would do on the first socket it writes
+    // to, done here so the profile tells the journal and the sockets apart.
+    // Same order: on disk before any byte leaves.
+    database_.flushJournal();
+    markTickPhase("journal");
     flushNetwork();
     // Whatever changed this tick with nothing sent about it: see above.
     database_.flushJournal();

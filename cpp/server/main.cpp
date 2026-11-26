@@ -169,19 +169,16 @@ void usage(const char* program) {
         "                     proxied DNS name or tunnel for this machine. The\n"
         "                     gateway relays no client's traffic and never sends\n"
         "                     such a player to a server's own port, so behind\n"
-        "                     Cloudflare every shard needs one. Without it, only\n"
-        "                     players who dial the ports straight can play there\n"
+        "                     Cloudflare every shard needs a domain. Usually set\n"
+        "                     on the gateway instead, which wins: /admin shards\n"
+        "                     domain <server> <host>\n"
         "  --public-port <n>  the port with it (default: the one the player already\n"
         "                     uses, 443 behind Cloudflare)\n"
         "  --lease-journal <path>\n"
         "                     shard: where it records the rows lent to it before\n"
         "                     its players see them (default <copy>.leases)\n"
-        "  --simulate         gateway: simulate a share of the biomes as well\n"
-        "  --simulation-port <n>\n"
-        "                     gateway: the port its own simulation takes clients\n"
-        "                     on (default --port + 1)\n"
-        "  --simulation-public-host <host[:port]>\n"
-        "                     gateway: --public-host for its own simulation\n"
+        "  --simulate         gateway: simulate a share of the biomes as well, its\n"
+        "                     players on the gateway's own port\n"
 #ifdef __EMSCRIPTEN__
         "  --cert <path>      TLS certificate. Without it, cert.crt then\n"
         "                     dev-cert.crt are looked for in the working\n"
@@ -391,7 +388,14 @@ int main(int argc, char** argv) {
         else if (arg == "--shard-name") config.shardName = next("--shard-name");
         else if (arg == "--copy") config.copyPath = next("--copy");
         else if (arg == "--simulate") config.simulates = true;
-        else if (arg == "--public-host" || arg == "--simulation-public-host") {
+        else if (arg == "--simulation-port" || arg == "--simulation-public-host") {
+            // The gateway's own simulation takes its players on the gateway's port.
+            const std::string flag = arg;
+            next(flag.c_str());
+            std::fprintf(stderr, "%s is gone: the gateway's own simulation takes its players on --port\n",
+                         flag.c_str());
+        }
+        else if (arg == "--public-host") {
             const std::string flag = arg;
             std::string host = next(flag.c_str());
             std::uint16_t port = 0;
@@ -407,17 +411,11 @@ int main(int argc, char** argv) {
                 port = static_cast<std::uint16_t>(parsed);
                 host.erase(colon);
             }
-            if (flag == "--public-host") {
-                config.publicHost = host;
-                if (port != 0) config.publicPort = port;
-            } else {
-                config.simulationPublicHost = host;
-                if (port != 0) config.simulationPublicPort = port;
-            }
+            config.publicHost = host;
+            if (port != 0) config.publicPort = port;
         }
         else if (arg == "--public-port") config.publicPort = static_cast<std::uint16_t>(std::atoi(next("--public-port")));
         else if (arg == "--lease-journal") config.leaseJournalPath = next("--lease-journal");
-        else if (arg == "--simulation-port") config.simulationPort = static_cast<std::uint16_t>(std::atoi(next("--simulation-port")));
         else if (arg == "--promote") promote = true;
         else if (arg == "--unlink") unlink = true;
         else if (arg == "--gateway") {
