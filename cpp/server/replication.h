@@ -491,6 +491,35 @@ private:
     };
     const Facts& factsOf(World& world, std::uint32_t at);
 
+    /// What a SPAWN record says about an entity that does not depend on who
+    /// is looking, beside Facts and worked out the same way: the first time
+    /// any viewer of the pass spawns it. A spawn used to look every one of
+    /// these up again per viewer, and in a crowd every viewer spawns the same
+    /// fresh volleys of shots each snapshot.
+    struct SpawnFacts {
+        bool ready = false;
+        net::EntityKind kind = net::EntityKind::Mob;
+        std::uint16_t typeIndex = 0;
+        Rarity rarity = Rarity::Common;
+        std::uint8_t spawnFlags = 0;
+        /// ownershipFlags' inputs: whether anyone owns it, the player who
+        /// does, SpawnIsPet when a pet fired it, and that player's connection.
+        bool owned = false;
+        Entity ownerPlayer = NULL_ENTITY;
+        std::uint8_t ownerFlags = 0;
+        bool ownerHasAccount = false;
+        net::ConnectionId ownerConnection = 0;
+        /// The entity's own name, or null for none (SpawnHasName). Borrowed
+        /// from its PlayerAccount, which nothing changes during a pass.
+        const std::string* username = nullptr;
+        /// A petal's flower or a ring seed's mob, by net id; 0 for none.
+        std::uint32_t petalOwnerNetId = 0;
+        /// An NPC's recipe.
+        std::uint8_t npcRecipe = 0;
+    };
+    const SpawnFacts& spawnFactsOf(World& world, std::uint32_t at);
+    std::vector<SpawnFacts> spawnFacts_;
+
     std::vector<Indexed> index_;
     /// indexWorld()'s sort scratch, kept for its capacity.
     std::vector<std::uint64_t> sortKeys_;
