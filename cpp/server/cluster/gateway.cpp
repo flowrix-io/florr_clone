@@ -599,6 +599,16 @@ void GameServer::gwLinkMessage(net::Connection& link, ByteReader& frame) {
             gwPassEdits();
             break;
         }
+        case ToGateway::UniversalFound: {
+            const std::string user = reader.str();
+            const std::string username = reader.str();
+            const std::uint16_t petal = reader.u16();
+            if (!reader.ok()) break;
+            takeUniversals(petal, user, UniversalTaken::Found);
+            universalHolders_[petal] = HolderMemo{username, clockMillis_};
+            gwPassEdits();
+            break;
+        }
         case ToGateway::TitanHolder: {
             const net::ConnectionId id = reader.u32();
             const std::uint16_t petal = reader.u16();
@@ -621,6 +631,46 @@ void GameServer::gwLinkMessage(net::Connection& link, ByteReader& frame) {
             PlayerRecord& record = database_.progress(user);
             record.recordKill(mob, rarity);
             record.stars += std::max(0.0, stars);
+            database_.markDirty();
+            gwPassEdits();
+            for (auto& entry : sessions_) {
+                Session& session = entry.second;
+                if (session.authenticated() && session.userId == user) sendProfile(session);
+            }
+            break;
+        }
+        case ToGateway::CreditLoot: {
+            // Drops that server held for somebody who has left it: into the
+            // account's bag, wherever its row is now -- gwPassEdits carries
+            // the stacks to a server that has it on loan, as amounts.
+            const std::string user = reader.str();
+            const Account* account = std::as_const(database_).findUserById(user);
+            const int n = reader.u16();
+            bool gave = false;
+            for (int i = 0; i < n && reader.ok(); ++i) {
+                const std::uint16_t petal = content().petalIndex(reader.str());
+                const Rarity rarity = clampRarity(reader.u8());
+                const int count = static_cast<int>(std::min<std::uint32_t>(reader.u32(), 1u << 20));
+                if (!reader.ok() || account == nullptr || petal >= content().petalCount() ||
+                    count <= 0) {
+                    continue;
+                }
+                PlayerRecord& record = database_.progress(user);
+                if (rarity == Rarity::Universal) {
+                    // There is one of it, as at bankPickups: none for a flower
+                    // that holds it already, and every other copy is taken.
+                    if (holdsUniversal(record, petal)) continue;
+                    giveToInventory(record, petal, rarity, 1);
+                    if (tracksUniversals(user)) {
+                        takeUniversals(petal, user, UniversalTaken::Found);
+                        universalHolders_[petal] = HolderMemo{account->username, clockMillis_};
+                    }
+                } else {
+                    giveToInventory(record, petal, rarity, count);
+                }
+                gave = true;
+            }
+            if (!gave) break;
             database_.markDirty();
             gwPassEdits();
             for (auto& entry : sessions_) {

@@ -170,6 +170,12 @@ private:
 // LootSystem
 // ---------------------------------------------------------------------------
 
+/// The chance each flower an apex mob pays out to also finds the Universal
+/// Champion's Crown: rolled per looter, on top of everything the table hands
+/// them, and the one way a drop comes at universal. There is only ever one
+/// (GameServer::bankPickups takes it from whoever held it before).
+inline constexpr double kApexUniversalCrownChance = 0.001;
+
 /// How long a fresh drop lies on the ground before a magnet may pull it in.
 /// A flower walking over it still takes it at once.
 inline constexpr double kMagnetPickupDelayMillis = 500.0;
@@ -230,6 +236,20 @@ public:
     /// gone body alone, that share could never be seen or picked up by the
     /// body they come back in. The server answers this from Session::lastBody.
     std::function<net::ConnectionId(Entity)> ownerOfGoneBody;
+    /// Whether a body that is no longer in the world still makes a kill pay
+    /// out, as the credited flower. Null, or false, keeps the reference's
+    /// gate: a mob whose credit has left pays nothing. A server of a sharded
+    /// game answers true for a player who has gone to another server, whose
+    /// share it then banks for them (GameServer::shBankAbsentLoot).
+    std::function<bool(Entity)> creditsGoneBody;
+
+    /// Whether this flower may roll the Universal Champion's Crown off an apex
+    /// kill: a signed-in player, outside an arena run or a hosted kit, who
+    /// does not hold it already. Null means every looter may, which is what
+    /// a unit test wants.
+    std::function<bool(Entity)> mayFindUniversalCrown;
+    /// kApexUniversalCrownChance, as a field so a test can make it certain.
+    double universalCrownChance = kApexUniversalCrownChance;
 
     /// Loads the shared JSON table during server startup. A missing or invalid
     /// file is fatal there instead of silently leaving every mob lootless.

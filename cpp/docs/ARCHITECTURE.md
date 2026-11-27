@@ -602,7 +602,14 @@ pings never wait.
 a `FlowerState` between: position, health, shield, mana, the ring with its
 reloads, the way back out of a hosted game. The client is redirected to the
 other server's port, and there sent the same `RealmChange` any pad sends. Pets hatch again; a split ends. A pad
-into a biome no server has says so and does nothing.
+into a biome no server has says so and does nothing. **Loot is not left behind**
+(`shBankAbsentLoot`): every drop still reserved for a player who no longer plays
+on a server -- walked or respawned elsewhere, or on the title screen -- is taken
+off its ground and sent to the gateway for their bag (`ToGateway::CreditLoot`),
+at once for the flower that just left and once a second for the rest. A kill
+that lands after its flower left pays its share the same way
+(`LootSystem::creditsGoneBody`). The ring's drops (the arena, the hosted arena)
+are the run's, and stay where they lie.
 
 **Balance** (`cluster/placement.h`, plain arithmetic, tested as such). Every
 server reports its tick time and what is in each realm once a second; a biome's

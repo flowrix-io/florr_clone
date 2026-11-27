@@ -55,9 +55,14 @@ constexpr double kMobBarHealthWidth = 0.7;
 constexpr double kMobBarShieldWidth = 0.5;
 constexpr std::uint32_t kMobBarTrack = 0x222222u;
 constexpr std::uint32_t kMobBarLag = 0xDD3434u;
-/// florr's `min(fraction * 30, 1)`: a line fades in over its first thirtieth,
-/// so an empty one is not a round dot.
-constexpr double kMobBarFadeIn = 30.0;
+/// The alpha below which the old fading plate drew nothing: under half of one
+/// 8-bit step it rounds to fully transparent. The plate and its lines are now
+/// drawn whole or not at all, and go exactly where the fade used to vanish.
+/// (The eases only ever approach zero, so "exactly 0" would never come.)
+constexpr double kInvisibleAlpha = 0.5 / 255.0;
+/// florr fades a bar line in over its first thirtieth, so an empty one is not
+/// a round dot: that fade used to vanish below this share of the bar.
+constexpr double kMobBarShownFrom = kInvisibleAlpha / 30.0;
 /// Below this the shield's line is not drawn at all.
 constexpr double kMobBarShieldMin = 0.0001;
 /// How far below the bottom of a mob's hitbox the top of its bar's track
@@ -80,13 +85,12 @@ constexpr double kMobDpsDrop = kMobTierDrop + 1.4 * kMobTierSize;
 /// What a summon's plate says it is, at the left of the tier row.
 constexpr const char* kPetLabel = "Summon";
 
-/// The screen height, in design units, below which a mob's plate text is
-/// not drawn, and the one it is fully drawn from, fading in between. Far
+/// The screen height, in design units, at or below which a mob's plate text
+/// is not drawn; above it the text is drawn whole (no fade in between). Far
 /// enough out -- super antennae and up -- a name is a pixel or two tall and
 /// says nothing, but hundreds of them are thousands of text draws a frame,
 /// more than every mob's body put together.
 constexpr double kMobTextHiddenBelow = 4.0;
-constexpr double kMobTextShownFrom = 6.0;
 
 /// How far the viewer's mana bar moves down for their health bar: its plate's
 /// ten units and a gap of three.
@@ -425,9 +429,12 @@ void WorldRenderer::drawHitbox(Canvas& canvas, const RemoteEntity& entity, const
 }
 
 void WorldRenderer::drawMobLabel(Canvas& canvas, const Camera& camera, const MobDraw& mob) const {
-    // The plate fades in with the mob and out once a chain bead heals: florr
-    // multiplies everything on it, text included, by one eased opacity.
-    if (mob.plateOpacity <= 0.0) return;
+    // florr fades the plate in with the mob and out once a chain bead heals,
+    // multiplying everything on it, text included, by one eased opacity. Here
+    // the plate is either fully opaque or not drawn: hundreds of see-through
+    // bars and labels a frame, each blended on its own, cost far more than
+    // opaque ones, so no part of the plate is ever drawn at partial alpha.
+    if (mob.plateOpacity < kInvisibleAlpha) return;
     const double zoom = camera.zoom();
     const Vec2 screen = camera.worldToScreen(mob.position);
     const MobConfig* config = content_ ? &content_->mob(mob.typeIndex) : nullptr;
@@ -446,8 +453,6 @@ void WorldRenderer::drawMobLabel(Canvas& canvas, const Camera& camera, const Mob
     const auto sx = [&](double x) { return screen.x + x * zoom; };
     const auto sy = [&](double y) { return screen.y + y * zoom; };
 
-    const double base = canvas.globalAlpha();
-    const double opacity = std::min(mob.plateOpacity, 1.0);
     canvas.save();
 
     if (options.healthBars) {
@@ -463,14 +468,12 @@ void WorldRenderer::drawMobLabel(Canvas& canvas, const Camera& camera, const Mob
         const double health = invulnerable ? 1.0 : clamp(mob.barHealth, 0.0, 1.0);
         const double lag = invulnerable ? 0.0 : clamp(mob.barLag, 0.0, 1.0);
         const double shield = invulnerable ? 0.0 : clamp(mob.barShield, 0.0, 1.0);
-        const auto fade = [](double share) { return std::min(share * kMobBarFadeIn, 1.0); };
         // One of florr's round-capped strokes along the line, from its left
         // end, filled as the capsule it covers: the same pixels, with no line
         // cap for the web canvas to carry (ui::healthBar does the same).
-        const auto stroke = [&](double share, double width, std::uint32_t colour, double alpha) {
-            if (alpha <= 0.0) return;
+        const auto stroke = [&](double share, double width, std::uint32_t colour) {
+            if (share < kMobBarShownFrom) return;
             const double w = width * zoom;
-            canvas.setGlobalAlpha(static_cast<float>(base * opacity * alpha));
             ui::setFill(canvas, colour);
             Path2D path;
             path.roundRect(static_cast<float>(sx(-length * 0.5) - w * 0.5),
@@ -479,28 +482,23 @@ void WorldRenderer::drawMobLabel(Canvas& canvas, const Camera& camera, const Mob
                            static_cast<float>(w * 0.5));
             canvas.fill(path);
         };
-        // Bottom to top, in florr's order. Each line is blended on its own at
-        // the plate's opacity, as florr's are, rather than as one layer.
-        stroke(1.0, kMobBarThickness, kMobBarTrack, 1.0);
-        stroke(lag, kMobBarThickness * kMobBarLagWidth, kMobBarLag, fade(lag));
+        // Bottom to top, in florr's order.
+        stroke(1.0, kMobBarThickness, kMobBarTrack);
+        stroke(lag, kMobBarThickness * kMobBarLagWidth, kMobBarLag);
         stroke(health, kMobBarThickness * kMobBarHealthWidth,
-               invulnerable ? kInvulnerableHealth : ui::kHealth, fade(health));
+               invulnerable ? kInvulnerableHealth : ui::kHealth);
         if (shield > kMobBarShieldMin) {
-            stroke(shield, kMobBarThickness * kMobBarShieldWidth, ui::kPaper, fade(shield));
+            stroke(shield, kMobBarThickness * kMobBarShieldWidth, ui::kPaper);
         }
     }
 
     // Too small to read, the text goes (the bar stays): the name is the
     // biggest of it, so when that is gone so is the rest.
-    const auto textShown = [&](double size) {
-        return clamp((size * zoom - kMobTextHiddenBelow) / (kMobTextShownFrom - kMobTextHiddenBelow),
-                     0.0, 1.0);
-    };
-    if (textShown(kMobNameSize) <= 0.0) {
+    const auto textShown = [&](double size) { return size * zoom > kMobTextHiddenBelow; };
+    if (!textShown(kMobNameSize)) {
         canvas.restore();
         return;
     }
-    canvas.setGlobalAlpha(static_cast<float>(base * opacity));
     // florr's Text pads a run by its outline -- 2 x int(2 x size x 0.12) --
     // and lays the padded box out, with the glyphs centred in it. Measured at
     // design size: text scales with the zoom, so the layout holds at any zoom.
@@ -508,9 +506,7 @@ void WorldRenderer::drawMobLabel(Canvas& canvas, const Camera& camera, const Mob
     // One label whose padded box starts at `boxLeft`.
     const auto label = [&](const std::string& text, double size, std::uint32_t fill,
                            double boxLeft, double y) {
-        const double shown = textShown(size);
-        if (shown <= 0.0) return;
-        canvas.setGlobalAlpha(static_cast<float>(base * opacity * shown));
+        if (!textShown(size)) return;
         ui::TextStyle style;
         style.size = size * zoom;
         style.fill = fill;

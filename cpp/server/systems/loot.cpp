@@ -588,6 +588,7 @@ void LootSystem::awardDeaths(World& world, const ContentRegistry& content, Rng& 
     // on every drop of every kill.
     const std::uint16_t magicOrb = content.petalIndex("magic_orb");
     const std::uint16_t glitchOrb = content.petalIndex("glitch_orb");
+    const std::uint16_t crown = content.petalIndex(kChampionCrownPetalId);
     corpses_->collect(corpseList_);
     for (const Entity corpse : corpseList_) {
         if (world.has<TrialMob>(corpse)) {
@@ -657,7 +658,10 @@ void LootSystem::awardDeaths(World& world, const ContentRegistry& content, Rng& 
         // a mob, a pet whose owner left. If that player is no longer in the
         // world the mob pays out nothing at all, which is the reference's gate.
         const Entity credit = world.has<PlayerTag>(killer) ? killer : ranked_.front().player;
-        if (!world.has<PlayerTag>(credit)) continue;
+        if (!world.has<PlayerTag>(credit) &&
+            !(creditsGoneBody && !world.isAlive(credit) && creditsGoneBody(credit))) {
+            continue;
+        }
 
         // A piece of a divided mob has that share of every drop rate the mob
         // has, so killing every piece pays what killing it whole does on
@@ -740,6 +744,17 @@ void LootSystem::awardDeaths(World& world, const ContentRegistry& content, Rng& 
                     outcomes_.push_back({form.petal, rarity, static_cast<std::uint32_t>(who)});
                 }
             }
+
+            // The Universal Champion's Crown: an apex kill's own chance, once
+            // per flower paid, past every orb (the crown has no other form).
+            // A piece of a divided apex has its share of the chance, as of
+            // every other drop. Drawn only for an apex, so no other kill's
+            // rolls move.
+            if (mobRarity == Rarity::Apex && crown < content.petalCount() &&
+                (!mayFindUniversalCrown || mayFindUniversalCrown(eligible_[who])) &&
+                rng.chance(universalCrownChance * dropShare)) {
+                outcomes_.push_back({crown, Rarity::Universal, static_cast<std::uint32_t>(who)});
+            }
         }
 
         // Equal outcomes side by side, and within one outcome each flower's
@@ -776,6 +791,12 @@ void LootSystem::awardDeaths(World& world, const ContentRegistry& content, Rng& 
                 const Entity dropped = spawnDrop(world, outcomes_[begin].petal,
                                                  outcomes_[begin].rarity, at + scatter, realm,
                                                  claimants_);
+                // One of it exists: two flowers who both rolled a universal
+                // race for the one drop rather than each taking it from the
+                // other.
+                if (dropped != NULL_ENTITY && outcomes_[begin].rarity == Rarity::Universal) {
+                    world.get<DropItem>(dropped).singleCopy = true;
+                }
                 if (dropped != NULL_ENTITY) fresh_.push_back(dropped);
             }
             begin = end;

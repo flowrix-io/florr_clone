@@ -515,6 +515,21 @@ Account accountFromJson(const Json& value, const std::string& storedKey) {
     account.muted = value["muted"].asBool(false);
     account.mutedAtMillis = static_cast<std::int64_t>(value["mutedAt"].asDouble(0));
     account.mutedBy = value["mutedBy"].asString();
+    // Read strictly: an entry that does not say "mute" or "unmute" is dropped
+    // rather than guessed at, so the record never claims what nobody did.
+    for (const Json& entry : value["muteHistory"].items()) {
+        if (!entry.isObject()) continue;
+        const std::string action = entry["action"].asString();
+        if (action != "mute" && action != "unmute") continue;
+        Account::MuteEvent event;
+        event.atMillis = static_cast<std::int64_t>(entry["at"].asDouble(0));
+        event.muted = action == "mute";
+        event.by = entry["by"].asString();
+        event.byId = entry["byId"].asString();
+        event.standing = entry["as"].asString();
+        event.all = entry["all"].asBool(false);
+        account.noteMute(std::move(event));
+    }
     account.chatModerator = value["chatModerator"].asBool(false);
     account.chatModeratorBy = account.chatModerator ? value["chatModeratorBy"].asString() : "";
     account.createdAtMillis = static_cast<std::int64_t>(value["createdAt"].asDouble(0));
@@ -524,7 +539,7 @@ Account accountFromJson(const Json& value, const std::string& storedKey) {
 
     collectExtras(value, {"id", "username", "password", "isPlainText", "admin", "owner",
                           "adminTier", "adminBanned", "adminBannedAt", "adminBannedBy",
-                          "lastActiveAt", "muted", "mutedAt", "mutedBy", "chatModerator",
+                          "lastActiveAt", "muted", "mutedAt", "mutedBy", "muteHistory", "chatModerator",
                           "chatModeratorBy", "createdAt", "createdFromHash", "guest",
                           "passwordChosen"},
                   account.extra);
@@ -557,6 +572,20 @@ Json accountToJson(const Account& account) {
         out["muted"] = true;
         if (account.mutedAtMillis != 0) out["mutedAt"] = millisJson(account.mutedAtMillis);
         if (!account.mutedBy.empty()) out["mutedBy"] = account.mutedBy;
+    }
+    if (!account.muteHistory.empty()) {
+        Json history = Json::array();
+        for (const Account::MuteEvent& event : account.muteHistory) {
+            Json entry = Json::object();
+            entry["at"] = millisJson(event.atMillis);
+            entry["action"] = event.muted ? "mute" : "unmute";
+            entry["by"] = event.by;
+            if (!event.byId.empty()) entry["byId"] = event.byId;
+            if (!event.standing.empty()) entry["as"] = event.standing;
+            if (event.all) entry["all"] = true;
+            history.push(std::move(entry));
+        }
+        out["muteHistory"] = std::move(history);
     }
     if (account.chatModerator) {
         out["chatModerator"] = true;

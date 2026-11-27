@@ -1139,6 +1139,88 @@ TEST(unmute_all_lifts_every_mute_online_or_not) {
     CHECK(sawText(boss, "Nobody is muted."));
 }
 
+TEST(tier_one_and_the_owner_see_who_muted_and_unmuted_a_player) {
+    Harness h("cmd-mute-history", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+        seedUser(path, "chief", "password7", true, kOwnerAdminTier);
+        seedUser(path, "deputy", "password7", true, 2);
+        seedUser(path, "helper", "password7");
+        seedUser(path, "loud", "password7");
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient boss;
+    NetClient chief;
+    NetClient deputy;
+    NetClient helper;
+    CHECK(loginAs(h, boss, "boss", "password7"));
+    CHECK(loginAs(h, chief, "chief", "password7"));
+    CHECK(loginAs(h, deputy, "deputy", "password7"));
+    CHECK(loginAs(h, helper, "helper", "password7"));
+    CHECK(say(h, boss, "/admin grant_mod helper"));
+
+    // Nothing yet, and nothing to read for an account that does not exist.
+    CHECK(say(h, boss, "/admin mute_history loud"));
+    CHECK(sawText(boss, "loud has never been muted or unmuted."));
+    CHECK(say(h, boss, "/admin mute_history"));
+    CHECK(sawText(boss, "No mutes or unmutes have been recorded."));
+    CHECK(say(h, boss, "/admin mute_history nobodyhere"));
+    CHECK(sawText(boss, "No account named \"nobodyhere\" exists."));
+
+    // A tier 2 admin mutes, a moderator unmutes, tier 1 mutes again and the
+    // owner lifts every mute at once. The player is offline throughout.
+    CHECK(say(h, deputy, "/admin mute loud"));
+    CHECK(say(h, helper, "/mod unmute loud"));
+    CHECK(say(h, boss, "/admin mute loud"));
+    CHECK(say(h, chief, "/admin unmute_all"));
+    CHECK(sawText(chief, "Unmuted 1 account."));
+
+    const std::vector<Account::MuteEvent>& history =
+        h.server.database().findUser("loud")->muteHistory;
+    CHECK_EQ(history.size(), static_cast<std::size_t>(4));
+    if (history.size() == 4) {
+        CHECK(history[0].muted);
+        CHECK_EQ(history[0].by, std::string("deputy"));
+        CHECK_EQ(history[0].byId, h.server.database().findUser("deputy")->id);
+        CHECK_EQ(history[0].standing, std::string("tier 2"));
+        CHECK(!history[1].muted);
+        CHECK_EQ(history[1].standing, std::string("chat moderator"));
+        CHECK_EQ(history[2].standing, std::string("tier 1"));
+        CHECK(!history[3].muted);
+        CHECK(history[3].all);
+        CHECK_EQ(history[3].standing, std::string("the server owner"));
+        CHECK(history[0].atMillis > 0);
+    }
+
+    // Tier 1 reads it, with a time each.
+    CHECK(say(h, boss, "/admin mute_history loud"));
+    CHECK(sawText(boss, "Mute history of loud (not muted now), oldest first:"));
+    CHECK(sawText(boss, "muted by deputy (tier 2)"));
+    CHECK(sawText(boss, "unmuted by helper (chat moderator)"));
+    CHECK(sawText(boss, "muted by boss (tier 1)"));
+    CHECK(sawText(boss, "unmuted by chief (the server owner, unmute_all)"));
+    CHECK(sawText(boss, " UTC ("));
+
+    // The owner reads it too, and across every account without a name.
+    CHECK(say(h, chief, "/admin mute_history"));
+    CHECK(sawText(chief, "Recent mutes and unmutes"));
+    CHECK(sawText(chief, "loud muted by deputy (tier 2)"));
+
+    // Tier 2 does not, by either form, and a moderator has no console at all.
+    CHECK(say(h, deputy, "/admin mute_history loud"));
+    CHECK(sawText(deputy, "Tier 2 admins cannot see who muted or unmuted a player (tier 1 only)."));
+    CHECK(!sawText(deputy, "Mute history of"));
+    CHECK(say(h, deputy, "/admin mutelog"));
+    CHECK(!sawText(deputy, "Recent mutes and unmutes"));
+    CHECK(say(h, helper, "/admin mute_history loud"));
+    CHECK(!sawText(helper, "Mute history of"));
+
+    // Reading it writes nothing to the account.
+    const std::size_t kept = h.server.database().findUser("loud")->muteHistory.size();
+    CHECK(say(h, boss, "/admin mute_history loud"));
+    CHECK_EQ(h.server.database().findUser("loud")->muteHistory.size(), kept);
+}
+
 TEST(a_full_admin_cannot_be_muted) {
     Harness h("cmd-mute-admin", [](const std::string& path) {
         seedUser(path, "boss", "password7", true);

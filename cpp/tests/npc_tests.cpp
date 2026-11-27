@@ -2299,6 +2299,33 @@ TEST(the_titan_will_not_forge_a_universal_the_forger_already_holds) {
     removeDataDir(dir);
 }
 
+TEST(the_titan_will_not_forge_the_champions_crown) {
+    const std::string dir = titanWorld("titan-crown");
+    Harness h("titan-crown", [](const std::string& path) {
+        seedAccount(path, "smith");
+        seedStack(path, "smith", "petal_champion_crown", Rarity::Apex, 5);
+    }, dir, 0);
+    if (!h.ready) { CHECK(false); removeDataDir(dir); return; }
+    const std::uint16_t crown = content().petalIndex(kChampionCrownPetalId);
+    CHECK(!titanMayForge(content().petal(crown)));
+    CHECK(titanMayForge(content().petal(content().petalIndex("rose"))));
+
+    NetClient client;
+    CHECK(joinAs(h, client, "smith"));
+    const std::vector<NetClient*> one{&client};
+    h.step(3, one);
+    standAtTitan(h, one, "smith");
+    client.requestTitanForge(crown);
+    TitanForgeOutcome outcome;
+    CHECK(awaitForge(h, one, client, outcome));
+    CHECK(!outcome.success);
+    // The five apex stay where they were, and nothing universal appears.
+    h.step(5, one);
+    CHECK_EQ(client.profile().stackCount(crown, Rarity::Apex), 5u);
+    CHECK_EQ(client.profile().stackCount(crown, Rarity::Universal), 0u);
+    removeDataDir(dir);
+}
+
 TEST(the_titan_names_whoever_holds_a_petal_at_universal) {
     CHECK_EQ(titanMemoryText("bob"),
              std::string("\"Ah, I remember forging that petal for a flower named bob...\""));
@@ -2449,6 +2476,89 @@ TEST(an_admins_universals_are_outside_the_one_of_each_rule) {
             CHECK_EQ(record->itemCount(Rarity::Apex, "petal_wing"), 0);
         }
     }
+    removeDataDir(dir);
+}
+
+TEST(a_found_universal_crown_is_taken_from_its_last_holder_and_only_it_is_announced) {
+    const std::string dir = titanWorld("crown-found");
+    Harness h("crown-found", [](const std::string& path) {
+        seedAccount(path, "finder");
+        // Online and wearing it.
+        seedAccount(path, "holder");
+        seedWorn(path, "holder", 0, "champion_crown", Rarity::Universal);
+        // Offline, with one in the bag (an operator's give).
+        seedAccount(path, "absent");
+        seedStack(path, "absent", "petal_champion_crown", Rarity::Universal, 1);
+    }, dir, 0);
+    if (!h.ready) { CHECK(false); removeDataDir(dir); return; }
+    const std::uint16_t crown = content().petalIndex(kChampionCrownPetalId);
+    World& world = h.server.world();
+
+    NetClient finder;
+    NetClient holder;
+    CHECK(joinAs(h, finder, "finder"));
+    CHECK(joinAs(h, holder, "holder"));
+    const std::vector<NetClient*> both{&finder, &holder};
+    h.step(3, both);
+    const Entity finderBody = bodyNamed(world, "finder");
+    const Entity holderBody = bodyNamed(world, "holder");
+    CHECK(finderBody != NULL_ENTITY && holderBody != NULL_ENTITY);
+    if (finderBody == NULL_ENTITY || holderBody == NULL_ENTITY) { removeDataDir(dir); return; }
+    CHECK_EQ(world.get<Loadout>(holderBody).slots[0].configIndex, crown);
+    // Set apart, so only the finder reaches what is put down at its feet.
+    world.get<Transform>(holderBody).position =
+        world.get<Transform>(finderBody).position + Vec2{kTileSize * 6.0, 0.0};
+    h.step(2, both);
+
+    const auto dropAtFinder = [&](Rarity rarity) {
+        const Transform& at = world.get<Transform>(finderBody);
+        const Entity drop = GameServerPeer::loot(h.server).spawnDrop(
+            world, crown, rarity, at.position, at.realm, {finderBody});
+        CHECK(drop != NULL_ENTITY);
+    };
+
+    // A crown below universal is picked up in silence.
+    dropAtFinder(Rarity::Mythic);
+    CHECK(awaitProfile(h, finder, [&](const Profile& p) {
+        return p.stackCount(crown, Rarity::Mythic) == 1u;
+    }));
+    h.step(5, both);
+    CHECK(!sawText(finder, "has been taken by"));
+    CHECK(!sawText(holder, "has been taken by"));
+
+    // The universal one: the finder holds it, the holder's is off the bar
+    // and not refunded, and everyone is told.
+    dropAtFinder(Rarity::Universal);
+    CHECK(awaitProfile(h, finder, [&](const Profile& p) {
+        return p.stackCount(crown, Rarity::Universal) == 1u;
+    }));
+    CHECK(awaitProfile(h, holder, [&](const Profile& p) {
+        return p.stackCount(crown, Rarity::Universal) == 0u &&
+               p.stackCount(crown, Rarity::Apex) == 0u && !p.loadout.empty() &&
+               p.loadout[0].empty();
+    }));
+    CHECK(world.get<Loadout>(holderBody).slots[0].empty());
+    const std::string taken = "The " + content().petal(crown).name + " has been taken by";
+    CHECK(h.stepUntil(both, [&] { return sawText(holder, taken) && sawText(finder, taken); }, 30));
+    CHECK(h.stepUntil(both, [&] {
+        return sawText(holder, "Another player found the Universal " + content().petal(crown).name);
+    }, 30));
+    const Database& db = h.server.database();
+    if (const Account* absent = db.findUser("absent")) {
+        const PlayerRecord* record = db.findProgress(absent->id);
+        CHECK(record != nullptr);
+        if (record != nullptr) {
+            CHECK_EQ(record->itemCount(Rarity::Universal, "petal_champion_crown"), 0);
+            CHECK_EQ(record->itemCount(Rarity::Apex, "petal_champion_crown"), 0);
+        }
+    } else {
+        CHECK(false);
+    }
+
+    // Another found by the one who holds it is no second crown.
+    dropAtFinder(Rarity::Universal);
+    h.step(10, both);
+    CHECK_EQ(finder.profile().stackCount(crown, Rarity::Universal), 1u);
     removeDataDir(dir);
 }
 

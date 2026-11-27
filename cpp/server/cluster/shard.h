@@ -82,6 +82,8 @@ struct GameServer::Shard : net::TransportHandler {
     double lastHeardMillis = 0;
     double nextHeartbeatMillis = 0;
     double nextStatsMillis = 0;
+    /// The next look for drops owed to players who have left (shBankAbsentLoot).
+    double nextAbsentLootMillis = 0;
     double tickMillis = 0;
     std::vector<Hosted> hosted;
     /// The realms SOME server simulates: a pad into any other is shut.

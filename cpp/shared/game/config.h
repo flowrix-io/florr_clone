@@ -1527,6 +1527,21 @@ inline bool petalLendsBasic(const PetalConfig& config) {
 /// unique alone.
 inline constexpr const char* kCrownLentPetalId = "basic";
 
+/// The tier a crown of `crown` lends its Basic at: its own, except that the
+/// Universal crown -- the one there is -- lends Apex ones (the user's rule,
+/// 2026-11-26). The petal system serves this and the tooltip's {rarity}
+/// names it.
+inline Rarity crownLentRarity(Rarity crown) {
+    return crown == Rarity::Universal ? Rarity::Apex : crown;
+}
+
+/// Whether the titan forges five apex of this petal into its universal.
+/// Every petal but the crown: the Universal crown only drops, off an apex
+/// (kApexUniversalCrownChance), and is never forged.
+inline bool titanMayForge(const PetalConfig& config) {
+    return !petalLendsBasic(config);
+}
+
 /// How far a flower may stand from the crown's wearer, centre to centre, and
 /// still be lent one. florr's figure is not in its client; this is a guess --
 /// about half a screen, so "the flowers around you" are the ones in view.

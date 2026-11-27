@@ -4766,6 +4766,72 @@ TEST(a_crowded_kill_shares_the_drops_its_rolls_agree_on) {
     }
 }
 
+TEST(each_flower_paid_for_an_apex_rolls_the_universal_crown_on_its_own) {
+    // A tenth of a percent per looter, and only off an apex.
+    CHECK_NEAR(kApexUniversalCrownChance, 0.001, 1e-12);
+    const std::uint16_t crown = shipped().petalIndex(kChampionCrownPetalId);
+    CHECK(crown < shipped().petalCount());
+
+    // The crowns `flowers` paid for one kill leave, with the roll made certain
+    // and `may` deciding who is allowed it.
+    const auto crownsAfter = [&](Rarity mobRarity, std::function<bool(Entity)> may,
+                                 std::vector<Entity>& paid) {
+        World world;
+        CommandBuffer commands{world};
+        SpatialGrid grid;
+        ShippedLoot loot;
+        EventQueue events;
+        Rng rng(1001);
+        loot.universalCrownChance = 1.0;
+        loot.mayFindUniversalCrown = std::move(may);
+        paid = {makePlayer(world, kCentre + Vec2{5000.0, 0}),
+                makePlayer(world, kCentre + Vec2{5001.0, 0})};
+        makeCorpse(world, shipped().mobIndex("starfish"), mobRarity, kCentre, paid.front(), paid);
+        loot.run(world, grid, shipped(), rng, 1000.0, net::kTickSeconds, commands, events);
+        commands.flush();
+        std::vector<DropItem> crowns;
+        for (const Entity drop : liveDrops(world)) {
+            const DropItem& item = world.get<DropItem>(drop);
+            // Nothing else a kill leaves comes at universal.
+            if (item.rarity == Rarity::Universal) CHECK_EQ(item.configIndex, crown);
+            if (item.configIndex == crown && item.rarity == Rarity::Universal) {
+                crowns.push_back(item);
+            }
+        }
+        return crowns;
+    };
+
+    // Both rolled it: ONE crown on the ground, for whichever of them takes it
+    // first -- there is only ever one.
+    std::vector<Entity> paid;
+    std::vector<DropItem> crowns = crownsAfter(Rarity::Apex, nullptr, paid);
+    CHECK_EQ(crowns.size(), std::size_t{1});
+    if (crowns.size() == 1) {
+        DropItem& item = crowns.front();
+        CHECK(item.singleCopy);
+        CHECK(claimed(item.eligible, paid[0], 0));
+        CHECK(claimed(item.eligible, paid[1], 0));
+        CHECK(LootSystem::mayPickUp(item, paid[1], 0));
+        item.pickedUpBy.push_back(LootClaim{paid[1], 0});
+        CHECK(!LootSystem::mayPickUp(item, paid[0], 0));
+    }
+
+    // A flower refused the roll (a bot, a run, a flower already holding it)
+    // has no share of it.
+    // (`paid` is filled before the kill is rolled, so the hook can read it.)
+    crowns = crownsAfter(Rarity::Apex, [&](Entity e) { return e != paid[1]; }, paid);
+    CHECK_EQ(crowns.size(), std::size_t{1});
+    if (crowns.size() == 1) {
+        CHECK(claimed(crowns.front().eligible, paid[0], 0));
+        CHECK(!claimed(crowns.front().eligible, paid[1], 0));
+    }
+
+    // Below apex there is no roll at all, however certain it is made.
+    for (const Rarity tier : {Rarity::Unique, Rarity::Super, Rarity::Common}) {
+        CHECK(crownsAfter(tier, nullptr, paid).empty());
+    }
+}
+
 TEST(a_killed_mob_drops_from_its_own_table) {
     World world;
     CommandBuffer commands{world};
