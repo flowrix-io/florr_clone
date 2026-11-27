@@ -706,7 +706,11 @@ constexpr ChangelogEntry kChangelog[] = {
         "Looting a mob now takes at least 3% of its health",
         "Magic Wand now costs mana for each pet it summons",
         "Magic Stick now costs 3x less mana",
-        "Made the antennae zoom animation smooth"
+        "Made the antennae zoom animation smooth",
+        "Buffed grapes",
+        "Added more assembler recipes",
+        "Increased rainbow petal projectile speed",
+        "An Apex mob now has a 0.1% chance to drop a Universal Champion Crown, and it can be stolen by other players",
       }
     },
     {"November 27, 2026",

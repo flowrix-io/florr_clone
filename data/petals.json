@@ -527,7 +527,7 @@
     "c++": {
         "name": "C++",
         "damage": 128,
-        "health": 128,
+        "health": 48,
         "size": 1,
         "cooldown": 2000,
         "price": 1000000,
@@ -719,7 +719,7 @@
         "size": 1,
         "cooldown": 1000,
         "price": 15,
-        "poison": 0.00625,
+        "poison": 0.01625,
         "poisonDuration": 500,
         "description": "It goes poof. Now with a secret ingredient: poison.",
         "color": "#000000",
@@ -861,7 +861,7 @@
         "damage": 10,
         "health": 10,
         "size": 2,
-        "cooldown": 10000,
+        "cooldown": 1000,
         "price": 10,
         "description": "Gas but more powerful",
         "color": "#000000",
@@ -870,7 +870,7 @@
         "projectile": {
             "count": 10,
             "distance": 500,
-            "speed": 50,
+            "speed": 1600,
             "spreadAngle": 1
         },
         "isAdminPetal": false
@@ -1994,7 +1994,7 @@
     "c--": {
         "name": "C--",
         "damage": 128,
-        "health": 128,
+        "health": 48,
         "size": 1,
         "cooldown": 2000,
         "price": 1000000,

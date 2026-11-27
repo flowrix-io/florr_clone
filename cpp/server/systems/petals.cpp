@@ -1308,7 +1308,9 @@ void PetalSystem::gatherCrownLenders(World& world, const ContentRegistry& regist
         // given a state has no loan to end either.
         PetalSlotState::Lent& lent = world.ensure<PetalSlotState>(offer.flower).lent;
         lent.lender = wearer.entity;
-        lent.lenderRarity = wearer.tier;
+        // The crown's tier decides which crown lends; the Basic it lends is
+        // at crownLentRarity of it (a universal crown's at apex).
+        lent.lenderRarity = crownLentRarity(wearer.tier);
     }
 }
 

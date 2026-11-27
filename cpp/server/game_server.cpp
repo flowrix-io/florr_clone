@@ -292,6 +292,30 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
         const Session* session = creditedSession(body);
         return session != nullptr ? session->connection : 0;
     };
+    // On a server of a sharded game, a flower that walked to another server
+    // (or is between lives, its row gone home) is still playing: a mob it
+    // hurt that dies here after it left pays its share, which
+    // shBankAbsentLoot then sends to its bag. One server alone keeps the
+    // reference's gate -- the body is still in the world wherever it went.
+    loot_->creditsGoneBody = [this](Entity body) {
+        if (!shard_) return false;
+        const Session* session = creditedSession(body);
+        return session != nullptr && !session->userId.empty() && session->lease == 0 &&
+               !session->playing();
+    };
+    // The crown's roll is the account's: a bot, a run in the arena or a hosted
+    // kit has no account bag for the one crown to be in, and a flower already
+    // holding it would roll for nothing (bankPickups gives no second one).
+    loot_->mayFindUniversalCrown = [this](Entity body) {
+        const Session* session = sessionForEntity(body);
+        if (session == nullptr || !session->authenticated() || session->userId.empty()) {
+            return false;
+        }
+        if (session->arena || session->eventKit) return false;
+        const PlayerRecord* record = database_.findProgress(session->userId);
+        return record == nullptr ||
+               !holdsUniversal(*record, content().petalIndex(kChampionCrownPetalId));
+    };
 
     // The annotation layer is a read-only service, so the systems that need it
     // hold a pointer rather than being handed it per call. Left null they fall
@@ -1061,6 +1085,8 @@ void GameServer::runSystems(double nowMillis, double dt) {
     // A pickup is a world event; owning it is an account fact. The loot system
     // deliberately knows nothing about the database, so the hand-off is here.
     bankPickups();
+    // And what is lying here for somebody who has gone to another server.
+    if (shard_) shBankAbsentLoot(nullptr, nowMillis);
     // Same reasoning for kills: combat marks the corpse, the account keeps the
     // tally. Runs before the reaper, while MobType is still readable.
     bankKills();

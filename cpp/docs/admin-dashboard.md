@@ -34,13 +34,13 @@ Every admin has a tier from 1 to 4, or is the server owner. Tier 1 can do
 everything; each tier below it loses one more power and keeps the losses of the
 tiers above it. The server owner ranks above tier 1:
 
-| tier | update the server | give petals | spawn mobs |
-|---|---|---|---|
-| owner | yes | yes | yes |
-| 1 | yes | yes | yes |
-| 2 | no | yes | yes |
-| 3 | no | to themselves | yes |
-| 4 | no | to themselves | no |
+| tier | update the server | read mute history | give petals | spawn mobs |
+|---|---|---|---|---|
+| owner | yes | yes | yes | yes |
+| 1 | yes | yes | yes | yes |
+| 2 | no | no | yes | yes |
+| 3 | no | no | to themselves | yes |
+| 4 | no | no | to themselves | no |
 
 - **Update** is `/admin update`, every form of it, `status` included.
 - **Give** is `/admin give` and the database editor (`/admin db`), which can
@@ -49,6 +49,7 @@ tiers above it. The server owner ranks above tier 1:
   grant at tier 3 or 4 gives nothing, or a tier 3 admin could hand petals to
   anyone by lending the console.
 - **Spawn** is `/admin spawn` and `/admin spawn_npc`.
+- **Mute history** is `/admin mute_history` (see [Chat moderators](#chat-moderators)).
 
 A refused command says which tiers may run it, for example "Tier 3 admins
 cannot give petals (tiers 1-2 only)." The dashboard's Spawn and Give tabs stay
@@ -144,6 +145,23 @@ can use it too.
 | `/mod terms allow <word>` | let through a word that holds a blocked term (`snigger`); a blocked term itself cannot be allowed |
 | `/mod terms unallow <word>` | stop allowing a word, built-in ones included |
 | `/mod terms check <text>` | what the filter says of a line, and of it as a name |
+
+Every mute and unmute is also kept on the account it was done to: who did it,
+as what ("tier 2", "the server owner", "tier 3, lent by boss" for a temporary
+grant, "chat moderator"), and when. `unmute_all` leaves a line on every
+account it lifts. Tier 1 admins and the server owner read it:
+
+| command | |
+|---|---|
+| `/admin mute_history <username>` | that account's mutes and unmutes, oldest first, each with its UTC time |
+| `/admin mute_history` | the newest 30 across every account, online or not |
+
+`mutelog` is the same command. Tiers 2-4 and moderators are refused. Each
+account keeps its newest 50 (`muteHistory` in its row of the database). The
+database editor neither shows nor changes it, so tier 2, who can open the
+editor, cannot read it there, and nobody in game can rewrite it. An account
+renamed since shows as "old (now new)". Mutes from before this record existed
+are not in it; `/mod muted` still says who muted an account last.
 
 A moderator cannot mute or unmute themselves, another moderator or an admin;
 an admin can mute a moderator, and nobody mutes an active full admin. A term

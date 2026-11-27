@@ -21,14 +21,6 @@
 
 namespace flix {
 
-namespace {
-
-/// The batch a craft consumes.
-constexpr int kCraftBatch = 5;
-
-/// Whether the account holds `petalIndex` at universal anywhere: in the bag
-/// or worn in a loadout slot. One of each petal may exist at universal, and
-/// both are where it can be.
 bool holdsUniversal(const PlayerRecord& record, std::uint16_t petalIndex) {
     if (petalIndex == kNoPetal) return false;
     if (record.itemCount(Rarity::Universal, inventoryKey(petalIndex)) > 0) return true;
@@ -40,6 +32,11 @@ bool holdsUniversal(const PlayerRecord& record, std::uint16_t petalIndex) {
     }
     return false;
 }
+
+namespace {
+
+/// The batch a craft consumes.
+constexpr int kCraftBatch = 5;
 
 /// Rng as a standard bit generator, which is all the <random> distributions
 /// ask of one.
@@ -548,6 +545,11 @@ void GameServer::handleTitanForge(Session& session, net::Connection& connection,
         reply(false, "The titan cannot forge that.");
         return;
     }
+    // The Universal crown is found, never forged (titanMayForge).
+    if (!titanMayForge(content().petal(petalIndex))) {
+        reply(false, "The titan cannot forge the " + content().petal(petalIndex).name + ".");
+        return;
+    }
 
     // One of each petal at universal, the forger's own included: forging the
     // one you already hold would only burn five apex for a second copy.
@@ -645,7 +647,8 @@ std::string GameServer::universalHolderName(std::uint16_t petalIndex) {
     return holder;
 }
 
-int GameServer::takeUniversals(std::uint16_t petalIndex, const std::string& keeperId) {
+int GameServer::takeUniversals(std::uint16_t petalIndex, const std::string& keeperId,
+                               UniversalTaken how) {
     if (petalIndex >= content().petalCount()) return 0;
     const PetalConfig& petal = content().petal(petalIndex);
     const std::string key = inventoryKey(petalIndex);
@@ -682,20 +685,26 @@ int GameServer::takeUniversals(std::uint16_t petalIndex, const std::string& keep
         }
         if (lost <= 0) continue;
         // A refund past a full stack is lost, as anything landing on a full
-        // stack is (PlayerRecord::addItem).
-        const int refund = static_cast<int>(
-            std::min<std::int64_t>(lost * kTitanForgeRefund, kMaxStackCount));
+        // stack is (PlayerRecord::addItem). Only a forge refunds: a found
+        // universal was paid for by nobody, and simply changes hands.
+        const bool forged = how == UniversalTaken::Forged;
+        const int refund = forged ? static_cast<int>(std::min<std::int64_t>(
+                                        lost * kTitanForgeRefund, kMaxStackCount))
+                                  : 0;
         giveToInventory(record, petalIndex, Rarity::Apex, refund);
         taken += lost;
         const Account* holder = std::as_const(database_).findUserById(userId);
-        std::printf("[TITAN] took %lld universal %s from %s\n", static_cast<long long>(lost),
-                    petal.id.c_str(), holder != nullptr ? holder->username.c_str() : userId.c_str());
+        std::printf("[%s] took %lld universal %s from %s\n", forged ? "TITAN" : "LOOT",
+                    static_cast<long long>(lost), petal.id.c_str(),
+                    holder != nullptr ? holder->username.c_str() : userId.c_str());
 
         // The account may be playing right now: its ring loses the petal and
         // its panels see the refund at once.
-        const std::string text = "Another player forged the Universal " + petal.name +
-                                 ". You received " + std::to_string(refund) + " Apex " +
-                                 petal.name + " back.";
+        const std::string text =
+            forged ? "Another player forged the Universal " + petal.name + ". You received " +
+                         std::to_string(refund) + " Apex " + petal.name + " back."
+                   : "Another player found the Universal " + petal.name +
+                         ". It has been taken from you.";
         for (auto& entry : sessions_) {
             Session& other = entry.second;
             if (!other.authenticated() || other.userId != userId) continue;
@@ -708,6 +717,16 @@ int GameServer::takeUniversals(std::uint16_t petalIndex, const std::string& keep
     }
     if (taken > 0) database_.markDirty();
     return static_cast<int>(std::min<std::int64_t>(taken, kMaxStackCount));
+}
+
+void GameServer::claimFoundUniversal(const Session& session, std::uint16_t petalIndex) {
+    if (shard_) {
+        // Every other account's is the gateway's to take, as a forge's is.
+        shUniversalFound(session, petalIndex);
+        return;
+    }
+    takeUniversals(petalIndex, session.userId, UniversalTaken::Found);
+    universalHolders_[petalIndex] = HolderMemo{session.username, clockMillis_};
 }
 
 void GameServer::announceRareCraft(const Session& session, std::uint16_t petalIndex,

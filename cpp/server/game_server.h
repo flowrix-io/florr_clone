@@ -585,9 +585,16 @@ private:
                          std::uint32_t speakerNetId);
     void shNotify(const std::string& type, const std::string& message);
     void shTitanForged(const Session&, std::uint16_t petalIndex);
+    void shUniversalFound(const Session&, std::uint16_t petalIndex);
     void shAskTitanHolder(const Session&, std::uint16_t petalIndex);
     /// A kill earned here by somebody whose row is not on loan here any more.
     void shCreditKill(const std::string& userId, const std::string& mob, Rarity, double stars);
+    /// Every drop on this server still reserved for a player who no longer
+    /// plays here -- walked to another server, respawned on one, or back on
+    /// the title screen -- taken off the ground and sent to the gateway for
+    /// their bag. `only`: that session's alone, now; null: everyone's, at most
+    /// once a second (`nowMillis` is the tick clock).
+    void shBankAbsentLoot(const Session* only, double nowMillis);
     void shTempAdminEnded(net::ConnectionId);
     void shClientClosed(net::ConnectionId);
     void shSquadLeaving(net::ConnectionId, const std::string& toBiome);
@@ -774,10 +781,20 @@ private:
     /// The username of a tracked account holding `petalIndex` at universal,
     /// or empty: the memo while it is fresh, else a sweep of every account.
     std::string universalHolderName(std::uint16_t petalIndex);
+    /// Why takeUniversals is sweeping: a titan forge, which refunds, or a
+    /// universal picked up off the ground (the champion's crown off an apex),
+    /// which does not.
+    enum class UniversalTaken : std::uint8_t { Forged, Found };
     /// Takes every universal `petalIndex` from every tracked account but
-    /// `keeperId`, bag and loadout, refunding kTitanForgeRefund apex for each,
-    /// and tells the live ones. Returns how many universals were taken.
-    int takeUniversals(std::uint16_t petalIndex, const std::string& keeperId);
+    /// `keeperId`, bag and loadout, refunding kTitanForgeRefund apex for each
+    /// when it was Forged, and tells the live ones. Returns how many
+    /// universals were taken.
+    int takeUniversals(std::uint16_t petalIndex, const std::string& keeperId,
+                       UniversalTaken how = UniversalTaken::Forged);
+    /// A tracked account has just picked up the universal `petalIndex`: it is
+    /// now the one holder, everyone else's is taken without a refund, and the
+    /// titan remembers it there. Through the gateway when sharded.
+    void claimFoundUniversal(const Session&, std::uint16_t petalIndex);
     void handleRespawn(Session&);
     void handlePing(net::Connection&, ByteReader&);
     void handleUpgradeSkill(Session&, net::Connection&, ByteReader&);
@@ -1386,6 +1403,12 @@ private:
     /// another moderator nor one of them.
     void setMuted(const Session& session, const std::string& username, bool muting,
                   std::string& said);
+    /// What `session` mutes and unmutes as, for the server log and the
+    /// account's mute history: "the server owner", "tier 2", "tier 3, lent by
+    /// X" for a temporary grant, or "chat moderator".
+    std::string muteStanding(const Session& session) const;
+    /// Puts one mute or unmute by `session` on `account`'s mute history.
+    void noteMute(Account& account, const Session& session, bool muted, bool all) const;
 
     /// What an admin command's `<player>` argument resolved to.
     ///
@@ -1770,7 +1793,9 @@ private:
     void reportBossDamage(Entity mob, const MobType&);
     /// Broadcasts "An Apex <petal> has been collected by @handle [Flower]!"
     /// for a ground pickup at apex or above, the player credited exactly as a
-    /// boss kill credits them. Anything below apex is silent.
+    /// boss kill credits them. Anything below apex is silent. The champion's
+    /// crown has its own line, "The Champion's Crown has been taken by ...",
+    /// and only at universal, the one there is.
     void announceRarePickup(const Session&, std::uint16_t petalIndex, Rarity rarity);
     /// The world half of a yggdrasil revival has already happened when this is
     /// called; the SESSION half is here -- a body whose death was announced

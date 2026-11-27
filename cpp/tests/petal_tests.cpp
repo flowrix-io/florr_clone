@@ -6886,6 +6886,19 @@ TEST(the_lent_basic_follows_the_crowns_tier) {
     CHECK_NEAR(rig.healthOf(lentTo(rig, other).front()), lentStats(Rarity::Epic).health, 1e-9);
 }
 
+TEST(the_universal_crown_lends_apex_basics) {
+    if (!contentLoaded()) return;
+    CHECK(crownLentRarity(Rarity::Universal) == Rarity::Apex);
+    CHECK(crownLentRarity(Rarity::Apex) == Rarity::Apex);
+    CHECK(crownLentRarity(Rarity::Mythic) == Rarity::Mythic);
+    Rig rig;
+    rig.equip(0, "champion_crown", Rarity::Universal);
+    const Entity other = addFlower(rig, {1300.0, 1000.0});
+    CHECK(rig.tickUntil([&] { return !lentTo(rig, other).empty(); }));
+    CHECK(rig.world.get<PetalInstance>(lentTo(rig, other).front()).rarity == Rarity::Apex);
+    CHECK_NEAR(rig.healthOf(lentTo(rig, other).front()), lentStats(Rarity::Apex).health, 1e-9);
+}
+
 TEST(a_wearers_best_crown_sets_the_tier_and_a_mimic_counts) {
     if (!contentLoaded()) return;
     Rig rig;

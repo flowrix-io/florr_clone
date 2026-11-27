@@ -96,6 +96,14 @@ bool holdsUniversal(const Profile& profile, std::uint16_t petalIndex) {
     return false;
 }
 
+/// Whether the titan will forge none of this petal for this account: one it
+/// already holds at universal, or one the titan never forges (the crown,
+/// titanMayForge) -- the server's rules, shown here first.
+bool forgesNone(const Profile& profile, std::uint16_t petalIndex) {
+    return holdsUniversal(profile, petalIndex) ||
+           (knownPetal(petalIndex) && !titanMayForge(content().petal(petalIndex)));
+}
+
 } // namespace
 
 Vec2 TitanPanel::size(const Profile& profile) {
@@ -172,7 +180,7 @@ bool TitanPanel::render(MenuContext& ctx) {
     // the ring under its own animation.
     if (phase_ == Phase::Idle && knownPetal(stagedPetal_) &&
         (apexOwned(profile, stagedPetal_) < static_cast<std::uint32_t>(kTitanForgeCost) ||
-         holdsUniversal(profile, stagedPetal_))) {
+         forgesNone(profile, stagedPetal_))) {
         stagedPetal_ = kNoPetal;
     }
 
@@ -257,7 +265,7 @@ bool TitanPanel::render(MenuContext& ctx) {
                 cell.count = owned > staged ? owned - staged : 0;
             }
             cell.greyed = cell.count < static_cast<std::uint32_t>(kTitanForgeCost) ||
-                          holdsUniversal(profile, petalIndex);
+                          forgesNone(profile, petalIndex);
             // A lone petal carries no badge, as in the inventory.
             if (cell.count > 1) cell.badge = "x" + stackCountText(cell.count);
             return cell;

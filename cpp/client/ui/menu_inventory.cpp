@@ -367,9 +367,12 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
                 " mobs. The second target can be anywhere in the same realm.";
         }
         static const std::string kRaritySlot = "{rarity}";
+        // The crown's is the tier of the Basic it lends, which for the
+        // Universal crown is apex (crownLentRarity).
+        const Rarity named = petalLendsBasic(config) ? crownLentRarity(rarity) : rarity;
         for (std::size_t at = description.find(kRaritySlot); at != std::string::npos;
              at = description.find(kRaritySlot, at)) {
-            const std::string tier = colourMarkup(rarityLabel(rarity), rarityColor(rarity));
+            const std::string tier = colourMarkup(rarityLabel(named), rarityColor(named));
             description.replace(at, kRaritySlot.size(), tier);
             at += tier.size();
         }

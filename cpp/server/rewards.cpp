@@ -99,10 +99,19 @@ void GameServer::bankPickups() {
         if (!session || session->userId.empty()) continue;
         if (pickup.petalIndex >= content().petalCount()) continue;
 
+        // The one universal a ground pickup can be (the champion's crown off
+        // an apex): there is only ever one of each petal at universal, so a
+        // flower already holding it takes nothing more, and one that did not
+        // is now the only holder. An admin's is outside that rule, as an
+        // admin's forge is (tracksUniversals): nobody's is taken for it.
+        const bool universal = pickup.rarity == Rarity::Universal;
+        // Read, not taken: taking the account's row mutably drops what it
+        // keeps rendered for the journal, and the credit below keeps it.
+        if (universal && holdsUniversal(viewRecord(*session), pickup.petalIndex)) continue;
+
         // Into the bag the body is playing with: an arena pickup is the run's,
-        // not the account's, until the run ends.
-        // The account's bag through Database::addItem, which keeps the
-        // other tiers of the row rendered for the journal.
+        // not the account's, until the run ends. The account's goes through
+        // Database::addItem, which keeps the other tiers of the row rendered.
         if (session->eventKit || session->arena) {
             giveToInventory(liveRecord(*session), pickup.petalIndex, pickup.rarity, 1);
         } else {
@@ -114,6 +123,12 @@ void GameServer::bankPickups() {
         // Owed, not sent: see sendDueProfiles.
         noteDue(session->stacksDue, pickup.petalIndex, pickup.rarity);
         session->profileDue = true;
+        // Only the account's own bag is the one place it may be: a run's or
+        // a hosted kit's is not the account, and is not the account's to lose.
+        const bool tracked = universal && !session->arena && !session->eventKit &&
+                             tracksUniversals(session->userId);
+        if (tracked) claimFoundUniversal(*session, pickup.petalIndex);
+        if (universal && !tracked) continue;
         announceRarePickup(*session, pickup.petalIndex, pickup.rarity);
     }
 }
@@ -350,12 +365,13 @@ void GameServer::announceRarePickup(const Session& session, std::uint16_t petalI
                                     Rarity rarity) {
     if (petalIndex >= content().petalCount()) return;
     // The crown has florr's own line (Chat/PetalFoundNamed/champion_crown),
-    // at whatever tier it is picked up.
+    // and only at universal: that one is "The" crown, of which there is only
+    // ever one. Every lower tier is picked up in silence.
     if (petalLendsBasic(content().petal(petalIndex))) {
-        // broadcastChat(net::ChatChannel::System, "",
-        //               rarityBoldTag(rarity) + "The " +
-        //                   content().petal(petalIndex).name + " has been taken by " +
-        //                   creditedPlayerMarkup(session) + "!</b>");
+        if (rarity != Rarity::Universal) return;
+        broadcastChat(net::ChatChannel::System, "",
+                      rarityBoldTag(rarity) + "The " + content().petal(petalIndex).name +
+                          " has been taken by " + creditedPlayerMarkup(session) + "!</b>");
         return;
     }
     if (rarityIndex(rarity) < rarityIndex(Rarity::Apex)) return;

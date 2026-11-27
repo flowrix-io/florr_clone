@@ -1028,6 +1028,45 @@ TEST(the_text_view_saves_a_record_without_undoing_the_player) {
     CHECK(boss.adminDb().resultMessage.find("Nothing to save") != std::string::npos);
 }
 
+TEST(the_database_editor_neither_shows_nor_changes_a_mute_history) {
+    Harness h("admindb-mute-history", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+        seedUser(path, "bob", "password7");
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient boss;
+    CHECK(loginAs(h, boss, "boss", "password7"));
+    CHECK(say(h, boss, "/admin mute bob"));
+    CHECK(say(h, boss, "/admin unmute bob"));
+    CHECK(say(h, boss, "/admin mute bob"));
+    CHECK_EQ(h.server.database().findUser("bob")->muteHistory.size(), static_cast<std::size_t>(3));
+
+    CHECK(unlock(h, boss));
+    CHECK(openAccount(h, {&boss}, boss, "bob"));
+    // Shown: the mute as it stands. Not shown: who did what before.
+    CHECK(docNode(boss, {"account", "muted"}) != nullptr);
+    CHECK(docNode(boss, {"account", "muteHistory"}) == nullptr);
+
+    // Not by its path...
+    boss.adminDbSet({"account", "muteHistory"}, "[]");
+    CHECK(!awaitResult(h, {&boss}, boss));
+    CHECK(boss.adminDb().resultMessage.find("mute history") != std::string::npos);
+    boss.adminDbRemove({"account", "muteHistory"});
+    CHECK(!awaitResult(h, {&boss}, boss));
+
+    // ...and an edit to the rest of the row leaves it as it was.
+    Json row;
+    CHECK(net::adminDbNodeJson(*docNode(boss, {"account"}), row));
+    Json unmuted = row;
+    unmuted["muted"] = Json(false);
+    CHECK(boss.adminDbPatch({"account"}, row.dump(), unmuted.dump()));
+    CHECK(awaitResult(h, {&boss}, boss));
+    const Account* bob = h.server.database().findUser("bob");
+    CHECK(!bob->muted);
+    CHECK_EQ(bob->muteHistory.size(), static_cast<std::size_t>(3));
+}
+
 TEST(the_text_view_never_changes_what_the_editor_locks) {
     Harness h("admindb-text-locks", [](const std::string& path) {
         seedUser(path, "boss", "password7", true);
@@ -1059,6 +1098,7 @@ TEST(the_text_view_never_changes_what_the_editor_locks) {
         {"username", Json("robert"), "files the account under"},
         {"id", Json("someoneelse"), "files the account under"},
         {"password", Json("hunter2"), "Set password"},
+        {"muteHistory", Json::array(), "mute history"},
     };
     for (const Locked& lock : locked) {
         Json typed = row;

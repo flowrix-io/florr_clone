@@ -2138,7 +2138,9 @@
                 { "from": [{ "petal": "triangle", "count": 10 }], "to": "cutter" },
                 { "from": ["mimic", "ram"], "to": "sawblade" },
                 { "from": [{ "petal": "square", "count": 2 }], "to": "pentagon" },
-                { "from": [{ "petal": "computer_chip", "count": 30 }], "to": "c++" }
+                { "from": [{ "petal": "computer_chip", "count": 30 }], "to": "c++" },
+                { "from": ["missile", "computer_chip"], "to": "guided_missile" },
+                { "from": ["c++", "yin_yang"], "to": "c--"}
             ]
         },
         "noEggDrop": true
@@ -2717,7 +2719,7 @@
         "min_rarity": "eternal",
         "noEggDrop": true,
         "replace_chance": {
-            "eternal": 0.08
+            "eternal": 0.1
         },
         "replace_biomes": [
             "computer"
