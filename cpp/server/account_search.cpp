@@ -35,7 +35,8 @@ bool findRarity(const std::string& word, Rarity& out) {
     const std::string wanted = folded(word);
     for (int i = 0; i < kRarityCount; ++i) {
         const auto r = static_cast<Rarity>(i);
-        if (wanted == folded(rarityName(r)) || wanted == folded(rarityLabel(r))) {
+        if (wanted == folded(rarityName(r)) || wanted == folded(rarityLabel(r)) ||
+            wanted == folded(raritySaveKey(r))) {
             out = r;
             return true;
         }
@@ -508,7 +509,7 @@ double valueOf(const Term& term, const Subject& subject, int level) {
         }
     };
     if (!term.anyRarity) {
-        countBucket(record->inventory[std::string(rarityName(term.rarity))]);
+        countBucket(record->inventory[std::string(raritySaveKey(term.rarity))]);
     } else if (record->inventory.isObject()) {
         for (const auto& entry : record->inventory.members()) countBucket(entry.second);
     }

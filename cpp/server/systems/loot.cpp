@@ -291,7 +291,7 @@ Rarity LootSystem::finishDropRarity(Rarity baseRarity, Rarity mobRarity, Rng& rn
     // kApexEternalDropChance.
     if (mobRarity == Rarity::Apex) {
         const double roll = rng.unit();
-        if (roll < kApexEternalDropChance) return Rarity::Unique;
+        if (roll < kApexEternalDropChance) return Rarity::Eternal;
         if (roll < kApexEternalDropChance + kApexUltraDropChance) return Rarity::Ultra;
         return Rarity::Super;
     }
@@ -609,7 +609,7 @@ void LootSystem::awardDeaths(World& world, const ContentRegistry& content, Rng& 
         const Dead* dead = world.tryGet<Dead>(corpse);
         const Entity killer = dead != nullptr ? dead->killer : NULL_ENTITY;
         const Health* health = world.tryGet<Health>(corpse);
-        const double damageFloor = lootDamageFloor(health != nullptr ? health->max : 0.0);
+        const double damageFloor = lootDamageFloor(health != nullptr ? health->max : 0.0, mobRarity);
 
         // Loot slots go to the highest positive contributors, just like XP.
         ranked_.clear();

@@ -38,12 +38,12 @@ inline double shopPrice(const std::string& petalId, Rarity rarity) {
 }
 
 /// What may be bought off the ladder, by naming a petal and a tier rather than
-/// clicking a card: up to super. Unique and apex are the reward for crafting
+/// clicking a card: up to super. Eternal and apex are the reward for crafting
 /// and for killing things, and a standing star price would make both
-/// pointless. The store's two unique cards an hour (kShopOfferTiers) are the
-/// one way stars buy a unique. Universal is only ever given.
+/// pointless. The store's two eternal cards an hour (kShopOfferTiers) are the
+/// one way stars buy an eternal. Universal is only ever given.
 inline bool shopSellsRarity(Rarity rarity) {
-    return rarityIndex(rarity) < rarityIndex(Rarity::Unique);
+    return rarityIndex(rarity) < rarityIndex(Rarity::Eternal);
 }
 
 /// Admin-only petals never appear in the shop, whatever their price says --
@@ -89,13 +89,13 @@ inline constexpr int kShopOfferCount = 10;
 inline constexpr int kShopOfferColumns = 5;
 
 /// The tier of each card, in the order the grid lays them out: two mythic,
-/// two ultra, four super, two unique. Fixed rather than rolled -- a rotation
+/// two ultra, four super, two eternal. Fixed rather than rolled -- a rotation
 /// changes which petals are offered and which cards are discounted, never how
 /// many of each tier there are. Cheap to dear, so the top row is the cheap
 /// one and the grid reads at a glance instead of as ten prices in no order.
 inline constexpr std::array<Rarity, kShopOfferCount> kShopOfferTiers = {
     Rarity::Mythic, Rarity::Mythic, Rarity::Ultra, Rarity::Ultra,  Rarity::Super,
-    Rarity::Super,  Rarity::Super,  Rarity::Super, Rarity::Unique, Rarity::Unique,
+    Rarity::Super,  Rarity::Super,  Rarity::Super, Rarity::Eternal, Rarity::Eternal,
 };
 
 /// Seconds since the epoch: the one clock the offers hang off.
@@ -174,7 +174,7 @@ inline std::vector<ShopOffer> shopOffers(std::int64_t rotation) {
 /// How long a lock holds the store, in rotations: a day. Long enough to come
 /// back for a card after a session away, and short enough that one good hour
 /// cannot be kept on sale for good -- a card can be bought any number of
-/// times, so a lock with no end would be a standing price on a unique.
+/// times, so a lock with no end would be a standing price on an eternal.
 inline constexpr std::int64_t kShopLockRotations = 24;
 
 // ---------------------------------------------------------------------------
@@ -242,7 +242,7 @@ inline int starsForKill(Rarity mobRarity) {
         case Rarity::Mythic: return 1;
         case Rarity::Ultra:  return 5;
         case Rarity::Super:  return 25;
-        case Rarity::Unique: return 500;
+        case Rarity::Eternal: return 500;
         case Rarity::Apex:   return 3000;
         default: return 0;
     }

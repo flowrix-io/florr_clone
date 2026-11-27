@@ -608,13 +608,13 @@ enum class ServerMessage : std::uint8_t {
 
 /// What a notification announces. The stripe down a card's left edge is the
 /// only thing that distinguishes them. The TypeScript build carried the first
-/// five as a string tag (`super_craft`, `unique_craft`, `apex_craft`,
+/// five as a string tag (`super_craft`, `eternal_craft`, `apex_craft`,
 /// `star_code`, and the generic stripe for anything else); UniversalCraft is
 /// this build's own.
 enum class NotificationKind : std::uint8_t {
     Generic = 0,
     SuperCraft,
-    UniqueCraft,
+    EternalCraft,
     ApexCraft,
     StarCode,
     UniversalCraft,     ///< a universal forged at a titan (version 47)

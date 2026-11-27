@@ -406,7 +406,7 @@ TEST(rarity_steps_clamp_at_both_ends) {
     CHECK_EQ(downgradeRarity(Rarity::Common), Rarity::Common);
     CHECK_EQ(upgradeRarity(Rarity::Apex), Rarity::Apex);
     CHECK_EQ(upgradeRarity(Rarity::Common), Rarity::Uncommon);
-    CHECK_EQ(downgradeRarity(Rarity::Apex), Rarity::Unique);
+    CHECK_EQ(downgradeRarity(Rarity::Apex), Rarity::Eternal);
     CHECK_EQ(clampRarity(-5), Rarity::Common);
     // Any tier, universal included; the ladder clamp stops at apex.
     CHECK_EQ(clampRarity(999), Rarity::Admin);
@@ -428,9 +428,9 @@ TEST(rarity_scaling_is_monotonic) {
     const double mythic = petalHealScale(Rarity::Mythic);
     CHECK_NEAR(petalHealScale(Rarity::Ultra) / mythic, std::sqrt(3.0), 1e-9);
     CHECK_NEAR(petalStatScale(Rarity::Ultra) / petalStatScale(Rarity::Mythic), 3.0, 1e-9);
-    // Modifiers stay linear, 1x to 4x across common..unique.
+    // Modifiers stay linear, 1x to 4x across common..eternal.
     CHECK_NEAR(petalModifierScale(Rarity::Common), 1.0, 1e-9);
-    CHECK_NEAR(petalModifierScale(Rarity::Unique), 4.0, 1e-9);
+    CHECK_NEAR(petalModifierScale(Rarity::Eternal), 4.0, 1e-9);
 }
 
 TEST(universal_sits_above_the_ladder_and_nothing_climbs_to_it) {
@@ -445,14 +445,14 @@ TEST(universal_sits_above_the_ladder_and_nothing_climbs_to_it) {
     CHECK(clampRarity(rarityIndex(Rarity::Universal)) == Rarity::Universal);
     CHECK(clampLadderRarity(rarityIndex(Rarity::Universal)) == Rarity::Apex);
     CHECK(ladderRarity(Rarity::Universal) == Rarity::Apex);
-    CHECK(ladderRarity(Rarity::Unique) == Rarity::Unique);
+    CHECK(ladderRarity(Rarity::Eternal) == Rarity::Eternal);
 
     // Nothing upgrades into it, and nothing crafts out of it or of apex.
-    CHECK(upgradeRarity(Rarity::Unique) == Rarity::Apex);
+    CHECK(upgradeRarity(Rarity::Eternal) == Rarity::Apex);
     CHECK(upgradeRarity(Rarity::Apex) == Rarity::Apex);
     CHECK(upgradeRarity(Rarity::Universal) == Rarity::Universal);
     CHECK(downgradeRarity(Rarity::Universal) == Rarity::Apex);
-    CHECK(craftsOutOf(Rarity::Unique));
+    CHECK(craftsOutOf(Rarity::Eternal));
     CHECK(!craftsOutOf(Rarity::Apex));
     CHECK(!craftsOutOf(Rarity::Universal));
     CHECK_EQ(oracleCraftCost(Rarity::Universal), 0);

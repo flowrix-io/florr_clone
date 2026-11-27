@@ -137,7 +137,9 @@ Realm realmOf(const World& world, Entity entity) {
 bool parseRarityStrict(const std::string& text, Rarity& out) {
     const std::string key = lowerCase(text);
     for (int i = 0; i < kRarityCount; ++i) {
-        if (key == kRarityNames[static_cast<std::size_t>(i)]) {
+        // "unique" is eternal's old name; an admin's habit still works.
+        if (key == kRarityNames[static_cast<std::size_t>(i)] ||
+            key == kRaritySaveKeys[static_cast<std::size_t>(i)]) {
             out = static_cast<Rarity>(i);
             return true;
         }
@@ -995,8 +997,8 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
             out(bossTimersFromServers());
             return true;
         }
-        // A wild unique or apex is a super its biome's clock upgraded, so
-        // "when is the next unique" is a question about these clocks.
+        // A wild eternal or apex is a super its biome's clock upgraded, so
+        // "when is the next eternal" is a question about these clocks.
         // "ready" means the next super spawned there rolls for the upgrade;
         // until then an admin's `spawn` refuses that tier there as well.
         const auto& clocks = spawning_->bossClocks();
@@ -1004,8 +1006,8 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
         for (const SpawnSystem::BiomeBossClock& clock : clocks) {
             if (!clock.scattered) continue;
             if (!lines.empty()) lines += "<br/>";
-            lines += escapedMarkup(biomeLabel(clock.biome)) + ": unique " +
-                     clockWaitLabel(clock.uniqueReadyMillis - clockMillis_) + ", apex " +
+            lines += escapedMarkup(biomeLabel(clock.biome)) + ": eternal " +
+                     clockWaitLabel(clock.eternalReadyMillis - clockMillis_) + ", apex " +
                      clockWaitLabel(clock.apexReadyMillis - clockMillis_);
         }
         if (lines.empty()) {
@@ -1045,7 +1047,7 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
         // in the browser rather than as a wall of tags.
         std::string help = "<b>Available commands:</b><br/>";
         help += "/biome - Show the most populated biome <br/>";
-        help += "/boss-timers - Show each biome's unique/apex cooldown <br/>";
+        help += "/boss-timers - Show each biome's eternal/apex cooldown <br/>";
         help += "/players-online - Show how many players are online <br/>";
         help += "/level-from-string &lt;name&gt; - Show what level a bot named &lt;name&gt; would "
                 "roll <br/>";
@@ -2240,7 +2242,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             // ladder; universal is a petal tier and spawns as apex
             // (SpawnSystem::spawnMobAt clamps it), so it is named as that.
             out("Valid rarities: common, uncommon, rare, epic, legendary, mythic, ultra, super, "
-                "unique, apex (universal spawns as apex)");
+                "eternal, apex (universal spawns as apex)");
             return;
         }
 
@@ -2373,7 +2375,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
                     placedAny = true;
                 }
             }
-            // An admin's unique or apex spends the biome's clock just as a
+            // An admin's eternal or apex spends the biome's clock just as a
             // wild one does, so the next one there -- wild or typed -- waits a
             // full cooldown. Charged once, after the whole batch: charging on
             // the first would have spawnMob refuse the rest of `amount`, and
@@ -3511,16 +3513,16 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         if (text.empty()) {
             out("Usage: notification <type> <message>");
             out("  Or: notify <type> <message> (shorthand)");
-            out("  Valid types: super_craft, unique_craft, apex_craft, star_code, universal_craft");
+            out("  Valid types: super_craft, eternal_craft, apex_craft, star_code, universal_craft");
             out("  Examples:");
             out("    notification star_code Special event starting now!");
-            out("    notify unique_craft New unique petal discovered!");
+            out("    notify eternal_craft New eternal petal discovered!");
             return;
         }
         // The feed's own list of tags (notificationKind), so a tag the console
         // accepts is always one the feed can tell apart from Generic.
         if (notificationKind(type) == net::NotificationKind::Generic) {
-            out("Invalid notification type. Valid types: super_craft, unique_craft, apex_craft, "
+            out("Invalid notification type. Valid types: super_craft, eternal_craft, apex_craft, "
                 "star_code, universal_craft");
             return;
         }

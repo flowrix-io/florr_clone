@@ -140,7 +140,7 @@ void GameServer::bankKills() {
         // LOOT rights on the corpse, not to the finisher alone: five flowers
         // that bring down an apex are five apex kills and five lots of 250
         // stars. Same ledger and the same selectLootRecipients() the XP and
-        // drop paths call -- squads, per-tier slot cap and 3% damage floor
+        // drop paths call -- squads, per-tier slot cap and damage floor
         // included -- so the three cannot disagree about who was in on a kill.
         ranked.clear();
         if (const Bounty* bounty = world_.tryGet<Bounty>(death.entity)) {
@@ -159,7 +159,7 @@ void GameServer::bankKills() {
                          });
         const Health* health = world_.tryGet<Health>(death.entity);
         selectLootRecipients(ranked, lootSlotsForRarity(type->rarity), &squadIndex_, recipients,
-                             lootDamageFloor(health != nullptr ? health->max : 0.0));
+                             lootDamageFloor(health != nullptr ? health->max : 0.0, type->rarity));
 
         const std::string mobId = content().mob(type->configIndex).id;
         const int stars = starsForKill(type->rarity);
@@ -297,13 +297,13 @@ void GameServer::announceBossDefeat(Entity mob, const MobType& type,
     if (rarityIndex(type.rarity) < rarityIndex(kAnnouncedRarity)) return;
     // Nor does a prestige biome's super, whose spawn was never announced
     // either: there it is the bands' everyday stock (shared/game/prestige.h).
-    // Nor a wave's, below unique, for the same reason (announceIfNotable).
+    // Nor a wave's, below eternal, for the same reason (announceIfNotable).
     // Nor a super born on ground that grows them as everyday stock
     // (kQuietBossChance): its spawn was silent, so its defeat is.
     if (world_.has<QuietBoss>(mob)) return;
     if (const Transform* at = world_.tryGet<Transform>(mob)) {
         if (worldMaps_.isPrestige(at->realm)) return;
-        if (at->realm == kWavesRealm && rarityIndex(type.rarity) < rarityIndex(Rarity::Unique)) {
+        if (at->realm == kWavesRealm && rarityIndex(type.rarity) < rarityIndex(Rarity::Eternal)) {
             return;
         }
     }

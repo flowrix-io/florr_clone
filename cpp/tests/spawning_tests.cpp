@@ -408,9 +408,9 @@ TEST(the_difficulty_curve_hits_the_four_authored_anchors) {
     const auto twoHundred = rolledSpread(200.0, 200000);
     CHECK_NEAR(twoHundred[rarityIndex(Rarity::Super)], 1.0, 1e-12);
 
-    // 300 -> 95% unique, 5% apex.
+    // 300 -> 95% eternal, 5% apex.
     const auto threeHundred = rolledSpread(300.0, 200000);
-    CHECK_NEAR(threeHundred[rarityIndex(Rarity::Unique)], 0.95, 0.005);
+    CHECK_NEAR(threeHundred[rarityIndex(Rarity::Eternal)], 0.95, 0.005);
     CHECK_NEAR(threeHundred[rarityIndex(Rarity::Apex)], 0.05, 0.005);
 
     // And the pure blend agrees with the sample, so everything below can be
@@ -1102,7 +1102,7 @@ TEST(the_pyramid_beetles_stand_undead_on_a_line_through_their_super_figure) {
         CHECK_NEAR(mobUndeadMillis(config, Rarity::Rare), 1000.0 + 2.0 * perTier, 1e-9);
         CHECK_NEAR(mobUndeadMillis(config, Rarity::Ultra), 1000.0 + 6.0 * perTier, 1e-9);
         CHECK_NEAR(mobUndeadMillis(config, Rarity::Super), 8000.0, 1e-9);
-        CHECK_NEAR(mobUndeadMillis(config, Rarity::Unique), 1000.0 + 8.0 * perTier, 1e-9);
+        CHECK_NEAR(mobUndeadMillis(config, Rarity::Eternal), 1000.0 + 8.0 * perTier, 1e-9);
     }
     {
         const MobConfig& config = shipped().mob(pharaoh);
@@ -1110,7 +1110,7 @@ TEST(the_pyramid_beetles_stand_undead_on_a_line_through_their_super_figure) {
         CHECK_NEAR(mobUndeadMillis(config, Rarity::Common), 3750.0, 1e-9);
         CHECK_NEAR(mobUndeadMillis(config, Rarity::Rare), 11250.0, 1e-9);
         CHECK_NEAR(mobUndeadMillis(config, Rarity::Ultra), 26250.0, 1e-9);
-        CHECK_NEAR(mobUndeadMillis(config, Rarity::Unique), 33750.0, 1e-9);
+        CHECK_NEAR(mobUndeadMillis(config, Rarity::Eternal), 33750.0, 1e-9);
     }
     // Nothing else in the shipped content rises.
     for (std::uint16_t i = 0; i < shipped().mobCount(); ++i) {
@@ -1554,7 +1554,7 @@ TEST(a_flower_that_jumps_across_a_band_lands_on_a_waking_screen) {
 }
 
 TEST(a_camera_petals_wide_view_is_awake_from_edge_to_edge) {
-    // Unique antennae draws ten default screens of world. The band has to be
+    // Eternal antennae draws ten default screens of world. The band has to be
     // awake across ALL of it -- the flower's own reported viewport is the box,
     // not a default one with the band empty outside a patch around the flower.
     const Rect band{kCentre.x - 10000.0, kCentre.y - 6000.0, 20000.0, 12000.0};
@@ -1942,7 +1942,7 @@ TEST(what_cannot_come_apart_stays_whole_when_divided) {
 
     const std::uint16_t bee = shipped().mobIndex("bee");
     // A biome holds one of each, and would cull the rest.
-    refused(spawn(bee, Rarity::Unique));
+    refused(spawn(bee, Rarity::Eternal));
     refused(spawn(bee, Rarity::Apex));
     // A pet is its owner's; a nest, a chain and a mob that leaves something
     // behind are more than one body.
@@ -2416,7 +2416,7 @@ TEST(a_boss_announces_itself_whatever_placed_it) {
 }
 
 // ---------------------------------------------------------------------------
-// Boss clocks: a wild unique or apex is an upgraded super
+// Boss clocks: a wild eternal or apex is an upgraded super
 // ---------------------------------------------------------------------------
 
 namespace {
@@ -2503,7 +2503,7 @@ TEST(every_biome_gets_its_own_boss_clocks_scattered_over_one_cooldown) {
         for (const SpawnSystem::BiomeBossClock& clock : clocks) {
             CHECK(clock.scattered);
             CHECK(biomes.count(clock.biome) == 1);
-            ready.push_back(apex ? clock.apexReadyMillis : clock.uniqueReadyMillis);
+            ready.push_back(apex ? clock.apexReadyMillis : clock.eternalReadyMillis);
         }
         std::sort(ready.begin(), ready.end());
         // Every one of them still to come, and all within one cooldown.
@@ -2515,25 +2515,25 @@ TEST(every_biome_gets_its_own_boss_clocks_scattered_over_one_cooldown) {
             CHECK_NEAR(ready[i] - ready[i - 1], slot, 1e-6);
         }
     };
-    spacing(kUniqueSpawnCooldownMillis, false);
+    spacing(kEternalSpawnCooldownMillis, false);
     spacing(kApexSpawnCooldownMaxMillis, true);
 }
 
 TEST(a_cooling_biome_spawns_supers_and_nothing_above_them) {
     // Both clocks well in the future: every roll of an all-super band stays a
-    // super. And a band steeper than super -- difficulty 300 is 95% unique on
-    // the curve -- is held to super too, or it would hand out uniques far
+    // super. And a band steeper than super -- difficulty 300 is 95% eternal on
+    // the curve -- is held to super too, or it would hand out eternals far
     // faster than any clock allows.
     for (const double difficulty : {200.0, 300.0}) {
         SuperBand world(difficulty);
         world.deal();
         SpawnSystem::BiomeBossClock& clock = onlyClock(world.sim);
-        clock.uniqueReadyMillis = world.sim.now + kUniqueSpawnCooldownMillis;
+        clock.eternalReadyMillis = world.sim.now + kEternalSpawnCooldownMillis;
         clock.apexReadyMillis = world.sim.now + kApexSpawnCooldownMaxMillis;
         world.fill();
 
         CHECK(mobsOfRarity(world.sim.world, Rarity::Super) > 20);
-        CHECK_EQ(mobsOfRarity(world.sim.world, Rarity::Unique), 0);
+        CHECK_EQ(mobsOfRarity(world.sim.world, Rarity::Eternal), 0);
         CHECK_EQ(mobsOfRarity(world.sim.world, Rarity::Apex), 0);
     }
 }
@@ -2541,45 +2541,45 @@ TEST(a_cooling_biome_spawns_supers_and_nothing_above_them) {
 TEST(a_ready_clock_upgrades_one_super_and_then_cools_down) {
     // A ready clock gives each super kBossUpgradeChance of coming out a tier
     // above -- and the first one that does starts the clock again, so the
-    // sixty-odd supers a band stocks at once after deal() get ONE unique, not
+    // sixty-odd supers a band stocks at once after deal() get ONE eternal, not
     // six.
     SuperBand world;
     world.deal();
     SpawnSystem::BiomeBossClock& clock = onlyClock(world.sim);
-    clock.uniqueReadyMillis = 0.0;
+    clock.eternalReadyMillis = 0.0;
     clock.apexReadyMillis = world.sim.now + kApexSpawnCooldownMaxMillis;
     const double apexWas = clock.apexReadyMillis;
     world.fill();
 
-    CHECK_EQ(mobsOfRarity(world.sim.world, Rarity::Unique), 1);
+    CHECK_EQ(mobsOfRarity(world.sim.world, Rarity::Eternal), 1);
     CHECK_EQ(mobsOfRarity(world.sim.world, Rarity::Apex), 0);
     CHECK(mobsOfRarity(world.sim.world, Rarity::Super) > 20);
     // Charged from the moment it appeared, and the apex clock left alone.
     const SpawnSystem::BiomeBossClock& after = onlyClock(world.sim);
-    CHECK(after.uniqueReadyMillis > world.sim.now + kUniqueSpawnCooldownMillis - 20000.0);
-    CHECK(after.uniqueReadyMillis <= world.sim.now + kUniqueSpawnCooldownMillis);
+    CHECK(after.eternalReadyMillis > world.sim.now + kEternalSpawnCooldownMillis - 20000.0);
+    CHECK(after.eternalReadyMillis <= world.sim.now + kEternalSpawnCooldownMillis);
     CHECK_EQ(after.apexReadyMillis, apexWas);
 
     // It is announced like any other boss: an upgrade is a spawn, not a
     // relabel after the fact.
-    CHECK_EQ(world.announced[rarityIndex(Rarity::Unique)], 1);
+    CHECK_EQ(world.announced[rarityIndex(Rarity::Eternal)], 1);
 }
 
 TEST(both_clocks_ready_gives_one_apex_and_one_unique) {
     SuperBand world;
     world.deal();
     SpawnSystem::BiomeBossClock& clock = onlyClock(world.sim);
-    clock.uniqueReadyMillis = 0.0;
+    clock.eternalReadyMillis = 0.0;
     clock.apexReadyMillis = 0.0;
     world.fill();
 
     CHECK_EQ(mobsOfRarity(world.sim.world, Rarity::Apex), 1);
-    CHECK_EQ(mobsOfRarity(world.sim.world, Rarity::Unique), 1);
+    CHECK_EQ(mobsOfRarity(world.sim.world, Rarity::Eternal), 1);
     CHECK_EQ(world.announced[rarityIndex(Rarity::Apex)], 1);
-    CHECK_EQ(world.announced[rarityIndex(Rarity::Unique)], 1);
+    CHECK_EQ(world.announced[rarityIndex(Rarity::Eternal)], 1);
     const SpawnSystem::BiomeBossClock& after = onlyClock(world.sim);
     CHECK(after.apexReadyMillis > world.sim.now + kApexSpawnCooldownMinMillis - 20000.0);
-    CHECK(after.uniqueReadyMillis > world.sim.now + kUniqueSpawnCooldownMillis - 20000.0);
+    CHECK(after.eternalReadyMillis > world.sim.now + kEternalSpawnCooldownMillis - 20000.0);
 }
 
 TEST(an_apex_nobody_rolled_is_placed_when_its_window_runs_out) {
@@ -2716,7 +2716,7 @@ TEST(an_ant_hole_above_ultra_sends_out_nothing_above_ultra_but_its_queen) {
     // and every wave the damage releases are held to ultra, however high the
     // hole itself stands -- all but its one queen, who stands at the hole's
     // own tier.
-    for (const Rarity tier : {Rarity::Super, Rarity::Unique, Rarity::Apex}) {
+    for (const Rarity tier : {Rarity::Super, Rarity::Eternal, Rarity::Apex}) {
         Sim sim;
         const std::uint16_t hole = shipped().mobIndex("ant_hole");
         CHECK(hole != kInvalidIndex);
@@ -2741,7 +2741,7 @@ TEST(an_ant_hole_above_ultra_sends_out_nothing_above_ultra_but_its_queen) {
 TEST(a_nest_sends_one_queen_at_its_own_tier_past_the_boss_clock) {
     // A fixture hole whose queen is the grub, guarded by three grubs. The
     // first grub is the queen, at the hole's own tier even with the biome's
-    // clocks cooling; the rest are ultra minions. She takes no unique slot
+    // clocks cooling; the rest are ultra minions. She takes no eternal slot
     // from the biome either, so the one-per-biome cull leaves her be.
     ContentRegistry content;
     std::string error;
@@ -2763,19 +2763,19 @@ TEST(a_nest_sends_one_queen_at_its_own_tier_past_the_boss_clock) {
     WorldMaps maps;
     makeBandedWorld(maps, {Rect{kCentre.x + 12000.0, kCentre.y + 12000.0, 500.0, 500.0}},
                     "grub 100%");
-    for (const Rarity tier : {Rarity::Super, Rarity::Unique}) {
+    for (const Rarity tier : {Rarity::Super, Rarity::Eternal}) {
         Sim sim;
         sim.spawner.worldMaps = &maps;
         sim.spawner.run(sim.world, sim.terrain, content, {}, sim.rng, sim.now, 0.05,
                         sim.commands);
         sim.commands.flush();
-        // A unique hole needs its clock ready; spent straight after, so the
+        // An eternal hole needs its clock ready; spent straight after, so the
         // queen comes out past a COOLING clock.
-        if (tier == Rarity::Unique) onlyClock(sim).uniqueReadyMillis = 0.0;
+        if (tier == Rarity::Eternal) onlyClock(sim).eternalReadyMillis = 0.0;
         const Entity nest = sim.spawner.spawnMob(sim.world, sim.terrain, content, hole, tier,
                                                  kCentre, Realm::Overworld, sim.now, sim.rng);
         CHECK(nest != NULL_ENTITY);
-        onlyClock(sim).uniqueReadyMillis = sim.now + kUniqueSpawnCooldownMillis;
+        onlyClock(sim).eternalReadyMillis = sim.now + kEternalSpawnCooldownMillis;
         const Brood brood = broodOf(sim.world, nest);
         CHECK_EQ(brood.queens.size(), std::size_t(1));
         CHECK(brood.queenTiers.front() == tier);
@@ -2783,7 +2783,7 @@ TEST(a_nest_sends_one_queen_at_its_own_tier_past_the_boss_clock) {
         for (const Rarity r : brood.minions) CHECK(r == Rarity::Ultra);
         CHECK(sim.world.has<QueenLaid>(nest));
 
-        // The population pass culls a biome's extra uniques; she is not one.
+        // The population pass culls a biome's extra eternals; she is not one.
         const Entity queen = brood.queens.front();
         for (int i = 0; i < 3; ++i) {
             sim.now += 600.0;
@@ -2798,8 +2798,8 @@ TEST(a_nest_sends_one_queen_at_its_own_tier_past_the_boss_clock) {
 
 TEST(a_queen_ant_above_ultra_fields_ultra_soldiers) {
     // Her soldiers come out one tier under her -- and never above ultra, so a
-    // unique or apex queen fields ultras rather than supers or uniques.
-    for (const Rarity tier : {Rarity::Unique, Rarity::Apex}) {
+    // eternal or apex queen fields ultras rather than supers or eternals.
+    for (const Rarity tier : {Rarity::Eternal, Rarity::Apex}) {
         Sim sim;
         const std::uint16_t queen = shipped().mobIndex("queen_ant");
         CHECK(queen != kInvalidIndex);
@@ -2837,14 +2837,14 @@ TEST(a_biome_keeps_only_its_first_unique_and_its_first_apex) {
     // However two got there -- here spawnMob called while both clocks stand
     // ready, which is the one moment the console may place either tier (and
     // spawnMob itself charges nothing) -- the one that appeared LATER is
-    // despawned on the next population pass, per tier: one unique and one
+    // despawned on the next population pass, per tier: one eternal and one
     // apex may stand together.
     WorldMaps maps;
     makeBandedWorld(maps, {Rect{kCentre.x + 12000.0, kCentre.y + 12000.0, 500.0, 500.0}}, "bee 100%");
     Sim sim;
     sim.spawner.worldMaps = &maps;
     sim.tick({});   // the zones, and with them the biome of each realm
-    onlyClock(sim).uniqueReadyMillis = 0.0;
+    onlyClock(sim).eternalReadyMillis = 0.0;
     onlyClock(sim).apexReadyMillis = 0.0;
 
     const std::uint16_t bee = shipped().mobIndex("bee");
@@ -2852,19 +2852,19 @@ TEST(a_biome_keeps_only_its_first_unique_and_its_first_apex) {
         return sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), bee, tier,
                                     kCentre + Vec2{dx, 0.0}, Realm::Overworld, sim.now, sim.rng);
     };
-    const Entity firstUnique = spawn(Rarity::Unique, 0.0);
+    const Entity firstEternal = spawn(Rarity::Eternal, 0.0);
     const Entity firstApex = spawn(Rarity::Apex, 1500.0);
-    const Entity secondUnique = spawn(Rarity::Unique, 3000.0);
+    const Entity secondEternal = spawn(Rarity::Eternal, 3000.0);
     const Entity secondApex = spawn(Rarity::Apex, 4500.0);
-    const Entity thirdUnique = spawn(Rarity::Unique, 6000.0);
+    const Entity thirdEternal = spawn(Rarity::Eternal, 6000.0);
     sim.jump(kPopulationIntervalMillis, {});
 
-    CHECK(sim.world.isAlive(firstUnique));
+    CHECK(sim.world.isAlive(firstEternal));
     CHECK(sim.world.isAlive(firstApex));
-    CHECK(!sim.world.isAlive(secondUnique));
+    CHECK(!sim.world.isAlive(secondEternal));
     CHECK(!sim.world.isAlive(secondApex));
-    CHECK(!sim.world.isAlive(thirdUnique));
-    CHECK_EQ(animalsOfRarity(sim.world, Rarity::Unique).size(), std::size_t(1));
+    CHECK(!sim.world.isAlive(thirdEternal));
+    CHECK_EQ(animalsOfRarity(sim.world, Rarity::Eternal).size(), std::size_t(1));
     CHECK_EQ(animalsOfRarity(sim.world, Rarity::Apex).size(), std::size_t(1));
 
     // Despawned, not killed: nothing died, so nothing pays out.
@@ -2873,7 +2873,7 @@ TEST(a_biome_keeps_only_its_first_unique_and_its_first_apex) {
 }
 
 TEST(an_extra_unique_centipede_goes_with_its_whole_body) {
-    // Counted per animal: one unique centipede is one unique, not a head and
+    // Counted per animal: one eternal centipede is one eternal, not a head and
     // a dozen more. And the extra one leaves nothing behind -- its segments
     // are bosses too, and a boss is never recycled, so a body left standing
     // would stand there for good.
@@ -2881,13 +2881,13 @@ TEST(an_extra_unique_centipede_goes_with_its_whole_body) {
     const std::uint16_t centipede = shipped().mobIndex("centipede");
     CHECK(centipede != kInvalidIndex);
     const Entity first = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), centipede,
-                                              Rarity::Unique, kCentre, Realm::Overworld, sim.now,
+                                              Rarity::Eternal, kCentre, Realm::Overworld, sim.now,
                                               sim.rng);
     sim.jump(kPopulationIntervalMillis, {});
     CHECK(sim.world.isAlive(first));   // alone, it is not an extra
 
     const Entity second = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), centipede,
-                                               Rarity::Unique, kCentre + Vec2{0.0, 4000.0},
+                                               Rarity::Eternal, kCentre + Vec2{0.0, 4000.0},
                                                Realm::Overworld, sim.now, sim.rng);
     const auto bodyOf = [&](Entity head) {
         int n = 0;
@@ -2909,39 +2909,39 @@ TEST(an_extra_unique_centipede_goes_with_its_whole_body) {
 }
 
 TEST(a_ready_clock_waits_while_its_tier_is_standing_in_the_biome) {
-    // A unique already in the biome: the ready clock does not roll at all,
-    // so no super comes out a unique only to be despawned, and the clock is
-    // still ready for the first super after that unique is gone.
+    // An eternal already in the biome: the ready clock does not roll at all,
+    // so no super comes out an eternal only to be despawned, and the clock is
+    // still ready for the first super after that eternal is gone.
     SuperBand world;
     world.deal();
-    // Ready BEFORE the unique is placed: a cooling clock would refuse it.
+    // Ready BEFORE the eternal is placed: a cooling clock would refuse it.
     SpawnSystem::BiomeBossClock& clock = onlyClock(world.sim);
-    clock.uniqueReadyMillis = 0.0;
+    clock.eternalReadyMillis = 0.0;
     clock.apexReadyMillis = world.sim.now + kApexSpawnCooldownMaxMillis;
     const Entity standing = world.sim.spawner.spawnMob(
-        world.sim.world, world.sim.terrain, shipped(), shipped().mobIndex("bee"), Rarity::Unique,
+        world.sim.world, world.sim.terrain, shipped(), shipped().mobIndex("bee"), Rarity::Eternal,
         Vec2{world.band.x + world.band.w * 0.5, world.band.y + world.band.h * 0.5},
         Realm::Overworld, world.sim.now, world.sim.rng);
     CHECK(standing != NULL_ENTITY);
     world.fill();
 
     CHECK(world.sim.world.isAlive(standing));
-    CHECK_EQ(animalsOfRarity(world.sim.world, Rarity::Unique).size(), std::size_t(1));
+    CHECK_EQ(animalsOfRarity(world.sim.world, Rarity::Eternal).size(), std::size_t(1));
     CHECK(mobsOfRarity(world.sim.world, Rarity::Super) > 20);
-    CHECK_EQ(onlyClock(world.sim).uniqueReadyMillis, 0.0);
+    CHECK_EQ(onlyClock(world.sim).eternalReadyMillis, 0.0);
 }
 
 TEST(a_unique_or_apex_asked_for_during_its_cooldown_never_appears) {
     // However it is asked for -- here the path the console and every script
-    // take -- a unique or an apex that would appear while its biome's clock
+    // take -- an eternal or an apex that would appear while its biome's clock
     // for that tier is cooling down is refused before it is an entity:
     // nothing stands, nothing is announced, and a centipede leaves no body
-    // behind. Per tier, so a ready unique clock lets a unique through while
+    // behind. Per tier, so a ready eternal clock lets an eternal through while
     // the apex clock still turns an apex away.
     SuperBand world;
     world.deal();
     SpawnSystem::BiomeBossClock& clock = onlyClock(world.sim);
-    clock.uniqueReadyMillis = world.sim.now + kUniqueSpawnCooldownMillis;
+    clock.eternalReadyMillis = world.sim.now + kEternalSpawnCooldownMillis;
     clock.apexReadyMillis = world.sim.now + kApexSpawnCooldownMaxMillis;
     world.sim.spawner.bossSpawns.clear();
 
@@ -2962,27 +2962,27 @@ TEST(a_unique_or_apex_asked_for_during_its_cooldown_never_appears) {
         return n;
     };
 
-    CHECK(spawn(bee, Rarity::Unique) == NULL_ENTITY);
+    CHECK(spawn(bee, Rarity::Eternal) == NULL_ENTITY);
     CHECK(spawn(bee, Rarity::Apex) == NULL_ENTITY);
-    CHECK(spawn(centipede, Rarity::Unique) == NULL_ENTITY);
+    CHECK(spawn(centipede, Rarity::Eternal) == NULL_ENTITY);
     CHECK(spawn(centipede, Rarity::Apex) == NULL_ENTITY);
-    CHECK_EQ(mobsOfRarity(world.sim.world, Rarity::Unique), 0);
+    CHECK_EQ(mobsOfRarity(world.sim.world, Rarity::Eternal), 0);
     CHECK_EQ(mobsOfRarity(world.sim.world, Rarity::Apex), 0);
     CHECK_EQ(announcedAbove(Rarity::Super), 0);
     // Only the two tiers the clocks own: a super is not theirs to refuse.
     CHECK(spawn(bee, Rarity::Super) != NULL_ENTITY);
 
-    // The unique clock runs down; the apex one has not.
-    clock.uniqueReadyMillis = world.sim.now;
-    const Entity unique = spawn(bee, Rarity::Unique);
-    CHECK(unique != NULL_ENTITY);
+    // The eternal clock runs down; the apex one has not.
+    clock.eternalReadyMillis = world.sim.now;
+    const Entity eternal = spawn(bee, Rarity::Eternal);
+    CHECK(eternal != NULL_ENTITY);
     CHECK(spawn(bee, Rarity::Apex) == NULL_ENTITY);
-    CHECK_EQ(animalsOfRarity(world.sim.world, Rarity::Unique).size(), std::size_t(1));
+    CHECK_EQ(animalsOfRarity(world.sim.world, Rarity::Eternal).size(), std::size_t(1));
     CHECK_EQ(mobsOfRarity(world.sim.world, Rarity::Apex), 0);
     CHECK_EQ(announcedAbove(Rarity::Super), 1);
     // Let in, but not charged by spawnMob: the clock's own upgrade, and the
     // console through chargeBossClock, are what start it again.
-    CHECK_EQ(onlyClock(world.sim).uniqueReadyMillis, world.sim.now);
+    CHECK_EQ(onlyClock(world.sim).eternalReadyMillis, world.sim.now);
 }
 
 TEST(charging_a_clock_restarts_only_that_tier_in_that_biome) {
@@ -2993,19 +2993,19 @@ TEST(charging_a_clock_restarts_only_that_tier_in_that_biome) {
     SuperBand world;
     world.deal();
     SpawnSystem::BiomeBossClock& clock = onlyClock(world.sim);
-    clock.uniqueReadyMillis = 0.0;
+    clock.eternalReadyMillis = 0.0;
     clock.apexReadyMillis = 0.0;
     const double now = world.sim.now;
 
     world.sim.spawner.chargeBossClock(Rarity::Super, Realm::Overworld, now);
-    world.sim.spawner.chargeBossClock(Rarity::Unique, Realm::Arena, now);
-    CHECK_EQ(onlyClock(world.sim).uniqueReadyMillis, 0.0);
+    world.sim.spawner.chargeBossClock(Rarity::Eternal, Realm::Arena, now);
+    CHECK_EQ(onlyClock(world.sim).eternalReadyMillis, 0.0);
     CHECK_EQ(onlyClock(world.sim).apexReadyMillis, 0.0);
 
-    world.sim.spawner.chargeBossClock(Rarity::Unique, Realm::Overworld, now);
-    CHECK_EQ(onlyClock(world.sim).uniqueReadyMillis, now + kUniqueSpawnCooldownMillis);
+    world.sim.spawner.chargeBossClock(Rarity::Eternal, Realm::Overworld, now);
+    CHECK_EQ(onlyClock(world.sim).eternalReadyMillis, now + kEternalSpawnCooldownMillis);
     CHECK_EQ(onlyClock(world.sim).apexReadyMillis, 0.0);
-    CHECK(world.sim.spawner.bossCooldownLeft(Rarity::Unique, Realm::Overworld, now) > 0.0);
+    CHECK(world.sim.spawner.bossCooldownLeft(Rarity::Eternal, Realm::Overworld, now) > 0.0);
 
     world.sim.spawner.chargeBossClock(Rarity::Apex, Realm::Overworld, now);
     // An apex's cooldown is drawn afresh every time, anywhere from 1.5 to 2.5
@@ -3035,17 +3035,17 @@ TEST(a_biome_with_no_clock_refuses_no_unique) {
     // no clock, so nothing there is refused on the clock's account.
     Sim sim;
     const std::uint16_t bee = shipped().mobIndex("bee");
-    CHECK(sim.spawner.bossCooldownLeft(Rarity::Unique, Realm::Overworld, sim.now) == 0.0);
+    CHECK(sim.spawner.bossCooldownLeft(Rarity::Eternal, Realm::Overworld, sim.now) == 0.0);
     CHECK(sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), bee, Rarity::Apex, kCentre,
                                Realm::Overworld, sim.now, sim.rng) != NULL_ENTITY);
 
     SuperBand world;
     world.deal();
-    onlyClock(world.sim).uniqueReadyMillis = world.sim.now + kUniqueSpawnCooldownMillis;
-    CHECK(world.sim.spawner.bossCooldownLeft(Rarity::Unique, Realm::Overworld, world.sim.now) >
+    onlyClock(world.sim).eternalReadyMillis = world.sim.now + kEternalSpawnCooldownMillis;
+    CHECK(world.sim.spawner.bossCooldownLeft(Rarity::Eternal, Realm::Overworld, world.sim.now) >
           0.0);
-    CHECK(world.sim.spawner.bossCooldownLeft(Rarity::Unique, Realm::Arena, world.sim.now) == 0.0);
-    CHECK(world.sim.spawner.bossCooldownLeft(Rarity::Unique, Realm::Maze, world.sim.now) == 0.0);
+    CHECK(world.sim.spawner.bossCooldownLeft(Rarity::Eternal, Realm::Arena, world.sim.now) == 0.0);
+    CHECK(world.sim.spawner.bossCooldownLeft(Rarity::Eternal, Realm::Maze, world.sim.now) == 0.0);
     CHECK(world.sim.spawner.bossCooldownLeft(Rarity::Super, Realm::Overworld, world.sim.now) ==
           0.0);
 }
@@ -3906,7 +3906,7 @@ TEST(a_fire_ant_hole_falls_with_its_last_ant_and_pays_everyone_who_fought) {
     CHECK(total <= sim.world.get<Health>(nest).max * 1.05);
     std::vector<Entity> paid;
     selectLootRecipients(ranked, lootSlotsForRarity(Rarity::Super), nullptr, paid,
-                         lootDamageFloor(sim.world.get<Health>(nest).max));
+                         lootDamageFloor(sim.world.get<Health>(nest).max, Rarity::Super));
     CHECK(std::find(paid.begin(), paid.end(), helper) != paid.end());
     CHECK(std::find(paid.begin(), paid.end(), finisher) != paid.end());
 
@@ -4337,7 +4337,7 @@ TEST(drop_rarity_applies_mob_floors_and_the_apex_item_cap) {
         // anything below ultra and never an apex petal.
         const Rarity apex = LootSystem::rollDropRarity(Rarity::Apex, Rarity::Apex, rng);
         CHECK(rarityIndex(apex) >= rarityIndex(Rarity::Ultra));
-        CHECK(rarityIndex(apex) <= rarityIndex(Rarity::Unique));
+        CHECK(rarityIndex(apex) <= rarityIndex(Rarity::Eternal));
     }
 }
 
@@ -4354,7 +4354,7 @@ TEST(an_apex_grades_thirty_percent_eternal_and_twenty_percent_ultra) {
     const auto share = [&](Rarity r) {
         return counts[static_cast<std::size_t>(rarityIndex(r))] / double(kRuns);
     };
-    CHECK_NEAR(share(Rarity::Unique), kApexEternalDropChance, 0.005);
+    CHECK_NEAR(share(Rarity::Eternal), kApexEternalDropChance, 0.005);
     CHECK_NEAR(share(Rarity::Ultra), kApexUltraDropChance, 0.005);
     CHECK_NEAR(share(Rarity::Super), 1.0 - kApexEternalDropChance - kApexUltraDropChance, 0.005);
     CHECK_NEAR(kApexEternalDropChance, 0.30, 1e-12);
@@ -4368,7 +4368,7 @@ TEST(an_apex_copy_never_quotes_less_eternal_than_an_eternal_mob) {
     constexpr int kRuns = 200000;
     int eternal = 0;
     for (int i = 0; i < kRuns; ++i) {
-        if (LootSystem::rollDropRarity(Rarity::Common, Rarity::Unique, rng) == Rarity::Unique) ++eternal;
+        if (LootSystem::rollDropRarity(Rarity::Common, Rarity::Eternal, rng) == Rarity::Eternal) ++eternal;
     }
     CHECK(kApexEternalDropChance >= eternal / double(kRuns));
 }
@@ -4380,19 +4380,19 @@ TEST(crafting_past_ultra_loses_a_tenth_of_a_point_a_tier) {
     CHECK_NEAR(craftSuccessChance(Rarity::Mythic), 0.02, 1e-12);
     CHECK_NEAR(craftSuccessChance(Rarity::Ultra), 0.01, 1e-12);
     CHECK_NEAR(craftSuccessChance(Rarity::Super), 0.009, 1e-12);
-    CHECK_NEAR(craftSuccessChance(Rarity::Unique), 0.005, 1e-12);
+    CHECK_NEAR(craftSuccessChance(Rarity::Eternal), 0.005, 1e-12);
     // The drop rolls keep the halving ladder: retuning the forge does not
     // move a single drop rate.
     CHECK_NEAR(dropLadderChance(Rarity::Super), 0.005, 1e-12);
-    CHECK_NEAR(dropLadderChance(Rarity::Unique), 0.0025, 1e-12);
+    CHECK_NEAR(dropLadderChance(Rarity::Eternal), 0.0025, 1e-12);
 }
 
 TEST(an_apex_hits_fifty_times_an_eternal_and_lasts_eighty_times_as_long) {
     CHECK_NEAR(kMobHealthScale[rarityIndex(Rarity::Apex)], 8e8, 1e-3);
     CHECK_NEAR(kMobDamageScale[rarityIndex(Rarity::Apex)], 6561.0 * 50.0, 1e-6);
-    // Unique is untouched.
-    CHECK_NEAR(kMobHealthScale[rarityIndex(Rarity::Unique)], 1e7, 1e-6);
-    CHECK_NEAR(kMobDamageScale[rarityIndex(Rarity::Unique)], 6561.0, 1e-9);
+    // Eternal is untouched.
+    CHECK_NEAR(kMobHealthScale[rarityIndex(Rarity::Eternal)], 1e7, 1e-6);
+    CHECK_NEAR(kMobDamageScale[rarityIndex(Rarity::Eternal)], 6561.0, 1e-9);
 }
 
 TEST(a_super_mob_leaves_more_ultras_and_fewer_mythics) {
@@ -4445,7 +4445,7 @@ TEST(a_mob_leaves_its_own_rarity_at_the_pre_guaranteed_drop_rate) {
         {Rarity::Rare, 0.480},        {Rarity::Epic, 0.240},
         {Rarity::Legendary, 0.120},   {Rarity::Mythic, 0.612},
         {Rarity::Ultra, 0.675},       {Rarity::Super, 0.450},
-        {Rarity::Unique, 0.270},
+        {Rarity::Eternal, 0.270},
     };
 
     Rng rng(4242);
@@ -4818,7 +4818,7 @@ TEST(a_crowded_kill_shares_the_drops_its_rolls_agree_on) {
         }
         return static_cast<int>(drops.size());
     };
-    for (const Rarity rarity : {Rarity::Unique, Rarity::Apex}) {
+    for (const Rarity rarity : {Rarity::Eternal, Rarity::Apex}) {
         int soloClaims = 0;
         int crowdClaims = 0;
         const int solo = groundAfter(1, rarity, soloClaims);
@@ -6113,7 +6113,7 @@ std::string spawnObject(int id, double x, double y, double w, double h, bool has
 
 /// The DPS row's difficulties: the one difficulty per tier at which that tier
 /// is EXACTLY what the ground grows (an integer tier value, so the blend is one
-/// tier with no fraction in it). Nine rungs, common through unique -- apex is
+/// tier with no fraction in it). Nine rungs, common through eternal -- apex is
 /// the top of the curve and a tenth dummy would need a difficulty past the
 /// clamp.
 inline constexpr int kDummyRowRungs = 9;
@@ -6384,7 +6384,7 @@ TEST(the_dummy_bands_actually_build_the_dps_row) {
     }
 
     // And every tier is one a dummy band's DIFFICULTY actually produces. The
-    // dummy bands between them cover common..unique and the viewport sampled
+    // dummy bands between them cover common..eternal and the viewport sampled
     // above overlaps several, so the set is wider than one band -- but a tier
     // no band's difficulty can reach would fall outside it, and each of these
     // bands sits on an exact rung of the curve, so its blend is one tier with
@@ -6405,7 +6405,7 @@ TEST(a_target_dummy_is_smaller_than_the_wild_mob_of_its_tier) {
     const std::uint16_t dummy = shipped().mobIndex("target_dummy");
     if (dummy == kInvalidIndex) return;
 
-    // A common dummy matches a common mob exactly; by unique it is three
+    // A common dummy matches a common mob exactly; by eternal it is three
     // quarters of one. Straight tier scaling turns the top of the DPS row into
     // a wall, which is why the reference ramps it (src/mobs.ts:212).
     Sim sim;
@@ -6413,16 +6413,16 @@ TEST(a_target_dummy_is_smaller_than_the_wild_mob_of_its_tier) {
     const Entity common =
         sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), dummy, Rarity::Common,
                              kCentre, Realm::Overworld, 0.0, rng);
-    const Entity unique =
-        sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), dummy, Rarity::Unique,
+    const Entity eternal =
+        sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), dummy, Rarity::Eternal,
                              kCentre + Vec2{4000.0, 0.0}, Realm::Overworld, 0.0, rng);
     CHECK(common != NULL_ENTITY);
-    CHECK(unique != NULL_ENTITY);
+    CHECK(eternal != NULL_ENTITY);
 
     CHECK_NEAR(sim.world.get<MobType>(common).sizeJitter, 1.0, 1e-12);
-    CHECK_NEAR(sim.world.get<MobType>(unique).sizeJitter, 0.75, 1e-12);
-    CHECK_NEAR(sim.world.get<Body>(unique).radius,
-               shipped().mobStats(dummy, Rarity::Unique).radius * 0.75, 1e-9);
+    CHECK_NEAR(sim.world.get<MobType>(eternal).sizeJitter, 0.75, 1e-12);
+    CHECK_NEAR(sim.world.get<Body>(eternal).radius,
+               shipped().mobStats(dummy, Rarity::Eternal).radius * 0.75, 1e-9);
 }
 
 // ---------------------------------------------------------------------------
@@ -6748,7 +6748,7 @@ TEST(a_band_on_another_map_is_stocked_through_that_maps_own_terrain) {
 
 
 TEST(two_biomes_may_each_hold_a_unique) {
-    // The rule is one per BIOME. A unique in the garden says nothing about
+    // The rule is one per BIOME. An eternal in the garden says nothing about
     // the desert, just as each biome's clocks run on their own.
     const Realm other = worldRealm(1);
     MapData overworld;
@@ -6771,18 +6771,18 @@ TEST(two_biomes_may_each_hold_a_unique) {
     sim.spawner.worldMaps = &worldMaps;
     installOpenGrid(sim.terrain, other, 60);
     sim.tick({});
-    // Both unique clocks ready, or the spawns below are refused outright.
+    // Both eternal clocks ready, or the spawns below are refused outright.
     CHECK_EQ(sim.spawner.bossClocks().size(), std::size_t(2));
     for (SpawnSystem::BiomeBossClock& clock : sim.spawner.bossClocks()) {
-        clock.uniqueReadyMillis = 0.0;
+        clock.eternalReadyMillis = 0.0;
     }
 
     const std::uint16_t bee = shipped().mobIndex("bee");
     const Entity here = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), bee,
-                                             Rarity::Unique, {17000, 17000}, Realm::Overworld,
+                                             Rarity::Eternal, {17000, 17000}, Realm::Overworld,
                                              sim.now, sim.rng);
     const Entity there = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), bee,
-                                              Rarity::Unique, {17000, 17000}, other, sim.now,
+                                              Rarity::Eternal, {17000, 17000}, other, sim.now,
                                               sim.rng);
     sim.jump(kPopulationIntervalMillis, {});
     CHECK(sim.world.isAlive(here));
@@ -6790,7 +6790,7 @@ TEST(two_biomes_may_each_hold_a_unique) {
 
     // A second one on the SAME map is still the extra.
     const Entity extra = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), bee,
-                                              Rarity::Unique, {15000, 15000}, other, sim.now,
+                                              Rarity::Eternal, {15000, 15000}, other, sim.now,
                                               sim.rng);
     sim.jump(kPopulationIntervalMillis, {});
     CHECK(sim.world.isAlive(here));
@@ -6956,7 +6956,7 @@ TEST(a_super_is_announced_only_where_supers_are_rare) {
     // User rule (2026-11-13): where more than kQuietBossChance of a band's
     // spawns come out a boss, a super is that band's stock and appears without
     // a line in chat. The chance is the GROUND's, at neutral luck, wherever the
-    // super came from -- the band's own fill or the console's spawnMob. Uniques
+    // super came from -- the band's own fill or the console's spawnMob. Eternals
     // and apexes, which only the biome's clock hands out, announce anyway.
     const double rare = groundWithBossChance(kQuietBossChance * 0.5);
     const double steep = groundWithBossChance(std::min(0.99, kQuietBossChance * 2.0));
@@ -7019,15 +7019,15 @@ TEST(a_super_is_announced_only_where_supers_are_rare) {
     CHECK(!queued(ultra));
     CHECK(!sim.world.has<QuietBoss>(ultra));
 
-    // A unique on the steep ground is still news.
+    // An eternal on the steep ground is still news.
     CHECK_EQ(sim.spawner.bossClocks().size(), std::size_t(1));
     if (!sim.spawner.bossClocks().empty()) {
-        sim.spawner.bossClocks().front().uniqueReadyMillis = sim.now;
+        sim.spawner.bossClocks().front().eternalReadyMillis = sim.now;
     }
-    const Entity unique = spawn(Rarity::Unique, centreOf(steepBand) + Vec2{0.0, 900.0});
-    CHECK(unique != NULL_ENTITY);
-    CHECK(queued(unique));
-    CHECK(!sim.world.has<QuietBoss>(unique));
+    const Entity eternal = spawn(Rarity::Eternal, centreOf(steepBand) + Vec2{0.0, 900.0});
+    CHECK(eternal != NULL_ENTITY);
+    CHECK(queued(eternal));
+    CHECK(!sim.world.has<QuietBoss>(eternal));
 
     // What a super turns or divides into keeps the answer it was born with:
     // its spawn line (or the lack of one) is the one chat already has.

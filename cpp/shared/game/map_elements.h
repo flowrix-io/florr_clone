@@ -112,7 +112,7 @@ struct MapElement {
 
     /// Mob bands only: HOW DANGEROUS this band is, on the open-ended scale
     /// shared/game/difficulty.h defines. 0 is fully common, 100 is ultras,
-    /// 200 supers, 300 uniques; in between is a blend of two tiers.
+    /// 200 supers, 300 eternals; in between is a blend of two tiers.
     ///
     /// Orthogonal to `mobDistribution`, which says WHAT spawns: a band is
     /// "difficulty 60" and "half garden, half hornet" at the same time, and the

@@ -289,12 +289,12 @@ struct ServerStats {
         std::uint16_t humans = 0;
         std::uint16_t flowers = 0;   ///< bots included
         std::uint32_t mobs = 0;
-        bool boss = false;           ///< a unique or an apex is standing
+        bool boss = false;           ///< an eternal or an apex is standing
     };
     std::vector<RealmLoad> realms;
     struct BossClock {
         std::string biome;
-        double uniqueLeft = 0;
+        double eternalLeft = 0;
         double apexLeft = 0;
     };
     std::vector<BossClock> clocks;

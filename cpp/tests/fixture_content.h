@@ -46,7 +46,7 @@ inline std::string withDefault(const std::string& text, const char* key, const J
 /// when a missing table was survivable.
 inline Json neutralXp() {
     Json xp = Json::object();
-    for (int i = 0; i <= static_cast<int>(Rarity::Unique); ++i) {
+    for (int i = 0; i <= static_cast<int>(Rarity::Eternal); ++i) {
         xp[kRarityNames[static_cast<std::size_t>(i)]] = Json(1);
     }
     return xp;

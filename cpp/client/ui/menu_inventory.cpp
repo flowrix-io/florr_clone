@@ -973,12 +973,12 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
 
         // Summons: what comes out, how many, and how hard. A pet climbs the
         // PETAL ladder from its mob's base (PetalSystem::hatchPetBody), at the
-        // petal's tier -- an apex one is three unique pets instead.
+        // petal's tier -- an apex one is three eternal pets instead.
         const auto petLines = [&](std::uint16_t mobIndex, int count, bool scaled) {
             if (mobIndex == kInvalidIndex) return;
             const MobConfig& mob = content().mob(mobIndex);
             const bool apex = ladderRarity(rarity) == Rarity::Apex;
-            const Rarity petTier = apex ? Rarity::Unique : rarity;
+            const Rarity petTier = apex ? Rarity::Eternal : rarity;
             // A squad hatches three at apex and three times over at Admin;
             // the flower's crack is always its fixed three.
             const int multiple =

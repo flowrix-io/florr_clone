@@ -419,7 +419,7 @@ TEST(entities_leaving_view_are_removed) {
 }
 
 TEST(a_camera_petals_view_is_streamed_edge_to_edge_and_only_a_screen_past_it) {
-    // Unique antennae draws ten default screens of world. Everything on that
+    // Eternal antennae draws ten default screens of world. Everything on that
     // screen has to be streamed, and current every snapshot, or mobs vanish
     // and stutter in plain view. The margin PAST it stays the default
     // screen's: things move at the same speed however far out the camera is,

@@ -184,7 +184,7 @@ void GameServer::offerSacrifice(Session& session, Entity corpse) {
     // far as a second sacrifice in the same map is concerned: two would both
     // summon, and the later would be culled as the biome's second.
     if (plan.outcome == SpawnSystem::SacrificeOutcome::Summoned &&
-        (plan.rarity == Rarity::Unique || plan.rarity == Rarity::Apex)) {
+        (plan.rarity == Rarity::Eternal || plan.rarity == Rarity::Apex)) {
         Query<SacrificeRitual, Transform> rituals{world_};
         rituals.each([&](Entity, SacrificeRitual& ritual, Transform& at) {
             if (ritual.mob == NULL_ENTITY && ritual.rarity == plan.rarity && at.realm == realm) {
@@ -204,7 +204,7 @@ void GameServer::offerSacrifice(Session& session, Entity corpse) {
                 break;
             case SpawnSystem::SacrificeOutcome::Prestige:
                 why = "Your " + petalName +
-                      " went unanswered: no Unique or Apex can stand in a Prestige biome.";
+                      " went unanswered: no Eternal or Apex can stand in a Prestige biome.";
                 break;
             case SpawnSystem::SacrificeOutcome::Taken:
                 why = "Your " + petalName + " went unanswered: an " +

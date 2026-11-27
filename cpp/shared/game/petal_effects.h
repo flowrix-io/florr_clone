@@ -77,7 +77,7 @@ inline constexpr double kBehaviourHealScale = 3.0;
 inline constexpr double kBloodStingerSelfDamage = 5.0;
 
 /// An apex egg does not hatch an apex pet. The reference substitutes three
-/// unique ones, which is the top of the ladder a pet can actually reach. A
+/// eternal ones, which is the top of the ladder a pet can actually reach. A
 /// universal egg hatches the same three, stronger (see summonPets).
 inline constexpr int kApexPetCount = 3;
 

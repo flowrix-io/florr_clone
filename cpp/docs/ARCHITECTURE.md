@@ -609,7 +609,7 @@ server reports its tick time and what is in each realm once a second; a biome's
 cost is its share of its server's tick. New and orphaned biomes go heaviest
 first to the quietest server. Every fifteen seconds one move may be made: an
 empty biome whenever that closes a real gap, one with people in it only off a
-server past two thirds of its tick, and never one with a unique or an apex
+server past two thirds of its tick, and never one with an eternal or an apex
 standing. A handed-over biome takes its players, the drops on its ground and
 its boss clocks along, and is stocked with mobs afresh. `/admin shards` shows
 the deal; `/admin shards move <biome> <server>` makes one by hand.
@@ -745,7 +745,7 @@ The craft key's cards -- `CraftingPanel`, `OraclePanel`, `TradePanel`,
 `TitanPanel`, `AssemblerPanel` -- are one SLOT CARD (`menus.h`, `ui/menu_slot_card.cpp`), laid
 out against the trade reference shot: the frame and its anchoring, the slot
 and the action button either side of the centre line, the line of text, the
-tier grid (`SlotGrid`, through unique, or through apex for the trader) and the
+tier grid (`SlotGrid`, through eternal, or through apex for the trader) and the
 oracle's and trader's landing (`SlotFlourish`). Each panel keeps its own
 staging, animation and input, and says per cell what its grid shows; the forge
 turns its ring of five about the slot's centre where the other two hold one.

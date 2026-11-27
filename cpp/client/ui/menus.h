@@ -332,7 +332,7 @@ struct ClientSettings {
     /// the animation heavy.
     bool antennaeZoomAnimation = true;
     /// Whether the chat shows the server's "A Super ... has spawned" and
-    /// "A Super ... has been defeated" lines. Unique and apex lines always show.
+    /// "A Super ... has been defeated" lines. Eternal and apex lines always show.
     bool showSuperMessages = true;
     /// Whether the on-screen touch controls are up: the stick, and the two
     /// buttons that stand in for the extend/retract keys. The TypeScript
@@ -616,7 +616,7 @@ struct SlotCardLayout {
 };
 
 /// The window's width for a grid `columns` cells across (never narrower than
-/// florr's 610), and for one through unique or, `withApex`, apex.
+/// florr's 610), and for one through eternal or, `withApex`, apex.
 double slotCardColumnsWidth(std::size_t columns);
 double slotCardWidth(bool withApex);
 /// The window's height for a grid `rows` rows deep: as tall as the grid needs,

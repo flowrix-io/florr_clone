@@ -17,7 +17,7 @@
             "mythic": 32000,
             "ultra": 150000,
             "super": 1200000,
-            "unique": 6800000
+            "eternal": 6800000
         },
         "description": "It hurts, don't touch it",
         "color": "#ebe834",
@@ -46,7 +46,7 @@
             "mythic": 32000,
             "ultra": 150000,
             "super": 1200000,
-            "unique": 6800000
+            "eternal": 6800000
         },
         "description": "Cute and harmless",
         "color": "#de2626",
@@ -77,7 +77,7 @@
             "mythic": 32000,
             "ultra": 150000,
             "super": 1200000,
-            "unique": 6800000
+            "eternal": 6800000
         },
         "description": "It's hostile towards flowers",
         "color": "#808080",
@@ -108,7 +108,7 @@
             "mythic": 42000,
             "ultra": 220000,
             "super": 1800000,
-            "unique": 8000000
+            "eternal": 8000000
         },
         "description": "It's neutral towards flowers",
         "color": "#808080",
@@ -139,7 +139,7 @@
             "mythic": 64000,
             "ultra": 300000,
             "super": 2400000,
-            "unique": 13600000
+            "eternal": 13600000
         },
         "description": "A baby ant",
         "color": "#808080",
@@ -167,7 +167,7 @@
             "mythic": 900000,
             "ultra": 4500000,
             "super": 35000000,
-            "unique": 180000000
+            "eternal": 180000000
         },
         "description": "There are ants inside",
         "color": "#b58500",
@@ -249,7 +249,7 @@
             "mythic": 900000,
             "ultra": 4500000,
             "super": 35000000,
-            "unique": 180000000
+            "eternal": 180000000
         },
         "description": "There are fire ants inside",
         "color": "#b03020",
@@ -290,7 +290,7 @@
             "mythic": 32000,
             "ultra": 150000,
             "super": 1200000,
-            "unique": 6800000
+            "eternal": 6800000
         },
         "description": "It only stings if you attack it",
         "color": "#ff8800",
@@ -321,7 +321,7 @@
             "mythic": 32000,
             "ultra": 150000,
             "super": 1200000,
-            "unique": 6800000
+            "eternal": 6800000
         },
         "description": "Weak, but can still sting",
         "color": "#ff8800",
@@ -351,7 +351,7 @@
             "mythic": 3100,
             "ultra": 19800,
             "super": 2100000,
-            "unique": 6800000
+            "eternal": 6800000
         },
         "description": "Just a rock",
         "color": "#777777",
@@ -378,7 +378,7 @@
             "mythic": 3100,
             "ultra": 19800,
             "super": 2100000,
-            "unique": 6800000
+            "eternal": 6800000
         },
         "description": "Hit it and it lets its seeds go",
         "color": "#d4d4d4",
@@ -418,7 +418,7 @@
             "mythic": 3100,
             "ultra": 19800,
             "super": 2100000,
-            "unique": 6800000
+            "eternal": 6800000
         },
         "description": "It hurts, hostile towards flowers",
         "color": "#ff8800",
@@ -447,7 +447,7 @@
             "mythic": 28000,
             "ultra": 120000,
             "super": 960000,
-            "unique": 5440000
+            "eternal": 5440000
         },
         "description": "Shiny",
         "color": "#ffff00",
@@ -477,7 +477,7 @@
             "mythic": 32000,
             "ultra": 150000,
             "super": 1200000,
-            "unique": 6800000
+            "eternal": 6800000
         },
         "description": "Not so cute and harmless",
         "color": "#911d1d",
@@ -507,7 +507,7 @@
             "mythic": 32000,
             "ultra": 150000,
             "super": 1200000,
-            "unique": 6800000
+            "eternal": 6800000
         },
         "description": "Unpredictable",
         "color": "#d5c7a6",
@@ -542,7 +542,7 @@
             "mythic": 32000,
             "ultra": 150000,
             "super": 1200000,
-            "unique": 6800000
+            "eternal": 6800000
         },
         "description": "Spiky",
         "color": "#32a852",
@@ -572,7 +572,7 @@
             "mythic": 32000,
             "ultra": 150000,
             "super": 1200000,
-            "unique": 6800000
+            "eternal": 6800000
         },
         "description": "It stings, and the sting is poisonous",
         "color": "#c69a2d",
@@ -604,7 +604,7 @@
             "mythic": 32000,
             "ultra": 150000,
             "super": 1200000,
-            "unique": 6800000
+            "eternal": 6800000
         },
         "description": "Fast, and has lots of health",
         "color": "#6302b3",
@@ -635,7 +635,7 @@
             "mythic": 32000,
             "ultra": 150000,
             "super": 1200000,
-            "unique": 6800000
+            "eternal": 6800000
         },
         "description": "This one has a different pattern... what does that mean?",
         "color": "#1213BD",
@@ -667,7 +667,7 @@
             "mythic": 40000,
             "ultra": 200000,
             "super": 1600000,
-            "unique": 8000000
+            "eternal": 8000000
         },
         "description": "A beetle from the other plane",
         "color": "#6e0d0d",
@@ -697,7 +697,7 @@
             "mythic": 40000,
             "ultra": 200000,
             "super": 1600000,
-            "unique": 8000000
+            "eternal": 8000000
         },
         "description": "Shocking",
         "color": "#00fbff",
@@ -731,7 +731,7 @@
             "mythic": 900,
             "ultra": 18000,
             "super": 1000000,
-            "unique": 4500000
+            "eternal": 4500000
         },
         "description": "Pop",
         "color": "#a0d8d9",
@@ -760,7 +760,7 @@
             "mythic": 1200,
             "ultra": 25000,
             "super": 1500000,
-            "unique": 7500000
+            "eternal": 7500000
         },
         "description": "It spins around",
         "color": "#ffd700",
@@ -795,7 +795,7 @@
             "mythic": 722,
             "ultra": 22220,
             "super": 700000,
-            "unique": 2000000
+            "eternal": 2000000
         },
         "description": "Lots of holes and lots of health",
         "color": "#000000",
@@ -827,7 +827,7 @@
             "mythic": 32000,
             "ultra": 150000,
             "super": 1200000,
-            "unique": 6800000
+            "eternal": 6800000
         },
         "description": "Charges at players",
         "color": "#b5b200",
@@ -859,7 +859,7 @@
             "mythic": 30000,
             "ultra": 150000,
             "super": 1300000,
-            "unique": 7000000
+            "eternal": 7000000
         },
         "description": "Pinches with both claws",
         "color": "#db6f4b",
@@ -887,7 +887,7 @@
             "mythic": 38000,
             "ultra": 190000,
             "super": 1500000,
-            "unique": 7900000
+            "eternal": 7900000
         },
         "description": "A fast chain that latches on",
         "color": "#333333",
@@ -914,7 +914,7 @@
             "mythic": 9000,
             "ultra": 45000,
             "super": 350000,
-            "unique": 1950000
+            "eternal": 1950000
         },
         "description": "A segment of a leech",
         "color": "#333333",
@@ -944,7 +944,7 @@
             "mythic": 40000,
             "ultra": 200000,
             "super": 1600000,
-            "unique": 8000000
+            "eternal": 8000000
         },
         "description": "It can shoot its missiles",
         "color": "#b5b200",
@@ -985,7 +985,7 @@
             "mythic": 40000,
             "ultra": 200000,
             "super": 1600000,
-            "unique": 8000000
+            "eternal": 8000000
         },
         "description": "Mantis",
         "color": "#7fb500",
@@ -1026,7 +1026,7 @@
             "mythic": 3100,
             "ultra": 19800,
             "super": 2100000,
-            "unique": 6800000
+            "eternal": 6800000
         },
         "description": "It's not a leaf, it's a bug",
         "color": "#12590a",
@@ -1056,7 +1056,7 @@
             "mythic": 3100,
             "ultra": 19800,
             "super": 2100000,
-            "unique": 6800000
+            "eternal": 6800000
         },
         "description": "Tricks you into thinking it is a lower rarity than it actually is!",
         "color": "#0a4f02",
@@ -1087,7 +1087,7 @@
             "mythic": 32000,
             "ultra": 150000,
             "super": 1200000,
-            "unique": 6800000
+            "eternal": 6800000
         },
         "description": "Dried out leafbug, but it is still alive",
         "color": "#12590a",
@@ -1119,7 +1119,7 @@
             "mythic": 32000,
             "ultra": 150000,
             "super": 1200000,
-            "unique": 6800000
+            "eternal": 6800000
         },
         "description": "It shoots 2x as fast as a hornet",
         "color": "#b5b200",
@@ -1156,7 +1156,7 @@
             "mythic": 32000,
             "ultra": 150000,
             "super": 1200000,
-            "unique": 6800000
+            "eternal": 6800000
         },
         "description": "Fly after being swat by a fly zapper",
         "color": "#12590a",
@@ -1188,7 +1188,7 @@
             "mythic": 32000,
             "ultra": 150000,
             "super": 1200000,
-            "unique": 6800000
+            "eternal": 6800000
         },
         "description": "Fly after being swat by a fly zapper TWICE",
         "color": "#12590a",
@@ -1221,7 +1221,7 @@
             "mythic": 100,
             "ultra": 100,
             "super": 100,
-            "unique": 100
+            "eternal": 100
         },
         "description": "How did you kill this???",
         "color": "#ffffff",
@@ -1252,7 +1252,7 @@
             "mythic": 3100,
             "ultra": 19800,
             "super": 2100000,
-            "unique": 6800000
+            "eternal": 6800000
         },
         "description": "Never gets hit by a fly zapper, but it will hit you",
         "color": "#919191",
@@ -1282,7 +1282,7 @@
             "mythic": 3100,
             "ultra": 19800,
             "super": 2100000,
-            "unique": 6800000
+            "eternal": 6800000
         },
         "description": "If you hit it, it will hit you back",
         "color": "#914911",
@@ -1310,7 +1310,7 @@
             "mythic": 3100,
             "ultra": 19800,
             "super": 2100000,
-            "unique": 6800000
+            "eternal": 6800000
         },
         "description": "Someone left this here",
         "color": "#000000",
@@ -1340,7 +1340,7 @@
             "mythic": 3100,
             "ultra": 19800,
             "super": 2100000,
-            "unique": 6800000
+            "eternal": 6800000
         },
         "description": "It will run away if you hit it",
         "color": "#bcc286",
@@ -1369,7 +1369,7 @@
             "mythic": 1,
             "ultra": 1,
             "super": 1,
-            "unique": 1
+            "eternal": 1
         },
         "description": "How did you kill this???",
         "color": "#ff00e1",
@@ -1395,7 +1395,7 @@
             "mythic": 3100,
             "ultra": 19800,
             "super": 2100000,
-            "unique": 6800000
+            "eternal": 6800000
         },
         "description": "It's fast, but not very strong",
         "color": "#4f412e",
@@ -1431,7 +1431,7 @@
             "mythic": 8200,
             "ultra": 200000,
             "super": 1600000,
-            "unique": 8000000
+            "eternal": 8000000
         },
         "description": "What is this???",
         "color": "#ffffff",
@@ -1461,7 +1461,7 @@
             "mythic": 8200,
             "ultra": 200000,
             "super": 1600000,
-            "unique": 8000000
+            "eternal": 8000000
         },
         "description": "A leak in the game code",
         "color": "#ffffff",
@@ -1490,7 +1490,7 @@
             "mythic": 1800,
             "ultra": 12500,
             "super": 1250000,
-            "unique": 5000000
+            "eternal": 5000000
         },
         "description": "Dust particles",
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 10 32 10\" fill=\"none\">\n<image href=\"data:image/png;base64,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\" height=\"32\" width=\"32\"/>\n</svg>",
@@ -1519,7 +1519,7 @@
             "mythic": 14800,
             "ultra": 220000,
             "super": 1800000,
-            "unique": 10000000
+            "eternal": 10000000
         },
         "description": "Glitch particles",
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 10 32 10\" fill=\"none\">\n<image href=\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHwAAAB8CAYAAACrHtS+AAAAAXNSR0IArs4c6QAAAFBlWElmTU0AKgAAAAgAAgESAAMAAAABAAEAAIdpAAQAAAABAAAAJgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAfKADAAQAAAABAAAAfAAAAACct/r/AAABWWlUWHRYTUw6Y29tLmFkb2JlLnhtcAAAAAAAPHg6eG1wbWV0YSB4bWxuczp4PSJhZG9iZTpuczptZXRhLyIgeDp4bXB0az0iWE1QIENvcmUgNi4wLjAiPgogICA8cmRmOlJERiB4bWxuczpyZGY9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkvMDIvMjItcmRmLXN5bnRheC1ucyMiPgogICAgICA8cmRmOkRlc2NyaXB0aW9uIHJkZjphYm91dD0iIgogICAgICAgICAgICB4bWxuczp0aWZmPSJodHRwOi8vbnMuYWRvYmUuY29tL3RpZmYvMS4wLyI+CiAgICAgICAgIDx0aWZmOk9yaWVudGF0aW9uPjE8L3RpZmY6T3JpZW50YXRpb24+CiAgICAgIDwvcmRmOkRlc2NyaXB0aW9uPgogICA8L3JkZjpSREY+CjwveDp4bXBtZXRhPgoZXuEHAAAHeElEQVR4Ae3dzW7jSAyFUXvg939lD6WsXPcUXBNgFiHYiwbM5v9twR9KivJ8PN7vx/InLY/Hc/HZfnymJ/OlW3USrTyeyFc9R/n3OxMqNCMrlepy4oxG2YrMXtDyVTjnQKjyvRErlZ5LiX+i4hhab2AEby1vDjeC505aW0bw1vLmcC/wCqFDcELYQULCExKCV1SiQC4HESc5GLEwob3HCkA/YdkMVlCuCz1dwRjkKb+fQgd/Z433UmOu8IM1dnIZwTupeTDLCH6wpE4uI3gnNQ9medEHdAIToYNwgiILS9wegp0nCieaXOGwHhZJ7KpsSAdTgRytOTGKnJ6WsURWEAPGIHOFY3GdTSN4Z3Ux2wiOpXQ2jeCd1cVsL3INHH2SlY66nanbnhlZltNmAEAwkeNU9xC7Huup1ZWLsaAs+TFYDQJcdSsUZWOlc4VrwY1tI3hjcTXaCK6tNLaN4I3F1WgvwYSeodLRk2JVhDZRFqjjDVpUqPBJkKVeNK9A03Uz42ldjFbJsFXeq826il2f9ZsrXHtrbBvBG4ur0UZwbaWxbQRvLK5Ge+kQR4wgwNDzV+AuhaoX4UqcFF2BBCqd0iGjAA1u/6FnoBy4S0ClItwfSnCB8Ft3NVc4N9fXOIL31ZaTjeBcS1/jCN5XW07GkzZDDIgAjmQnlNbzXGcVrhuD8AQowas6PnN8glwRickuEzyxGAEzf9oB6einvSxLmCt8I1lX8wjeVdnNXCP4ZjFdzSN4V2U3c12HZYEE4JUNh0RolVkoYVPYZuSDySVQV8dWKgygUlktgXCHVghoufp6bi4bVA3tAFIW230mnCs899vaMoK3ljeHG8FzJ60tI3hreXM4nrQJMN40ZsJTmECkQuVWqPMJIpdTWi7EklUpE9FW2LmjmC5jN+QVhRFZHauIPSMhDAuzPeYKx5I6m0bwzupithEcS+lsGsE7q4vZ6o0VeRyFg6d6jgwwIVOmQ1mbCFmogQMqoo5uIQp/TiFLaKj29EMbfDgPg/zfe54r3P/32lpH8LbSerAR3Htpax3B20rrwfieNoGN3pdm2CHGRHWy3VnoOaCdgmZ0VwYugcaIJnwqIfo7XIH40T0v3c0Vviyk+8cRvLvCy3wj+LKQ7h9H8O4KL/O9dDtOaELmWJL9fMxoggiP8zKhYDErZNy2F4CSTuQ8LyZBMxrN+TKYrwtJtw24qr/P4LnCd/9XmtpH8KbC7sYawXebaWofwZsKuxvr+pb//FaXYROtx9zsGiXqkA6Aka1Ud+nHUBTWaZ5eUyIC0m1KxeZk1Ui2XKY0KpY15Ih59WLj1W2u8HUjzT+P4M0FXscbwdeNNP88gjcXeB3v/AcRAFQCL/5aJ1KWSCTB5hhiMpSPkQnGMFrtKfvzbc91pWQ2ZLvisoZM4L2KxcBKt7jNFZ56tbaM4K3lzeFG8NxJa8sI3lreHO76Ss+v+rSQERy6UEIVIMgBOvTKChUWyMkvx706xnDZskJt00kga2QR/AxIgWb6cc+oqwbX28tzhWtLjW0jeGNxNdoIrq00to3gjcXVaC+BA3iquEEwgZS4Z6oTqhUm7kyoYT/UBSgh3WYOgByCDYsZy3nRsm6Zwm3Tc3pKobWXucJzb60tI3hreXO4ETx30toygreWN4e7OCSpA9/+x8+HZQ0UgNNtysJpMcOcnuYJSE/BFTxaXavDnO/4PXcZurFkXQHuqttc4Zt1djWP4F2V3cw1gm8W09U8gndVdjNXffOvX+tloTMgQY7pxmynofJDy6zhkyxmzHjMsZ5a3UG5vsy1sehWqNId3jG1bgtpzhW+EaOreQTvquxmrhF8s5iu5hG8q7KbueorHZgArgHDbO6YpqdvK6YfcRG9cBakU+jCMEx1G0FKyidS0omX/HxKl1XScnWYA6vuqu5c4XvJW/7LCN5S1v1QI/h+Ny3/ZQRvKet+qOubH0yQprRc2JDgoGxyU9kVMO62UcJ1s8O0XBmVMD0Jdwhlz3fjv/wLNdizCgM0V2CeK/yXuvzVsBH8ryr3y75H8F8u7q+GjeB/Vblf9l2v/EhgOYcEVBV0CDAQKp46bg/5dPtRB4usoWawKo3rl/XKMxPylSQgSPBZbUD5PhczV/jnPtp/GsHbS/w54Aj+uY/2n0bw9hJ/Dli/xgowAcji6dZnrvuTHupHhcKLtKYFBTYm9weIYXxWTouQ6EqWNcBYdSs5/djKaT4Hf7XOFf51Rb0cRvBeen6dZgT/uqJeDiN4Lz2/TlO/xiphAm+7qETpJ+AT7IDPmO6sgltRrPrTRrQD+SmfTrzUyxNLhan2ktGnLzE+AeG5wq1sW+sI3lZaDzaCey9trSN4W2k9WL0pIynBp1aZQLdWFWu/zGdLYmBiTeFUuhGA6IiEAirDnQpjEtTQbVSCl2IF0WhlzTdXOLTpbBrBO6uL2UZwLKWzaQTvrC5mu15vRiSAb5gMMeGmA6oCqiQMmCpZtpeRqHmb0jOzVXvJrdVexqKVOkRkRjSUfitQXUHMp1YyHWomzM4VzjX1NY7gfbXlZCM419LX+C+0g9bvfr+CNgAAAABJRU5ErkJggg==\" height=\"32\" width=\"32\"/>\n</svg>",
@@ -1555,7 +1555,7 @@
             "mythic": 22000,
             "ultra": 330000,
             "super": 2700000,
-            "unique": 15000000
+            "eternal": 15000000
         },
         "description": "A flower the Computer wrote itself. It came with petals.",
         "image": "$flower",
@@ -1589,7 +1589,7 @@
             "mythic": 8100,
             "ultra": 220000,
             "super": 1800000,
-            "unique": 10000000
+            "eternal": 10000000
         },
         "description": "©¥∫∂ç∆ˆßµ∑ππœ",
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\" width=\"32\" height=\"32\">\n  <g transform=\"translate(16, 16)\">\n    \n    <g transform=\"translate(0, 8) scale(1, 0.5)\">\n      <g>\n        <animateTransform attributeName=\"transform\" type=\"rotate\" values=\"0; -360\" dur=\"4s\" repeatCount=\"indefinite\" />\n        <rect x=\"-8\" y=\"-8\" width=\"16\" height=\"16\" fill=\"#8B00FF\" fill-opacity=\"0.8\" stroke=\"#111\" stroke-width=\"0.5\" stroke-linejoin=\"round\"/>\n      </g>\n    </g>\n\n    <g>\n      <animateTransform attributeName=\"transform\" type=\"translate\" values=\"0,-4; -4,-3.464; -6.928,-2; -8,0; -6.928,2; -4,3.464; 0,4; 4,3.464; 6.928,2; 8,0; 6.928,-2; 4,-3.464; 0,-4\" dur=\"4s\" repeatCount=\"indefinite\" />\n      <g>\n        <animateTransform attributeName=\"transform\" type=\"scale\" values=\"-1,1; -0.866,1; -0.5,1; 0.001,1; 0.5,1; 0.866,1; 1,1; 0.866,1; 0.5,1; 0.001,1; -0.5,1; -0.866,1; -1,1\" dur=\"4s\" repeatCount=\"indefinite\" />\n        <g>\n          <animateTransform attributeName=\"transform\" type=\"skewY\" values=\"0; 14.036; 23.413; 26.565; 23.413; 14.036; 0; -14.036; -23.413; -26.565; -23.413; -14.036; 0\" dur=\"4s\" repeatCount=\"indefinite\" />\n          <rect x=\"-8\" y=\"-8\" width=\"16\" height=\"16\" fill=\"#FFFF00\" fill-opacity=\"0.8\" stroke=\"#111\" stroke-width=\"0.5\" stroke-linejoin=\"round\" />\n        </g>\n      </g>\n    </g>\n\n    <g>\n      <animateTransform attributeName=\"transform\" type=\"translate\" values=\"-8,0; -6.928,2; -4,3.464; 0,4; 4,3.464; 6.928,2; 8,0; 6.928,-2; 4,-3.464; 0,-4; -4,-3.464; -6.928,-2; -8,0\" dur=\"4s\" repeatCount=\"indefinite\" />\n      <g>\n        <animateTransform attributeName=\"transform\" type=\"scale\" values=\"0.001,1; 0.5,1; 0.866,1; 1,1; 0.866,1; 0.5,1; 0.001,1; -0.5,1; -0.866,1; -1,1; -0.866,1; -0.5,1; 0.001,1\" dur=\"4s\" repeatCount=\"indefinite\" />\n        <g>\n          <animateTransform attributeName=\"transform\" type=\"skewY\" values=\"26.565; 23.413; 14.036; 0; -14.036; -23.413; -26.565; -23.413; -14.036; 0; 14.036; 23.413; 26.565\" dur=\"4s\" repeatCount=\"indefinite\" />\n          <rect x=\"-8\" y=\"-8\" width=\"16\" height=\"16\" fill=\"#00FF00\" fill-opacity=\"0.8\" stroke=\"#111\" stroke-width=\"0.5\" stroke-linejoin=\"round\" />\n        </g>\n      </g>\n    </g>\n\n    <g>\n      <animateTransform attributeName=\"transform\" type=\"translate\" values=\"8,0; 6.928,-2; 4,-3.464; 0,-4; -4,-3.464; -6.928,-2; -8,0; -6.928,2; -4,3.464; 0,4; 4,3.464; 6.928,2; 8,0\" dur=\"4s\" repeatCount=\"indefinite\" />\n      <g>\n        <animateTransform attributeName=\"transform\" type=\"scale\" values=\"0.001,1; -0.5,1; -0.866,1; -1,1; -0.866,1; -0.5,1; 0.001,1; 0.5,1; 0.866,1; 1,1; 0.866,1; 0.5,1; 0.001,1\" dur=\"4s\" repeatCount=\"indefinite\" />\n        <g>\n          <animateTransform attributeName=\"transform\" type=\"skewY\" values=\"-26.565; -23.413; -14.036; 0; 14.036; 23.413; 26.565; 23.413; 14.036; 0; -14.036; -23.413; -26.565\" dur=\"4s\" repeatCount=\"indefinite\" />\n          <rect x=\"-8\" y=\"-8\" width=\"16\" height=\"16\" fill=\"#FF7F00\" fill-opacity=\"0.8\" stroke=\"#111\" stroke-width=\"0.5\" stroke-linejoin=\"round\" />\n        </g>\n      </g>\n    </g>\n\n    <g>\n      <animateTransform attributeName=\"transform\" type=\"translate\" values=\"0,4; 4,3.464; 6.928,2; 8,0; 6.928,-2; 4,-3.464; 0,-4; -4,-3.464; -6.928,-2; -8,0; -6.928,2; -4,3.464; 0,4\" dur=\"4s\" repeatCount=\"indefinite\" />\n      <g>\n        <animateTransform attributeName=\"transform\" type=\"scale\" values=\"1,1; 0.866,1; 0.5,1; 0.001,1; -0.5,1; -0.866,1; -1,1; -0.866,1; -0.5,1; 0.001,1; 0.5,1; 0.866,1; 1,1\" dur=\"4s\" repeatCount=\"indefinite\" />\n        <g>\n          <animateTransform attributeName=\"transform\" type=\"skewY\" values=\"0; -14.036; -23.413; -26.565; -23.413; -14.036; 0; 14.036; 23.413; 26.565; 23.413; 14.036; 0\" dur=\"4s\" repeatCount=\"indefinite\" />\n          <rect x=\"-8\" y=\"-8\" width=\"16\" height=\"16\" fill=\"#FF0000\" fill-opacity=\"0.8\" stroke=\"#111\" stroke-width=\"0.5\" stroke-linejoin=\"round\" />\n        </g>\n      </g>\n    </g>\n\n    <g transform=\"translate(0, -8) scale(1, 0.5)\">\n      <g>\n        <animateTransform attributeName=\"transform\" type=\"rotate\" values=\"0; -360\" dur=\"4s\" repeatCount=\"indefinite\" />\n        <rect x=\"-8\" y=\"-8\" width=\"16\" height=\"16\" fill=\"#0000FF\" fill-opacity=\"0.8\" stroke=\"#111\" stroke-width=\"0.5\" stroke-linejoin=\"round\"/>\n      </g>\n    </g>\n    \n  </g>\n</svg>",
@@ -1619,7 +1619,7 @@
             "mythic": 32000,
             "ultra": 150000,
             "super": 1200000,
-            "unique": 6800000
+            "eternal": 6800000
         },
         "description": "Very bright and hot",
         "color": "#ff0000",
@@ -1651,7 +1651,7 @@
             "mythic": 32000,
             "ultra": 150000,
             "super": 1200000,
-            "unique": 6800000
+            "eternal": 6800000
         },
         "description": "How did you kill this???",
         "color": "#ff0000",
@@ -1680,7 +1680,7 @@
             "mythic": 900000,
             "ultra": 4500000,
             "super": 35000000,
-            "unique": 180000000
+            "eternal": 180000000
         },
         "description": "Many glitches are inside",
         "color": "#b58500",
@@ -1786,7 +1786,7 @@
             "mythic": 36000,
             "ultra": 180000,
             "super": 1400000,
-            "unique": 7800000
+            "eternal": 7800000
         },
         "description": "A peaceful crawler leading a chain of body segments",
         "color": "#8ac255",
@@ -1814,7 +1814,7 @@
             "mythic": 9000,
             "ultra": 45000,
             "super": 350000,
-            "unique": 1950000
+            "eternal": 1950000
         },
         "description": "A segment of a centipede",
         "color": "#8ac255",
@@ -1843,7 +1843,7 @@
             "mythic": 36000,
             "ultra": 180000,
             "super": 1400000,
-            "unique": 7800000
+            "eternal": 7800000
         },
         "description": "A swift desert crawler leading a chain of body segments",
         "color": "#d4c66e",
@@ -1871,7 +1871,7 @@
             "mythic": 9000,
             "ultra": 45000,
             "super": 350000,
-            "unique": 1950000
+            "eternal": 1950000
         },
         "description": "A segment of a desert centipede",
         "color": "#d4c66e",
@@ -1900,7 +1900,7 @@
             "mythic": 54000,
             "ultra": 270000,
             "super": 2100000,
-            "unique": 11700000
+            "eternal": 11700000
         },
         "description": "This one loves flowers",
         "color": "#905db0",
@@ -1930,7 +1930,7 @@
             "mythic": 13500,
             "ultra": 67500,
             "super": 525000,
-            "unique": 2900000
+            "eternal": 2900000
         },
         "description": "A segment of an evil centipede",
         "color": "#905db0",
@@ -1964,7 +1964,7 @@
             "mythic": 270000,
             "ultra": 1350000,
             "super": 10500000,
-            "unique": 54000000
+            "eternal": 54000000
         },
         "description": "You must have done something really bad if she's chasing you",
         "color": "#808080",
@@ -2000,7 +2000,7 @@
             "mythic": 360000,
             "ultra": 1800000,
             "super": 14000000,
-            "unique": 72000000
+            "eternal": 72000000
         },
         "description": "Friend or foe? You'll never know...",
         "color": "#999999",
@@ -2026,7 +2026,7 @@
             "mythic": 0,
             "ultra": 0,
             "super": 0,
-            "unique": 0
+            "eternal": 0
         },
         "description": "It has already seen what you will craft",
         "color": "#FFE763",
@@ -2055,7 +2055,7 @@
             "mythic": 0,
             "ultra": 0,
             "super": 0,
-            "unique": 0
+            "eternal": 0
         },
         "description": "One petal, one coin. Come back tomorrow",
         "color": "#FFE763",
@@ -2084,7 +2084,7 @@
             "mythic": 0,
             "ultra": 0,
             "super": 0,
-            "unique": 0
+            "eternal": 0
         },
         "description": "Five Apex petals go in. One Universal comes out",
         "color": "#535353",
@@ -2115,7 +2115,7 @@
             "mythic": 0,
             "ultra": 0,
             "super": 0,
-            "unique": 0
+            "eternal": 0
         },
         "description": "Combine specific petals to assemble a new petal.",
         "color": "#999999",
@@ -2160,7 +2160,7 @@
             "mythic": 32000,
             "ultra": 150000,
             "super": 1200000,
-            "unique": 6800000
+            "eternal": 6800000
         },
         "description": "GOTTA RUN.",
         "color": "#ebe834",
@@ -2198,7 +2198,7 @@
             "mythic": 128000,
             "ultra": 600000,
             "super": 4800000,
-            "unique": 27200000
+            "eternal": 27200000
         },
         "description": "Weak and defenseless, but big dreams.\nThese creatures appear to be connected somehow.",
         "color": "#c7a138",
@@ -2230,7 +2230,7 @@
             "mythic": 84000,
             "ultra": 440000,
             "super": 3600000,
-            "unique": 16000000
+            "eternal": 16000000
         },
         "description": "It's a bit temperamental, probably from working all the time.\nThese creatures appear to be connected somehow.",
         "color": "#c7a138",
@@ -2262,7 +2262,7 @@
             "mythic": 64000,
             "ultra": 300000,
             "super": 2400000,
-            "unique": 13600000
+            "eternal": 13600000
         },
         "description": "It's got wings and it's ready to use them.\nThese creatures appear to be connected somehow.",
         "color": "#c7a138",
@@ -2292,7 +2292,7 @@
             "mythic": 540000,
             "ultra": 2700000,
             "super": 21000000,
-            "unique": 108000000
+            "eternal": 108000000
         },
         "description": "The one who oversees all.",
         "color": "#c7a138",
@@ -2322,7 +2322,7 @@
             "mythic": 24000,
             "ultra": 112500,
             "super": 900000,
-            "unique": 5100000
+            "eternal": 5100000
         },
         "description": "Not yet an ant but perhaps soon.",
         "color": "#fff0b8",
@@ -2350,7 +2350,7 @@
             "mythic": 24000,
             "ultra": 112500,
             "super": 900000,
-            "unique": 5100000
+            "eternal": 5100000
         },
         "description": "This ant is not yet on fire.",
         "color": "#ffd1b8",
@@ -2378,7 +2378,7 @@
             "mythic": 48000,
             "ultra": 225000,
             "super": 1800000,
-            "unique": 10200000
+            "eternal": 10200000
         },
         "description": "Not yet a termite but perhaps soon.",
         "color": "#fff0b8",
@@ -2407,7 +2407,7 @@
             "mythic": 900000,
             "ultra": 4500000,
             "super": 35000000,
-            "unique": 180000000
+            "eternal": 180000000
         },
         "description": "Termites go in, and come out. Can't explain that.",
         "color": "#a39d43",
@@ -2468,7 +2468,7 @@
             "mythic": 32000,
             "ultra": 150000,
             "super": 1200000,
-            "unique": 6800000
+            "eternal": 6800000
         },
         "description": "This one seems like it shouldn't be alive...",
         "color": "#83b05d",
@@ -2502,7 +2502,7 @@
             "mythic": 270000,
             "ultra": 1350000,
             "super": 10500000,
-            "unique": 54000000
+            "eternal": 54000000
         },
         "description": "That thing on its head looks valuable... We should steal it.",
         "color": "#83b05d",
@@ -2538,7 +2538,7 @@
             "mythic": 64000,
             "ultra": 300000,
             "super": 2400000,
-            "unique": 13600000
+            "eternal": 13600000
         },
         "description": "Huh, what could be in here?",
         "color": "#a88642",
@@ -2573,7 +2573,7 @@
             "mythic": 3100,
             "ultra": 19800,
             "super": 2100000,
-            "unique": 6800000
+            "eternal": 6800000
         },
         "description": "???",
         "color": "#ffe869",
@@ -2604,7 +2604,7 @@
             "mythic": 8200,
             "ultra": 200000,
             "super": 1600000,
-            "unique": 8000000
+            "eternal": 8000000
         },
         "description": "A leak in the game code, but in the wrong direction",
         "color": "#ffffff",
@@ -2631,7 +2631,7 @@
             "mythic": 0,
             "ultra": 0,
             "super": 0,
-            "unique": 0
+            "eternal": 0
         },
         "description": "Hel, a visitor from the underworld.",
         "color": "#ff0000",
@@ -2663,7 +2663,7 @@
             "mythic": 22000,
             "ultra": 330000,
             "super": 2700000,
-            "unique": 15000000
+            "eternal": 15000000
         },
         "description": "Five wands, and every one of them works.",
         "image": "$flower",
@@ -2706,7 +2706,7 @@
             "mythic": 22000,
             "ultra": 330000,
             "super": 2700000,
-            "unique": 15000000
+            "eternal": 15000000
         },
         "description": "Code is inside this folder, but it is not the right code.",
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\"><path fill=\"#ffd400\" stroke=\"#ca0\" stroke-width=\".98\" stroke-linejoin=\"bevel\" d=\"M5.49 7.49h10.02v6.02H5.49z\" transform=\"translate(-4.454 -3.796)scale(1.2784)\"/><g fill=\"#fff\" stroke=\"#ccc\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M-.851-26.51h11v7h-11z\" transform=\"translate(-4.454 -3.796)scale(1.2784) rotate(110)\"/><path d=\"M1.346-24.489h11v7h-11z\" transform=\"translate(-4.454 -3.796)scale(1.2784) rotate(110)\"/></g><path fill=\"#ffd400\" stroke=\"#ca0\" stroke-width=\"1.966\" stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M4.983 10.983h22.034v16.034H4.983z\" transform=\"translate(-4.454 -3.796)scale(1.2784)\"/></svg>",
@@ -2714,10 +2714,10 @@
         "range": 700,
         "color": "#000000",
         "hideRotation": true,
-        "min_rarity": "unique",
+        "min_rarity": "eternal",
         "noEggDrop": true,
         "replace_chance": {
-            "unique": 0.08
+            "eternal": 0.08
         },
         "replace_biomes": [
             "computer"

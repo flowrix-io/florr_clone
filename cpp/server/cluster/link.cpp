@@ -365,7 +365,7 @@ void ServerStats::write(ByteWriter& w) const {
     w.u8(static_cast<std::uint8_t>(clocks.size()));
     for (const BossClock& clock : clocks) {
         w.str(clock.biome);
-        w.f64(clock.uniqueLeft);
+        w.f64(clock.eternalLeft);
         w.f64(clock.apexLeft);
     }
 }
@@ -387,7 +387,7 @@ ServerStats ServerStats::read(ByteReader& r) {
     for (int i = 0; i < clocks && r.ok(); ++i) {
         BossClock clock;
         clock.biome = r.str();
-        clock.uniqueLeft = r.f64();
+        clock.eternalLeft = r.f64();
         clock.apexLeft = r.f64();
         s.clocks.push_back(std::move(clock));
     }

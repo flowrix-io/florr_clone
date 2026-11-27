@@ -335,8 +335,8 @@ answer every one (the grammar lives in `cpp/server/account_search.h`):
 | `loadout:rose` | wearing a rose; `loadout:mythic:rose`, `loadout:rose>=3`, `loadout:mythic` |
 
 Petals are named by id or display name, with case, spaces, underscores and
-hyphens ignored (`yin_yang`, `yinyang`); rarities by name or label (`eternal`
-is unique). Results are ordered by the first word's value, most first (fewest
+hyphens ignored (`yin_yang`, `yinyang`); rarities by name or label (`unique`,
+eternal's old name, still works). Results are ordered by the first word's value, most first (fewest
 first when it is a `<`), and each row shows what it was found by: a count, a
 date, or how long ago. Counts come from the stored inventory (which includes
 worn petals) and the saved loadout. A word the server cannot read lists nobody
@@ -539,7 +539,7 @@ noted in `shared/game/waves.h`: each wave spends 10 points per wave number on
 the biome's mobs, at a rarity that climbs with the wave (flooooio's climb to
 mythic; ultras take over from about wave 60, and from wave 76 every mob is one;
 from wave 201 a growing share are supers, all of them from wave 250; from wave
-300 1% are uniques, and from wave 400 0.1% apexes); from wave 15, 15% of
+300 1% are eternals, and from wave 400 0.1% apexes); from wave 15, 15% of
 waves are special, one mob family in a swarm. A wave lasts 60 seconds up to wave
 10 and grows slowly after (67 at wave 30, 77 at wave 100), and its mobs come
 fast enough to all be out by half of that. They spawn evenly over the whole
@@ -555,8 +555,8 @@ the nearest thing still up, and gets up beside a survivor at the next wave. When
 nobody is left standing the game is over: the rift closes, the disc is cleared
 and everyone is put back where they went in, standing. Mobs pay XP and drop
 petals as they do anywhere else. The supers on the disc are not announced and
-get no boss bar; its uniques and apexes are announced to everyone, as anywhere,
-and have no biome clock to wait for and no limit of one at a time. A unique on
+get no boss bar; its eternals and apexes are announced to everyone, as anywhere,
+and have no biome clock to wait for and no limit of one at a time. An eternal on
 the disc has 10 times the health it has anywhere else, and an apex 50 times.
 
 Garden, desert and ocean are flooooio's tables. The other five are ours, drawn

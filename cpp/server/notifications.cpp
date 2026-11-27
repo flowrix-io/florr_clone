@@ -22,7 +22,8 @@ constexpr std::size_t kNotificationHistory = 1000;
 // tags are real.
 net::NotificationKind notificationKind(const std::string& type) {
     if (type == "super_craft") return net::NotificationKind::SuperCraft;
-    if (type == "unique_craft") return net::NotificationKind::UniqueCraft;
+    // unique_craft is what rows saved before eternal's rename carry.
+    if (type == "eternal_craft" || type == "unique_craft") return net::NotificationKind::EternalCraft;
     if (type == "apex_craft") return net::NotificationKind::ApexCraft;
     if (type == "star_code") return net::NotificationKind::StarCode;
     if (type == "universal_craft") return net::NotificationKind::UniversalCraft;

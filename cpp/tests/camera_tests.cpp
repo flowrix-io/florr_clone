@@ -89,7 +89,7 @@ TEST(a_bar_with_no_antennae_or_observer_asks_the_camera_for_nothing) {
     CHECK_NEAR(zoomOf(Profile{}), 1.0, 1e-12);
     Profile p = emptyBar();
     CHECK_NEAR(zoomOf(p), 1.0, 1e-12);
-    p.loadout[0] = slot("basic", Rarity::Unique);
+    p.loadout[0] = slot("basic", Rarity::Eternal);
     p.loadout[3] = slot("basic");
     CHECK_NEAR(zoomOf(p), 1.0, 1e-12);
 }
@@ -112,9 +112,9 @@ TEST(two_of_them_show_the_better_one_and_never_stack) {
     // Two observers are one observer, not 0.85 squared.
     p.loadout[0] = slot("observer");
     CHECK_NEAR(zoomOf(p), 0.85, 1e-12);
-    // And the stronger tier wins whichever slot it sits in. Unique antennae
+    // And the stronger tier wins whichever slot it sits in. Eternal antennae
     // reaches the 10x effective output cap.
-    p.loadout[5] = slot("antennae", Rarity::Unique);
+    p.loadout[5] = slot("antennae", Rarity::Eternal);
     CHECK_NEAR(zoomOf(p), 0.1, 1e-12);
 }
 
@@ -168,7 +168,7 @@ TEST(storage_grants_no_zoom) {
     Profile p = emptyBar();
     // Slot ten is the first secondary slot: an observer stashed there is not
     // worn, just as its equipment bit is not set and it draws no antennae.
-    p.loadout[static_cast<std::size_t>(kLoadoutActiveSlots)] = slot("observer", Rarity::Unique);
+    p.loadout[static_cast<std::size_t>(kLoadoutActiveSlots)] = slot("observer", Rarity::Eternal);
     CHECK_NEAR(zoomOf(p), 1.0, 1e-12);
     p.loadout[static_cast<std::size_t>(kLoadoutActiveSlots) - 1] = slot("observer");
     CHECK_NEAR(zoomOf(p), 0.85, 1e-12);

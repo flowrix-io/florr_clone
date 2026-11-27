@@ -374,7 +374,7 @@ TEST(rarity_climbs_with_the_wave_to_ultra_then_super) {
     CHECK(early > 0.12 && early < 0.28);
     CHECK(half > 0.43 && half < 0.57);
     CHECK(late > 0.72 && late < 0.88);
-    for (const int wave : {kWaveAllSuperAt, 275, kWaveUniqueFrom - 1}) {
+    for (const int wave : {kWaveAllSuperAt, 275, kWaveEternalFrom - 1}) {
         CHECK(onlyBetween(wave, Rarity::Super, Rarity::Super));
     }
 }
@@ -387,18 +387,18 @@ TEST(from_wave_300_one_in_a_hundred_is_unique_and_from_400_one_in_a_thousand_ape
         for (int i = 0; i < kRolls; ++i) ++tally[static_cast<std::size_t>(rarityIndex(rollWaveRarity(wave, rng)))];
         return tally;
     };
-    const auto at300 = count(kWaveUniqueFrom);
-    CHECK_EQ(at300[rarityIndex(Rarity::Super)] + at300[rarityIndex(Rarity::Unique)], kRolls);
-    CHECK(at300[rarityIndex(Rarity::Unique)] > 1800 && at300[rarityIndex(Rarity::Unique)] < 2200);
+    const auto at300 = count(kWaveEternalFrom);
+    CHECK_EQ(at300[rarityIndex(Rarity::Super)] + at300[rarityIndex(Rarity::Eternal)], kRolls);
+    CHECK(at300[rarityIndex(Rarity::Eternal)] > 1800 && at300[rarityIndex(Rarity::Eternal)] < 2200);
     CHECK_EQ(count(kWaveApexFrom - 1)[rarityIndex(Rarity::Apex)], 0);
-    // An apex is not taken out of the uniques' share: 1% of them stay unique.
+    // An apex is not taken out of the eternals' share: 1% of them stay eternal.
     for (const int wave : {kWaveApexFrom, 1000, 65535}) {
         const auto tally = count(wave);
         const int supers = tally[rarityIndex(Rarity::Super)];
-        const int uniques = tally[rarityIndex(Rarity::Unique)];
+        const int eternals = tally[rarityIndex(Rarity::Eternal)];
         const int apexes = tally[rarityIndex(Rarity::Apex)];
-        CHECK_EQ(supers + uniques + apexes, kRolls);
-        CHECK(uniques > 1800 && uniques < 2200);
+        CHECK_EQ(supers + eternals + apexes, kRolls);
+        CHECK(eternals > 1800 && eternals < 2200);
         CHECK(apexes > 140 && apexes < 260);
     }
 }
@@ -1367,10 +1367,10 @@ TEST(a_unique_or_apex_on_the_disc_is_announced_to_everyone) {
 
     // Neither has a biome clock on the disc to wait for, and two of a tier may
     // stand there at once: the one-per-biome cull is the maps'.
-    const std::string unique = std::string(rarityLabel(Rarity::Unique)) + " Hornet has ";
+    const std::string eternal = std::string(rarityLabel(Rarity::Eternal)) + " Hornet has ";
     const std::string apex = std::string(rarityLabel(Rarity::Apex)) + " Hornet has ";
     std::vector<Entity> mobs;
-    for (const Rarity rarity : {Rarity::Unique, Rarity::Unique, Rarity::Apex}) {
+    for (const Rarity rarity : {Rarity::Eternal, Rarity::Eternal, Rarity::Apex}) {
         const double offset = 500.0 * static_cast<double>(mobs.size());
         mobs.push_back(spawner.spawnMob(world, h.server.terrain(), content(), hornet, rarity,
                                         kWavesCentre + Vec2{offset - 500.0, 0.0}, kWavesRealm,
@@ -1380,14 +1380,14 @@ TEST(a_unique_or_apex_on_the_disc_is_announced_to_everyone) {
     }
     // Alice is on a map, nowhere near the disc, and still told.
     CHECK(h.stepUntil({&boss, &alice}, [&] {
-        return heard(alice, unique + "spawned") == 2 && heard(alice, apex + "spawned") == 1;
+        return heard(alice, eternal + "spawned") == 2 && heard(alice, apex + "spawned") == 1;
     }, 60));
     h.step(static_cast<int>(2000.0 / net::kTickMillis), {&boss, &alice});
     for (const Entity mob : mobs) CHECK(world.isAlive(mob) && !world.has<Dead>(mob));
 
     for (const Entity mob : mobs) poison(mob);
     CHECK(h.stepUntil({&boss, &alice}, [&] {
-        return heard(alice, unique + "been defeated") == 2 && heard(alice, apex + "been defeated") == 1;
+        return heard(alice, eternal + "been defeated") == 2 && heard(alice, apex + "been defeated") == 1;
     }, 120));
 }
 
@@ -1408,7 +1408,7 @@ TEST(a_unique_on_the_disc_has_ten_times_its_health_and_an_apex_fifty) {
     const std::uint16_t hornet = content().mobIndex("hornet");
     CHECK(hornet != kInvalidIndex);
     if (hornet == kInvalidIndex) return;
-    for (const auto& [rarity, scale] : {std::pair{Rarity::Super, 1.0}, std::pair{Rarity::Unique, 10.0},
+    for (const auto& [rarity, scale] : {std::pair{Rarity::Super, 1.0}, std::pair{Rarity::Eternal, 10.0},
                                         std::pair{Rarity::Apex, 50.0}}) {
         const Entity mob = spawnOnDisc(hornet, rarity);
         CHECK(mob != NULL_ENTITY);
@@ -1418,22 +1418,22 @@ TEST(a_unique_on_the_disc_has_ten_times_its_health_and_an_apex_fifty) {
         CHECK(healthOf(mob).current == healthOf(mob).max);
     }
 
-    // A chain is one animal: every bead of a unique centipede is ten times too.
+    // A chain is one animal: every bead of an eternal centipede is ten times too.
     const std::uint16_t centipede = content().mobIndex("centipede");
     CHECK(centipede != kInvalidIndex);
     if (centipede == kInvalidIndex) return;
     const std::uint16_t bead = content().mob(centipede).segmentBodyIndex;
     CHECK(bead != kInvalidIndex);
-    const Entity head = spawnOnDisc(centipede, Rarity::Unique);
+    const Entity head = spawnOnDisc(centipede, Rarity::Eternal);
     CHECK(head != NULL_ENTITY);
     if (head == NULL_ENTITY || bead == kInvalidIndex) return;
-    CHECK(healthOf(head).max == content().mobStats(centipede, Rarity::Unique).health * 10.0);
+    CHECK(healthOf(head).max == content().mobStats(centipede, Rarity::Eternal).health * 10.0);
     int beads = 0;
     Query<BodySegment, Health> chain{world};
     chain.each([&](Entity e, BodySegment& link, Health& health) {
         if (link.chainHead != head || e == head) return;
         ++beads;
-        CHECK(health.max == content().mobStats(bead, Rarity::Unique).health * 10.0);
+        CHECK(health.max == content().mobStats(bead, Rarity::Eternal).health * 10.0);
     });
     CHECK(beads > 0);
 }

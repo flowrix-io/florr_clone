@@ -44,7 +44,7 @@ also loads the map's **prestige twin**, `prestige_garden`, into a realm of its
 own after every entry's realms (so turning it on renumbers nothing). A twin
 is the same place for players who bought the Prestige talent and flipped the
 yellow arrow on the title screen: every mob its bands grow comes out one
-rarity higher, capped at super, and no unique or apex ever spawns there (no
+rarity higher, capped at super, and no eternal or apex ever spawns there (no
 boss clocks). Its biome and mob group are the plain map's; its doors are not
 offered on their own (a join asks for the plain door with the prestige flag);
 every pad on a twin leads to the twin of the map it names, when that map has
@@ -496,7 +496,7 @@ rare`): a tier name can only ever say one of ten things, and it cannot say
 "mostly ultras with the odd super in them" at all.
 
 The number is read through four anchors — 0 is fully common, 100 is ultra with a
-two-per-cent chance of super, 200 is fully super, 300 is unique with a
+two-per-cent chance of super, 200 is fully super, 300 is eternal with a
 five-per-cent chance of apex — and it is linear between them. Past 300 it keeps
 the last segment's slope toward apex rather than capping, so a bigger number
 always means at least as dangerous.
@@ -514,7 +514,7 @@ else:
 | 83.1 | mythic |
 | 99.7 | ultra |
 | 200 | super |
-| 295.2 | unique |
+| 295.2 | eternal |
 | 390.5 | apex |
 
 **Everything else is a blend**, including three of the four anchors themselves:
@@ -528,9 +528,9 @@ else:
 | **100** | **98% ultra, 2% super** |
 | 150 | 49% ultra, 51% super |
 | **200** | **100% super** |
-| 250 | 47.5% super, 52.5% unique |
-| **300** | **95% unique, 5% apex** |
-| 350 | 42.5% unique, 57.5% apex |
+| 250 | 47.5% super, 52.5% eternal |
+| **300** | **95% eternal, 5% apex** |
+| 350 | 42.5% eternal, 57.5% apex |
 | 390.5 and up | 100% apex |
 
 The ladder is deliberately not evenly spaced: the first seven rarities fit in
@@ -539,10 +539,10 @@ early climb is short and the top of it is long, which is what the four anchors
 say.
 
 **A band grows nothing above super, though.** Its roll is stopped there, and a
-wild unique or apex is a super that its biome's boss clock upgraded
+wild eternal or apex is a super that its biome's boss clock upgraded
 (`cpp/server/systems/spawning.h`): while a clock is ready, each super the
 biome's bands spawn has a one-in-ten chance of coming out at that tier, which
-starts the clock again — twenty minutes for a unique, two hours for an apex —
+starts the clock again — twenty minutes for an eternal, two hours for an apex —
 and a biome holds at most one of each alive. So past 200 the curve describes
 the ground (the minimap, the load line and the bots read it), not what the band
 rolls.
@@ -917,13 +917,13 @@ on a die roll, the one-in-a-hundred super an ultra band used to produce, and the
 boss pass — the pass that kept exactly one ultra alive in the world and one
 super per section and placed them by hand. That pass cannot coexist with a scale
 on which a difficulty-100 band is *full* of ultras, so on this scale an ultra or
-a super comes from the ground it stands on, and a unique or an apex from a super
+a super comes from the ground it stands on, and an eternal or an apex from a super
 its biome's clock upgraded (see `difficulty` above). What survives is the
-announcement: a super, unique or apex spawning is still worth telling the server
+announcement: a super, eternal or apex spawning is still worth telling the server
 about — except a super on ground where more than 3% of spawns come out a boss
 (`kQuietBossChance`), which is that band's stock and spawns and dies without a
 line in chat. A difficulty-100 band (2%) still announces its supers; anything
-past about 101 does not. Uniques and apexes announce wherever they stand.
+past about 101 does not. Eternals and apexes announce wherever they stand.
 
 ## What guards this
 

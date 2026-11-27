@@ -24,7 +24,7 @@
 //  * reaches `kind + body radius` world units, the kind being
 //      flower                     200
 //      pet (a friendly mob)       150
-//      a DROPPED bulb             200 + 100 x rarity, 2000 from Unique up
+//      a DROPPED bulb             200 + 100 x rarity, 2000 from Eternal up
 //    and nothing else's (two florr kinds this does not port: a component that
 //    lights 25 and a tag that lights 200 -- neither could be named);
 //  * has scale = breathe x fade, where breathe swells 1 -> 1.1 and back on a

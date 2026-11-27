@@ -1029,7 +1029,7 @@ void App::drawTrialPicker(Canvas& canvas) {
     TextStyle section = small;
     section.align = Align::Left;
     section.size = 12.0;
-    text(canvas, trialRefreshingPicker_ ? "Unique/Apex, changes every month"
+    text(canvas, trialRefreshingPicker_ ? "Eternal/Apex, changes every month"
                                         : "Common to Super, permanent",
          panel.x + 30.0, panel.y + 198.0, section);
 

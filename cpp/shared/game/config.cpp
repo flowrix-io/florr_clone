@@ -774,19 +774,19 @@ void parseMobGroups(Ctx& ctx, MobConfig& m, std::uint16_t mobIndex, const Json& 
 
 /// The mandatory `xp` table: what killing this mob is worth, per tier.
 ///
-/// Every tier from common to unique must be there and must be a finite,
+/// Every tier from common to eternal must be there and must be a finite,
 /// non-negative number. It used to live in its own file (cpp/data/mob_xp.json)
 /// where a mob could simply be missing, and eleven of them were -- silently
-/// worth one XP at every tier including unique, which reads as a balance
+/// worth one XP at every tier including eternal, which reads as a balance
 /// decision and never was one. Requiring it here means a new mob cannot be
 /// added without saying what it is worth.
 ///
-/// Apex is the ONE derived tier: the tables stop at unique, and apex is a 3x
-/// step above unique everywhere else in the game, so deriving it keeps an apex
+/// Apex is the ONE derived tier: the tables stop at eternal, and apex is a 3x
+/// step above eternal everywhere else in the game, so deriving it keeps an apex
 /// kill from paying the same as a common one without asking every entry to
 /// write the multiplication out.
 std::array<double, kLadderRarityCount> parseXp(Ctx& ctx, const Json& src) {
-    constexpr std::size_t kUnique = static_cast<std::size_t>(Rarity::Unique);
+    constexpr std::size_t kEternal = static_cast<std::size_t>(Rarity::Eternal);
     constexpr std::size_t kApex = static_cast<std::size_t>(Rarity::Apex);
     std::array<double, kLadderRarityCount> xp{};
     xp.fill(1.0);
@@ -801,7 +801,7 @@ std::array<double, kLadderRarityCount> parseXp(Ctx& ctx, const Json& src) {
         ctx.fail(std::string("xp is ") + typeName(row) + ", not an object");
         return xp;
     }
-    for (std::size_t i = 0; i <= kUnique; ++i) {
+    for (std::size_t i = 0; i <= kEternal; ++i) {
         const char* tier = kRarityNames[i];
         if (!row.contains(tier)) {
             ctx.fail(std::string("xp has no ") + tier + " tier");
@@ -820,9 +820,9 @@ std::array<double, kLadderRarityCount> parseXp(Ctx& ctx, const Json& src) {
         xp[i] = v;
     }
     if (row.contains("apex")) {
-        ctx.warn("xp names an apex tier; apex is derived as 3x unique and the value is ignored");
+        ctx.warn("xp names an apex tier; apex is derived as 3x eternal and the value is ignored");
     }
-    xp[kApex] = xp[kUnique] * 3.0;
+    xp[kApex] = xp[kEternal] * 3.0;
     return xp;
 }
 
@@ -1508,10 +1508,10 @@ PetalConfig eggPetal(const std::string& mobId, const MobConfig& mob,
 
 /// Multiplicative modifier scaled for a tier.
 ///
-/// The bonus is the distance from 1.0, so a +10% at common is +40% at unique.
+/// The bonus is the distance from 1.0, so a +10% at common is +40% at eternal.
 /// A multiplier at or below zero is a sign flip or an off switch and is left
 /// alone -- yin_yang reverses the ring with -1, and scaling that would spin
-/// the ring at -4x by unique.
+/// the ring at -4x by eternal.
 double scaledMultiplier(double value, double scale) {
     if (value <= 0.0) return value;
     return 1.0 + (value - 1.0) * scale;

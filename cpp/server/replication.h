@@ -402,7 +402,7 @@ public:
     /// Exact up to the default screen. On a bigger one (a camera petal) the
     /// margin past the drawn half stops growing at the default screen's, so
     /// the box is everything drawn plus the same distance a default screen
-    /// gets. Without that cap, unique antennae's tenfold view would stream the
+    /// gets. Without that cap, eternal antennae's tenfold view would stream the
     /// whole map.
     double viewportReach = 2.0;
 

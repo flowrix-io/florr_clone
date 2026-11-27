@@ -346,7 +346,7 @@ void GameServer::enforceHostedRules(Session& s) {
     // Return only newly permitted gear. Other bans still apply, and unrelated
     // inventory, loot, and player loadout changes survive rule edits.
     for (int r=0;r<kRarityCount;++r) {
-        const std::string rarity=rarityName(Rarity(r));
+        const std::string rarity=raritySaveKey(Rarity(r));
         const auto keys=hidden.inventory[rarity].keys();
         for (const auto& key:keys) {
             if (key.rfind("petal_",0)==0 && allowed(key.substr(6),r)) {
@@ -370,7 +370,7 @@ void GameServer::enforceHostedRules(Session& s) {
         }
     }
     for(int r=0;r<kRarityCount;++r) {
-        const std::string rarity=rarityName(Rarity(r));
+        const std::string rarity=raritySaveKey(Rarity(r));
         const auto keys=kit.inventory[rarity].keys();
         for(const auto& key:keys) {
             if(key.rfind("petal_",0)==0 && !allowed(key.substr(6),r)) {

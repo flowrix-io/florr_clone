@@ -332,7 +332,7 @@ Json playerTree(const PlayerRecord& record, bool placeholders) {
             const int tier = set.tier[static_cast<std::size_t>(i)];
             if (tier < 0) continue;
             skills[kSkillKeys[static_cast<std::size_t>(i)]] =
-                std::string(rarityName(clampRarity(tier)));
+                std::string(raritySaveKey(clampRarity(tier)));
         }
         return skills;
     };
@@ -386,7 +386,7 @@ void writeStoredInventory(const PlayerRecord& record, std::string& out) {
     std::vector<std::string> tiers;                     // first-touched order
     for (const std::optional<StoredItem>& slot : record.loadout) {
         if (!slot || slot->petalType.empty()) continue;
-        const std::string tier = rarityName(slot->rarity);
+        const std::string tier = raritySaveKey(slot->rarity);
         if (std::find(tiers.begin(), tiers.end(), tier) == tiers.end()) tiers.push_back(tier);
     }
     if (tiers.empty()) {
@@ -413,7 +413,7 @@ void writeStoredInventory(const PlayerRecord& record, std::string& out) {
     }
     for (const std::optional<StoredItem>& slot : record.loadout) {
         if (!slot || slot->petalType.empty()) continue;
-        const std::string tier = rarityName(slot->rarity);
+        const std::string tier = raritySaveKey(slot->rarity);
         const std::size_t i = static_cast<std::size_t>(std::find(tiers.begin(), tiers.end(), tier) - tiers.begin());
         touched[i].addItem(slot->rarity, "petal_" + slot->petalType, 1);
     }
@@ -622,7 +622,7 @@ StoredItem StoredItem::fromJson(const Json& value) {
 Json StoredItem::toJson() const {
     Json out = Json::object();
     out["type"] = type;
-    out["rarity"] = std::string(rarityName(rarity));
+    out["rarity"] = std::string(raritySaveKey(rarity));
     if (!petalType.empty()) out["petalType"] = petalType;
     if (hasHealth) out["health"] = health;
     if (hasMaxHealth) out["maxHealth"] = maxHealth;
@@ -643,13 +643,13 @@ int PlayerRecord::stackCount(const Json& stored) {
 }
 
 int PlayerRecord::itemCount(Rarity rarity, const std::string& itemType) const {
-    const Json& bucket = inventory[std::string(rarityName(rarity))];
+    const Json& bucket = inventory[std::string(raritySaveKey(rarity))];
     if (!bucket.isObject()) return 0;
     return stackCount(bucket[itemType]);
 }
 
 void PlayerRecord::setItemCount(Rarity rarity, const std::string& itemType, int count) {
-    const std::string tier = rarityName(rarity);
+    const std::string tier = raritySaveKey(rarity);
     if (count <= 0) {
         if (!inventory.contains(tier)) return;
         Json& bucket = inventory[tier];
@@ -675,11 +675,11 @@ void PlayerRecord::addItem(Rarity rarity, const std::string& itemType, int delta
 int PlayerRecord::killCount(const std::string& mobType, Rarity rarity) const {
     const Json& bucket = mobKills[mobType];
     if (!bucket.isObject()) return 0;
-    return bucket[std::string(rarityName(rarity))].asInt(0);
+    return bucket[std::string(raritySaveKey(rarity))].asInt(0);
 }
 
 void PlayerRecord::recordKill(const std::string& mobType, Rarity rarity) {
-    const std::string tier = rarityName(rarity);
+    const std::string tier = raritySaveKey(rarity);
     mobKills[mobType][tier] = killCount(mobType, rarity) + 1;
 }
 

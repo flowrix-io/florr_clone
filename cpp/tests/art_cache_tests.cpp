@@ -213,7 +213,7 @@ TEST(a_super_square_is_repainted_green_with_a_derived_outline) {
     const auto ultra = pixelsAt(Rarity::Ultra);
     CHECK(ultra.first == kSquareFill);
     CHECK(ultra.second == kSquareStroke);
-    for (const Rarity tier : {Rarity::Super, Rarity::Unique, Rarity::Apex}) {
+    for (const Rarity tier : {Rarity::Super, Rarity::Eternal, Rarity::Apex}) {
         const auto repainted = pixelsAt(tier);
         CHECK(repainted.first == kSuperSquareFill);
         CHECK(repainted.second == outlineOf(kSuperSquareFill));
@@ -262,7 +262,7 @@ TEST(the_square_mob_is_drawn_as_the_square_petal_is_at_every_tier) {
                image[middle + 2];
     };
     CHECK(tile(Rarity::Mythic) == kSquareFill);
-    CHECK(tile(Rarity::Unique) == kSuperSquareFill);
+    CHECK(tile(Rarity::Eternal) == kSuperSquareFill);
 }
 
 TEST(a_mob_drawn_as_a_petal_that_does_not_exist_is_a_plain_disc) {

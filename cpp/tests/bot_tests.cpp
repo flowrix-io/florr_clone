@@ -536,7 +536,7 @@ TEST(a_bot_fights_what_is_put_in_front_of_it) {
     // ground clear and gear up, and two of five mythics were gone before
     // their own staging window closed. Ultra has the health to last a few
     // seconds beside them, and its health dropping is the same statement made
-    // where it can be read. Deliberately not super or unique: those are boss
+    // where it can be read. Deliberately not super or eternal: those are boss
     // tiers to the controller (isBotBossTier) and would rally the whole map.
     //
     // They are also picked out by WHAT and WHERE rather than by being new to

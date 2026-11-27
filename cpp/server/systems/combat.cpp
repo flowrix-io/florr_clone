@@ -347,7 +347,7 @@ void creditSwing(World& world, Entity victim, Entity source, double amount) {
     // A swing on an ambush nest's brood is a swing on the nest: the nest itself
     // cannot be hit, and its ledger is what decides who it pays out to when it
     // falls with the last of them. Scaled so the whole brood is worth the
-    // nest's full health -- the ledger's 3% loot floor is a share of THAT, and
+    // nest's full health -- the ledger's loot floor is a share of THAT, and
     // a super hole's ultra-capped ants would otherwise never reach it.
     //
     // A nest that fell earlier this tick still takes the credit, as any corpse
@@ -1348,7 +1348,7 @@ void CombatSystem::awardBounty(World& world, Entity victim) {
     const Health* health = world.tryGet<Health>(victim);
     std::vector<Entity> recipients;
     selectLootRecipients(shares, lootSlotsForRarity(rarity), squads, recipients,
-                         lootDamageFloor(health != nullptr ? health->max : 0.0));
+                         lootDamageFloor(health != nullptr ? health->max : 0.0, rarity));
 
     // Every recipient is paid the mob's full XP -- the corpse is not split
     // between them, and no account earns at a different rate than another.

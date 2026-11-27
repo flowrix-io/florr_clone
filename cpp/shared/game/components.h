@@ -1046,7 +1046,7 @@ struct KeepAwake {};
 
 /// A nest's queen (MobConfig::queenIndex): out at the nest's own tier, which
 /// may be above ultra, and past the boss clock. She belongs to her nest, not
-/// to her biome, so she neither spends nor holds that biome's unique or apex
+/// to her biome, so she neither spends nor holds that biome's eternal or apex
 /// slot: noteStandingBosses and topBossTaken skip her, and the
 /// one-per-biome cull leaves her standing.
 struct NestQueen {};

@@ -3004,7 +3004,7 @@ TEST(a_top_tier_shooter_still_aggros_and_fires_from_outside_its_own_body) {
     // in radius and carried a 300-unit range, which put its whole aggro circle
     // inside itself -- it never saw a flower, never chased one and never fired,
     // at super and at every tier above it.
-    for (const Rarity rarity : {Rarity::Super, Rarity::Unique, Rarity::Apex}) {
+    for (const Rarity rarity : {Rarity::Super, Rarity::Eternal, Rarity::Apex}) {
         for (const char* id : {"hornet", "wasp"}) {
             Sim sim;
             const Entity mob = sim.spawnMob(id, kOrigin, rarity);

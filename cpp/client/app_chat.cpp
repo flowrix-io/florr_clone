@@ -195,6 +195,8 @@ int chatSwitchTarget(const std::string& line) {
 constexpr std::size_t kServerChatBytes = 200;
 /// What the box itself lets be typed.
 constexpr std::size_t kChatDraftBytes = 180;
+/// How many sent lines Up/Down can walk back through.
+constexpr std::size_t kChatHistoryLines = 50;
 /// The suggestion list replaces the message column; these are its own metrics.
 constexpr double kChatSuggestionRowHeight = 23.0;   // 4px padding, a 15px line, 4px
 constexpr double kChatSuggestionSize = 13.0;
@@ -226,7 +228,7 @@ constexpr CommandRole kForAdmins = CommandRole::Admin;
 constexpr ChatCommand kChatCommands[] = {
     {"/help", "Show available commands", kForAll},
     {"/biome", "Show the most populated biome", kForAll},
-    {"/boss-timers", "Show each biome's unique/apex cooldown", kForAll},
+    {"/boss-timers", "Show each biome's eternal/apex cooldown", kForAll},
     {"/players-online", "Show how many players are online", kForAll},
     {"/admin createpoll", "Open the standalone poll creator", kForAdmins},
     {"/admin save", "Save player progress", kForAdmins},
@@ -886,10 +888,37 @@ void App::editChatLine() {
         chatChannelCommand(chatSendTab_, net_.whisperPartner()).size();
     typing.maxBytes =
         std::min(kChatDraftBytes, kServerChatBytes - std::min(kServerChatBytes, overhead));
-    // The open command list takes Up/Down for its rows, as the reference's
-    // keydown handler preventDefaults them; with it closed they move the caret.
-    typing.upDown = chatSuggestion_ < 0;
+    // Up/Down are never the caret's on this one-line field: the open command
+    // list takes them for its rows, as the reference's keydown handler
+    // preventDefaults them, and with it closed they walk the sent lines.
+    typing.upDown = false;
     ui::editText(window_, chatDraft_, chatField_, timeSeconds_, typing);
+    bool recalled = false;
+    if (chatSuggestion_ < 0 && !chatHistory_.empty()) {
+        // keyTyped, so a held arrow keeps stepping, as it does in a shell.
+        const bool up = window_.keyTyped(Key::Up), down = window_.keyTyped(Key::Down);
+        const int last = static_cast<int>(chatHistory_.size()) - 1;
+        if (up && !down) {
+            if (chatHistoryAt_ < 0) {
+                chatHistoryDraft_ = chatDraft_;
+                chatHistoryAt_ = last;
+            } else if (chatHistoryAt_ > 0) {
+                --chatHistoryAt_;
+            }
+            chatDraft_ = chatHistory_[static_cast<std::size_t>(chatHistoryAt_)];
+            recalled = true;
+        } else if (down && !up && chatHistoryAt_ >= 0) {
+            if (chatHistoryAt_ < last) {
+                ++chatHistoryAt_;
+                chatDraft_ = chatHistory_[static_cast<std::size_t>(chatHistoryAt_)];
+            } else {
+                chatHistoryAt_ = -1;
+                chatDraft_ = chatHistoryDraft_;
+            }
+            recalled = true;
+        }
+        if (recalled) chatField_.focusAtEnd(chatDraft_, timeSeconds_);
+    }
     // A press anywhere outside the chat -- a panel, the world, the strip --
     // closes the line, which is what clicking away from a focused input does
     // everywhere else. The draft is KEPT: reopening with Enter picks it back
@@ -898,6 +927,7 @@ void App::editChatLine() {
         !chatRegion_.contains({window_.mouseX(), window_.mouseY()})) {
         chatOpen_ = false;
         chatSuggestion_ = -1;
+        chatHistoryAt_ = -1;
         return;
     }
     // The channel strip, as last painted. The checkbox end of a tab -- all of
@@ -949,8 +979,11 @@ void App::editChatLine() {
     }
     // The list opens on the first '/' and re-selects its top row whenever the
     // filter changes, which is what the reference's `input` handler does.
+    // Not for a line Up/Down just brought back, though: a recalled command
+    // would open the list, and the next Up would go to its rows instead of
+    // further back through what was sent.
     if (chatDraft_ != before) {
-        chatSuggestion_ = (!chatDraft_.empty() && chatDraft_[0] == '/') ? 0 : -1;
+        chatSuggestion_ = (!recalled && !chatDraft_.empty() && chatDraft_[0] == '/') ? 0 : -1;
     }
 
     // A switch word is acted on as typed, ahead of the command list -- which
@@ -1000,11 +1033,20 @@ void App::editChatLine() {
     if (window_.keyPressed(Key::Tab)) stepChannel(window_.shiftHeld() ? -1 : 1);
 
     if (window_.keyPressed(Key::Enter)) {
-        if (!chatDraft_.empty()) sendChatLine(chatDraft_);
+        if (!chatDraft_.empty()) {
+            // The same line twice in a row is kept once, as a shell does.
+            if (chatHistory_.empty() || chatHistory_.back() != chatDraft_) {
+                chatHistory_.push_back(chatDraft_);
+                if (chatHistory_.size() > kChatHistoryLines) chatHistory_.erase(chatHistory_.begin());
+            }
+            sendChatLine(chatDraft_);
+        }
         chatDraft_.clear();
+        chatHistoryAt_ = -1;
         chatOpen_ = false;
     } else if (window_.keyPressed(Key::Escape)) {
         chatDraft_.clear();
+        chatHistoryAt_ = -1;
         chatOpen_ = false;
     }
 }

@@ -853,7 +853,7 @@ TEST(mobs_spawn_and_are_replicated_to_a_player) {
 
 TEST(a_camera_petal_lets_its_wearer_claim_the_world_it_draws) {
     // The reported viewport is what replication streams and what wakes the
-    // spawn bands, so the server clamps it. A flat clamp cut unique antennae's
+    // spawn bands, so the server clamps it. A flat clamp cut eternal antennae's
     // tenfold view to a quarter of its width: mobs culled in plain view, bands
     // empty outside a box round the flower. The ceiling is the default screen
     // over the zoom the body's own loadout grants -- and no more than that.
@@ -893,10 +893,10 @@ TEST(a_camera_petal_lets_its_wearer_claim_the_world_it_draws) {
         h.step(2, {&client});
     };
 
-    // Unique antennae on the bar: the whole of what it draws is claimable.
+    // Eternal antennae on the bar: the whole of what it draws is claimable.
     const std::uint16_t antennae = content().petalIndex("antennae");
     CHECK(antennae != kInvalidIndex);
-    world.get<Loadout>(body).slots[0] = LoadoutSlot{antennae, Rarity::Unique, 0.0, false};
+    world.get<Loadout>(body).slots[0] = LoadoutSlot{antennae, Rarity::Eternal, 0.0, false};
     report(drawn);
     CHECK_NEAR(claimed().x, drawn.x, 1e-6);
     CHECK_NEAR(claimed().y, drawn.y, 1e-6);
@@ -911,7 +911,7 @@ TEST(a_camera_petal_lets_its_wearer_claim_the_world_it_draws) {
     h.step(2, {&client});
     CHECK(claimed().x <= 2600.0);
     CHECK(claimed().y <= 2600.0);
-    world.get<Loadout>(body).slots[0] = LoadoutSlot{antennae, Rarity::Unique, 0.0, false};
+    world.get<Loadout>(body).slots[0] = LoadoutSlot{antennae, Rarity::Eternal, 0.0, false};
     report(drawn);
     CHECK_NEAR(claimed().x, drawn.x, 1e-6);
 
@@ -2118,7 +2118,7 @@ TEST(a_divider_splits_a_mob_through_the_real_server_loop) {
             mobs.without<Pet, BodySegment, Intangible, MobPetalRing, Spawner, NestWaves>();
             mobs.each([&](Entity e, MobTag&, MobType& type, Transform& transform, AmbientMob&) {
                 if (mob == NULL_ENTITY && transform.realm == realm &&
-                    rarityIndex(type.rarity) < rarityIndex(Rarity::Unique) &&
+                    rarityIndex(type.rarity) < rarityIndex(Rarity::Eternal) &&
                     dividerReaches(tier, type.rarity)) {
                     mob = e;
                 }

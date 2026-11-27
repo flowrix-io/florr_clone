@@ -591,15 +591,15 @@ TEST(player_modifiers_scale_by_kind) {
       "basic": {"name": "Basic", "health": 10, "damage": 10, "size": 1, "cooldown": 2500, "count": 1}
     })JSON"));
 
-    // Additive: clover's luck scales straight up, 1x at common to 4x at unique.
+    // Additive: clover's luck scales straight up, 1x at common to 4x at eternal.
     const std::uint16_t clover = r.petalIndex("clover");
     CHECK_NEAR(r.petalStats(clover, Rarity::Common).modifiers.luck, 0.08, 1e-12);
-    CHECK_NEAR(r.petalStats(clover, Rarity::Unique).modifiers.luck, 1.5, 1e-12);
+    CHECK_NEAR(r.petalStats(clover, Rarity::Eternal).modifiers.luck, 1.5, 1e-12);
 
     // Multiplicative: only the bonus above 1.0 scales, so +10% becomes +40%.
     const std::uint16_t cactus = r.petalIndex("cactus");
     CHECK_NEAR(r.petalStats(cactus, Rarity::Common).modifiers.maxHealth, 1.1, 1e-12);
-    CHECK_NEAR(r.petalStats(cactus, Rarity::Unique).modifiers.maxHealth, 1.4, 1e-12);
+    CHECK_NEAR(r.petalStats(cactus, Rarity::Eternal).modifiers.maxHealth, 1.4, 1e-12);
 
     // yin_yang is no multiplier at any tier: it turns the ring by how many
     // are worn, as gardn's does (petalCyclesRingSpin).
@@ -730,7 +730,7 @@ TEST(special_petal_geometry_and_timers_follow_rarity_overrides) {
     })JSON"));
     const std::uint16_t web = r.petalIndex("web");
     CHECK_NEAR(r.petalStats(web, Rarity::Common).webRadius, 90.0, 1e-12);
-    CHECK_NEAR(r.petalStats(web, Rarity::Unique).webRadius, 198.0, 1e-12);
+    CHECK_NEAR(r.petalStats(web, Rarity::Eternal).webRadius, 198.0, 1e-12);
 
     const std::uint16_t sponge = r.petalIndex("sponge");
     // +1 base per rarity step: Common holds at the base, Mythic (index 5) is 6x.
@@ -887,15 +887,15 @@ TEST(mob_xp_comes_off_the_mob_and_apex_is_derived) {
     const ContentRegistry& r = shipped().registry;
     const MobConfig& bee = r.mob(r.mobIndex("bee"));
     CHECK_NEAR(bee.xp[static_cast<std::size_t>(Rarity::Common)], 1.0, 1e-9);
-    CHECK_NEAR(bee.xp[static_cast<std::size_t>(Rarity::Unique)], 6800000.0, 1e-6);
-    // The tables stop at unique; apex takes the same 3x step the stat tables do.
+    CHECK_NEAR(bee.xp[static_cast<std::size_t>(Rarity::Eternal)], 6800000.0, 1e-6);
+    // The tables stop at eternal; apex takes the same 3x step the stat tables do.
     CHECK_NEAR(bee.xp[static_cast<std::size_t>(Rarity::Apex)], 6800000.0 * 3.0, 1e-6);
     CHECK_NEAR(r.mobStats(r.mobIndex("bee"), Rarity::Apex).xp, 20400000.0, 1e-6);
 
     // EVERY shipped mob says what it is worth -- that is what mandatory buys,
     // and it is the thing a separate mob_xp.json could not promise: eleven
-    // mobs used to be missing from it and awarded one XP at unique.
-    constexpr std::size_t kUnique = static_cast<std::size_t>(Rarity::Unique);
+    // mobs used to be missing from it and awarded one XP at eternal.
+    constexpr std::size_t kEternal = static_cast<std::size_t>(Rarity::Eternal);
     constexpr std::size_t kApex = static_cast<std::size_t>(Rarity::Apex);
     for (std::uint16_t i = 0; i < r.mobCount(); ++i) {
         const MobConfig& m = r.mob(i);
@@ -903,7 +903,7 @@ TEST(mob_xp_comes_off_the_mob_and_apex_is_derived) {
             const double xp = m.xp[static_cast<std::size_t>(tier)];
             CHECK(std::isfinite(xp) && xp >= 0.0);
         }
-        CHECK_NEAR(m.xp[kApex], m.xp[kUnique] * 3.0, 1e-6);
+        CHECK_NEAR(m.xp[kApex], m.xp[kEternal] * 3.0, 1e-6);
     }
 }
 
@@ -1107,7 +1107,7 @@ TEST(enums_and_colours_are_parsed_not_stored_as_text) {
     // The body-damage grant rides the petal damage ladder: 3x a tier, so an
     // authored 10 matches what a basic petal of the same rarity hits for.
     CHECK_NEAR(p.petalStats(p.petalIndex("cutter"), Rarity::Common).bodyDamage, 10.0, 1e-9);
-    CHECK_NEAR(p.petalStats(p.petalIndex("cutter"), Rarity::Unique).bodyDamage, 65610.0, 1e-9);
+    CHECK_NEAR(p.petalStats(p.petalIndex("cutter"), Rarity::Eternal).bodyDamage, 65610.0, 1e-9);
     CHECK_EQ(p.petal(p.petalIndex("third_eye")).equipFlags, std::uint16_t(EquipThirdEye));
     CHECK_EQ(p.petal(p.petalIndex("observer")).equipFlags, std::uint16_t(EquipObserver));
     CHECK_EQ(p.petal(p.petalIndex("antennae")).equipFlags, std::uint16_t(EquipAntennae));
@@ -1520,7 +1520,7 @@ TEST(a_third_eye_reaches_its_authored_range_at_its_floor_and_50_more_a_tier) {
     CHECK_NEAR(reach(Rarity::Mythic), 90.0, 1e-9);
     CHECK_NEAR(reach(Rarity::Ultra), 140.0, 1e-9);
     CHECK_NEAR(reach(Rarity::Super), 190.0, 1e-9);
-    CHECK_NEAR(reach(Rarity::Unique), 240.0, 1e-9);
+    CHECK_NEAR(reach(Rarity::Eternal), 240.0, 1e-9);
     CHECK_NEAR(reach(Rarity::Apex), 290.0, 1e-9);
     CHECK_NEAR(reach(Rarity::Universal), 290.0, 1e-9);
 }
@@ -1739,7 +1739,7 @@ TEST(synthetic_dirty_values_are_sanitised) {
         "groups": {"garden": 1, "": 2, "swamp": -1}, "spawn_weight": -1,
         "poison": -1, "poisonDuration": -5,
         "xp": {"common": 1, "uncommon": 2, "rare": 3, "epic": 4, "legendary": 5,
-               "mythic": 6, "ultra": 7, "super": 8, "unique": 9},
+               "mythic": 6, "ultra": 7, "super": 8, "eternal": 9},
         "initial_spawns": ["ghost", "wreck"],
         "spawn_waves": [["wreck"], "not a wave"],
         "projectile": {"count": 0, "distance": 1e400, "speed": -5, "petalType": "nope"},
@@ -1750,7 +1750,7 @@ TEST(synthetic_dirty_values_are_sanitised) {
         "damage": 1e400, "health": 1e400, "size": 1e400, "speed": 1e400,
         "cooldown": 1e400, "range": 1e400, "ai_type": "hostile", "groups": ["desert"],
         "xp": {"common": 1, "uncommon": 2, "rare": 3, "epic": 4, "legendary": 5,
-               "mythic": 6, "ultra": 7, "super": 8, "unique": 9},
+               "mythic": 6, "ultra": 7, "super": 8, "eternal": 9},
         "random_size": [4, 1]
       },
       "not_an_object": 7
@@ -1950,7 +1950,7 @@ Synthetic mandatoryFixture(const std::string& mobExtra, const std::string& petal
 }
 
 const char* kFullXp = R"JSON(, "xp": {"common": 1, "uncommon": 2, "rare": 3, "epic": 4,
-    "legendary": 5, "mythic": 6, "ultra": 7, "super": 8, "unique": 9})JSON";
+    "legendary": 5, "mythic": 6, "ultra": 7, "super": 8, "eternal": 9})JSON";
 
 } // namespace
 
@@ -1960,7 +1960,7 @@ TEST(a_mob_with_no_xp_table_is_refused) {
 
     // The control: the same content, with the table, loads.
     CHECK(loadSyntheticRaw(r, mandatoryFixture(kFullXp, ", \"price\": 10"), error));
-    CHECK_NEAR(r.mob(0).xp[static_cast<std::size_t>(Rarity::Unique)], 9.0, 1e-12);
+    CHECK_NEAR(r.mob(0).xp[static_cast<std::size_t>(Rarity::Eternal)], 9.0, 1e-12);
     CHECK_NEAR(r.mob(0).xp[static_cast<std::size_t>(Rarity::Apex)], 27.0, 1e-12);
     const std::size_t loaded = r.mobCount();
 
@@ -1976,18 +1976,18 @@ TEST(a_mob_with_no_xp_table_is_refused) {
         r, mandatoryFixture(R"JSON(, "xp": {"common": 1, "uncommon": 2, "rare": 3, "epic": 4,
             "legendary": 5, "mythic": 6, "ultra": 7, "super": 8})JSON", ", \"price\": 10"),
         error));
-    CHECK(error.find("unique") != std::string::npos);
+    CHECK(error.find("eternal") != std::string::npos);
 
     // A tier that is not a number, and one that is negative.
     error.clear();
     CHECK(!loadSyntheticRaw(r, mandatoryFixture(R"JSON(, "xp": {"common": "lots",
         "uncommon": 2, "rare": 3, "epic": 4, "legendary": 5, "mythic": 6, "ultra": 7,
-        "super": 8, "unique": 9})JSON", ", \"price\": 10"), error));
+        "super": 8, "eternal": 9})JSON", ", \"price\": 10"), error));
     CHECK(!error.empty());
     error.clear();
     CHECK(!loadSyntheticRaw(r, mandatoryFixture(R"JSON(, "xp": {"common": -3,
         "uncommon": 2, "rare": 3, "epic": 4, "legendary": 5, "mythic": 6, "ultra": 7,
-        "super": 8, "unique": 9})JSON", ", \"price\": 10"), error));
+        "super": 8, "eternal": 9})JSON", ", \"price\": 10"), error));
     CHECK(!error.empty());
 }
 
