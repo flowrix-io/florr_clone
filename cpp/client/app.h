@@ -350,6 +350,10 @@ private:
     /// whole of the map the flower is standing on fitted into it -- with its
     /// gold border and its map caption.
     void drawMinimap(Canvas&);
+    /// The live damage board under the minimap: the mob this flower is fighting,
+    /// its picture, and the top three players by share of the damage it has
+    /// taken (net::MobDamageBoard). Draws nothing when no fight is on.
+    void drawMobDamageBoard(Canvas&, double timeSeconds);
     /// The maze realm's map: the whole layout rasterised, corridors light and
     /// tinted by depth band, walls dark, with the same player dots the
     /// overworld map draws. Replaces the world minimap inside the maze.

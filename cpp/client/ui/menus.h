@@ -334,6 +334,11 @@ struct ClientSettings {
     /// Whether the chat shows the server's "A Super ... has spawned" and
     /// "A Super ... has been defeated" lines. Unique and apex lines always show.
     bool showSuperMessages = true;
+    /// The live damage-share panel under the minimap. Off also stops the
+    /// server sending it (net::SetMobDamageBoard).
+    bool showMobDamageBoard = true;
+    /// ...and whether it also covers Super mobs (Eternal and Apex always).
+    bool showMobDamageBoardSuper = true;
     /// Whether the on-screen touch controls are up: the stick, and the two
     /// buttons that stand in for the extend/retract keys. The TypeScript
     /// client kept the same flag in `localStorage.requestMobile` and resolved

@@ -112,6 +112,33 @@ struct LeaderboardRow {
     double totalXp = 0;
 };
 
+/// One row of the mob damage board: a player and their share of the damage a
+/// mob has taken, in thousandths.
+struct MobBoardRow {
+    std::string name;
+    int rank = 0;
+    /// Thousandths of the MOB's max health this player has dealt.
+    int permille = 0;
+    bool self = false;
+    /// The loot rule would pay this player right now.
+    bool eligible = false;
+    /// In this player's squad, and paid.
+    bool squad = false;
+};
+
+/// The damage board for the mob this player last hit (net::MobDamageBoard).
+/// `receivedAtMillis` is on renderClockMillis(); the panel drops itself when
+/// the server has gone quiet for a while, which covers a death or a lag spike.
+struct MobDamageBoardState {
+    bool active = false;
+    std::uint16_t mobIndex = 0;
+    Rarity rarity = Rarity::Common;
+    /// The mob's age when this arrived, or -1 when the server did not know.
+    double ageMillis = -1.0;
+    double receivedAtMillis = 0.0;
+    std::vector<MobBoardRow> rows;
+};
+
 /// One entry of the global notification feed.
 struct NotificationEntry {
     /// The server's own id string. It is what the read set is keyed on, so it
@@ -726,6 +753,10 @@ public:
     /// `includeAdmins` is the "Show Admins on Leaderboard" switch: without it
     /// the server leaves admin accounts off the board.
     void requestLeaderboard(bool includeAdmins = false);
+    /// Tells the server whether to send the mob damage board, and whether it
+    /// should cover Super mobs. Sends only when something changes; a fresh
+    /// connection starts at "both" on both sides.
+    void setMobDamageBoardPrefs(bool wanted, bool includeSuper);
     /// Asks for one page of the global notification feed, newest first.
     /// `beforeMillis` of 0 asks for the newest page; anything else pages back
     /// past the oldest entry already held, as the browser's `?before=` does.
@@ -984,6 +1015,7 @@ public:
     bool takeServerDebugStats(ServerDebugStats& out);
 
     const std::vector<LeaderboardRow>& leaderboard() const { return leaderboard_; }
+    const MobDamageBoardState& mobDamageBoard() const { return mobDamageBoard_; }
     /// True between asking for the board and the answer arriving.
     bool leaderboardPending() const { return leaderboardPending_; }
     /// How many accounts the server holds, and how many of them authenticated
@@ -1240,6 +1272,7 @@ private:
     void handleChangePasswordResult(ByteReader&);
     void handleSetUsernameResult(ByteReader&);
     void handleLeaderboard(ByteReader&);
+    void handleMobDamageBoard(ByteReader&);
     void handleNotifications(ByteReader&);
     /// Schedules the next redial, lengthening the wait each time it is
     /// called without a handshake in between.
@@ -1373,6 +1406,8 @@ private:
     std::unordered_set<std::string> favoriteSkins_;
 
     std::vector<LeaderboardRow> leaderboard_;
+    MobDamageBoardState mobDamageBoard_;
+    std::uint8_t mobDamageBoardPrefsSent_ = 3;
     bool leaderboardPending_ = false;
     std::uint32_t totalAccounts_ = 0;
     std::uint32_t dailyActiveUsers_ = 0;

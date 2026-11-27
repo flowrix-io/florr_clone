@@ -1225,6 +1225,7 @@ void GameServer::replicate(double nowMillis) {
         scratch_.clear();
         replicator_.build(world_, viewpoint, views_[session.connection], frame, scratch_);
         if (!scratch_.empty()) connection->send(scratch_);
+        sendMobDamageBoard(session, *connection, nowMillis);
     }
     replicator_.endPass();
 }

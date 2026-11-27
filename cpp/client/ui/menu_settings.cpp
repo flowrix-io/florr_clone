@@ -147,6 +147,8 @@ enum Toggle : int {
     kRequestMobile,
     kHideOtherPetals,
     kHideOtherPets,
+    kShowMobDamageBoard,
+    kShowMobDamageBoardSuper,
     kDesynchronizedCanvas,
     kScreenShake,
     kAntennaeZoomAnimation,
@@ -251,6 +253,8 @@ bool* toggleValue(PanelState& st, ClientSettings& settings, int id) {
         case kRequestMobile: return &settings.requestMobile;
         case kHideOtherPetals: return &settings.render.hideOtherPetals;
         case kHideOtherPets: return &settings.render.hideOtherPets;
+        case kShowMobDamageBoard: return &settings.showMobDamageBoard;
+        case kShowMobDamageBoardSuper: return &settings.showMobDamageBoardSuper;
         case kScreenShake: return &settings.render.screenShake;
         case kAntennaeZoomAnimation: return &settings.antennaeZoomAnimation;
         case kShowSuperMessages: return &settings.showSuperMessages;
@@ -658,6 +662,8 @@ bool SettingsPanel::render(MenuContext& ctx) {
             p.checkbox(kShowStats, "Show Performance Stats");
             p.checkbox(kDynamicSkybox, "Dynamic Skybox");
             p.checkbox(kMobDeathAnimation, "Mob Death Animation");
+            p.checkbox(kShowMobDamageBoard, "Mob Damage Board (Eternal & Apex mobs)");
+            p.checkbox(kShowMobDamageBoardSuper, "Mob Damage Board on Super mobs too");
             p.checkbox(kAntialiasing, "Anti-aliasing");
             p.checkbox(kGpuAcceleration, "GPU Acceleration");
             p.checkbox(kDesynchronizedCanvas, "Low Latency Canvas (may flicker)");

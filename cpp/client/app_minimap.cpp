@@ -793,4 +793,156 @@ void App::drawArenaLeaderboard(Canvas& canvas) {
     canvas.restore();
 }
 
+void App::drawMobDamageBoard(Canvas& canvas, double timeSeconds) {
+    const MobDamageBoardState& board = net_.mobDamageBoard();
+    if (!board.active || board.rows.empty()) return;
+    // The server resends every quarter second while the fight is on; silence
+    // means it ended (the mob died, or this flower did), or the line lagged.
+    const double sinceMillis = renderClockMillis() - board.receivedAtMillis;
+    if (sinceMillis > 1500.0) return;
+    // The arena puts its own scoreboard in this corner, and a map that hides
+    // its minimap has no corner to hang this under.
+    const Realm realm = net_.view().realm();
+    if (isTrialRealm(realm) || realm == Realm::Arena) return;
+    if (const MapData* map = worldMaps_.forRealm(realm)) {
+        if (!map->showsMinimap()) return;
+    }
+
+    constexpr double kPanelW = kMinimapSize;
+    constexpr double kPad = 10.0;
+    constexpr double kBorder = 4.0;
+    constexpr double kRadius = 7.0;
+    constexpr double kTitleH = 22.0;
+    constexpr double kPictureBox = 56.0;
+    constexpr double kRowH = 18.0;
+    constexpr double kRowGap = 3.0;
+    constexpr double kFooterH = 18.0;
+    // The bar colours. Only the viewer's own side matters: gold when the
+    // viewer (alone or with their squad) is being paid, silver for the
+    // viewer's own row when not, and silver for everyone outside the squad.
+    constexpr std::uint32_t kSilver = 0xC0C0C0u;
+    constexpr std::uint32_t kGold = 0xFFD700u;
+
+    const std::size_t shown = board.rows.size();
+    // A gap before the player's own row when it is not in the top ten, so
+    // "37." does not read as the eleventh.
+    const bool detached = shown > 0 && board.rows.back().self && board.rows.back().rank > 10;
+    const double gap = detached ? 6.0 : 0.0;
+    const double panelH = kPad + kTitleH + 4.0 + kPictureBox + 6.0 + shown * kRowH +
+                          (shown - 1) * kRowGap + gap + 6.0 + kFooterH + kPad * 0.5;
+    const double x = canvas.width() - kMinimapSize - kMinimapPadding;
+    // Under the minimap and the realm caption it carries.
+    const double y = kMinimapPadding + kMinimapSize + 34.0;
+
+    canvas.save();
+    canvas.setLineJoin("round");
+    setFill(canvas, 0x555555u);
+    setStroke(canvas, 0x454545u);
+    canvas.setLineWidth(static_cast<float>(kBorder));
+    canvas.beginPath();
+    canvas.roundRect(static_cast<float>(x), static_cast<float>(y), static_cast<float>(kPanelW),
+                     static_cast<float>(panelH), static_cast<float>(kRadius));
+    canvas.stroke();
+    canvas.fill();
+
+    // The mob's name.
+    TextStyle title;
+    title.size = 16.0;
+    title.fill = 0xFFFFFFu;
+    title.stroke = 0x222222u;
+    title.align = Align::Centre;
+    title.baseline = Baseline::Middle;
+    text(canvas, content().mob(board.mobIndex).name, x + kPanelW * 0.5, y + kPad + kTitleH * 0.5,
+         title);
+
+    // Its picture, on a plate in its rarity's colour.
+    const double plateX = x + (kPanelW - kPictureBox) * 0.5;
+    const double plateY = y + kPad + kTitleH + 4.0;
+    setFill(canvas, rarityColor(board.rarity));
+    setStroke(canvas, shade(rarityColor(board.rarity), 0.8));
+    canvas.setLineWidth(3.0f);
+    canvas.beginPath();
+    canvas.roundRect(static_cast<float>(plateX), static_cast<float>(plateY),
+                     static_cast<float>(kPictureBox), static_cast<float>(kPictureBox), 5.0f);
+    canvas.fill();
+    canvas.stroke();
+    const double radius = content().mobStats(board.mobIndex, Rarity::Common).radius;
+    sprites_.drawMobPicture(canvas, board.mobIndex, board.rarity, plateX + kPictureBox * 0.5,
+                            plateY + kPictureBox * 0.5, kPictureBox * 0.85, kPictureBox * 0.7,
+                            timeSeconds, radius);
+
+    // One row per player: a dark track, a bar as long as their share of the
+    // MOB'S health, and "rank. name - percent" over it.
+    TextStyle rowStyle;
+    rowStyle.size = kRowH * 0.7;
+    rowStyle.fill = 0xFFFFFFu;
+    rowStyle.stroke = 0x222222u;
+    rowStyle.align = Align::Centre;
+    rowStyle.baseline = Baseline::Middle;
+    const double rowsX = x + kPad;
+    const double rowsW = kPanelW - kPad * 2.0;
+    const double rowsY = plateY + kPictureBox + 6.0;
+    const double inset = kRowH * 0.5;
+    canvas.setLineCap("round");
+    for (std::size_t i = 0; i < shown; ++i) {
+        const MobBoardRow& row = board.rows[i];
+        const bool lastDetached = detached && i + 1 == shown;
+        const double cy = rowsY + i * (kRowH + kRowGap) + (lastDetached ? gap : 0.0) + kRowH * 0.5;
+        const double ratio = clamp(row.permille / 1000.0, 0.0, 1.0);
+
+        // The player's own row is ringed in white so it can be found.
+        if (row.self) {
+            setStroke(canvas, 0xFFFFFFu);
+            canvas.setLineWidth(static_cast<float>(kRowH + 4.0));
+            canvas.beginPath();
+            canvas.moveTo(static_cast<float>(rowsX + inset), static_cast<float>(cy));
+            canvas.lineTo(static_cast<float>(rowsX + rowsW - inset), static_cast<float>(cy));
+            canvas.stroke();
+        }
+        setStroke(canvas, 0x222222u);
+        canvas.setLineWidth(static_cast<float>(kRowH));
+        canvas.beginPath();
+        canvas.moveTo(static_cast<float>(rowsX + inset), static_cast<float>(cy));
+        canvas.lineTo(static_cast<float>(rowsX + rowsW - inset), static_cast<float>(cy));
+        canvas.stroke();
+
+        if (ratio > 0.0) {
+            setStroke(canvas, row.eligible && (row.self || row.squad) ? kGold : kSilver);
+            canvas.setLineWidth(static_cast<float>(kRowH * 0.8));
+            const double segment = (rowsW - kRowH) * ratio;
+            canvas.beginPath();
+            canvas.moveTo(static_cast<float>(rowsX + inset), static_cast<float>(cy));
+            canvas.lineTo(static_cast<float>(rowsX + inset + segment), static_cast<float>(cy));
+            canvas.stroke();
+        }
+
+        std::string name = row.name.empty() ? std::string("Unnamed") : row.name;
+        if (name.size() > 10) name = name.substr(0, 9) + "...";
+        char percent[16];
+        std::snprintf(percent, sizeof percent, "%.1f%%", row.permille / 10.0);
+        text(canvas, std::to_string(row.rank) + ". " + name + " - " + percent,
+             rowsX + rowsW * 0.5, cy, rowStyle);
+    }
+
+    // How long ago the mob appeared, when the server knew.
+    if (board.ageMillis >= 0.0) {
+        const double seconds = (board.ageMillis + sinceMillis) / 1000.0;
+        char age[48];
+        if (seconds >= 60.0) {
+            std::snprintf(age, sizeof age, "spawned %dm %.1fs ago",
+                          static_cast<int>(seconds / 60.0), std::fmod(seconds, 60.0));
+        } else {
+            std::snprintf(age, sizeof age, "spawned %.1fs ago", seconds);
+        }
+        TextStyle footer;
+        footer.size = 13.0;
+        footer.fill = 0xFFFFFFu;
+        footer.stroke = 0x222222u;
+        footer.align = Align::Centre;
+        footer.baseline = Baseline::Middle;
+        text(canvas, age, x + kPanelW * 0.5, y + panelH - kPad * 0.5 - kFooterH * 0.5, footer);
+    }
+    canvas.restore();
+}
+
 } // namespace flix

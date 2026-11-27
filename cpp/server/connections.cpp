@@ -3,10 +3,13 @@
 
 #include "server/game_server.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <vector>
 
 #include "server/cluster/linking.h"
+#include "server/loot_eligibility.h"
 #include "server/routine_log_policy.h"
 #include "server/text.h"
 #include "shared/game/config.h"
@@ -270,6 +273,14 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
             handleLeaderboard(*session, connection, reader);
             break;
         case net::ClientMessage::RequestNotifications: handleNotifications(connection, reader); break;
+        case net::ClientMessage::SetMobDamageBoard: {
+            const std::uint8_t bits = reader.u8();
+            if (reader.ok()) {
+                session->boardWanted = (bits & 1) != 0;
+                session->boardSuper = (bits & 2) != 0;
+            }
+            break;
+        }
         case net::ClientMessage::GuildCreate:   handleGuildCreate(*session, connection, reader); break;
         case net::ClientMessage::GuildEdit:     handleGuildEdit(*session, connection, reader); break;
         case net::ClientMessage::GuildInvite:   handleGuildInvite(*session, connection, reader); break;
@@ -380,6 +391,211 @@ void GameServer::sendNotice(net::Connection& connection, net::NoticeSeverity sev
     w.u8(static_cast<std::uint8_t>(net::ServerMessage::Notice));
     w.u8(static_cast<std::uint8_t>(severity));
     w.str(text);
+    connection.send(w);
+}
+
+void GameServer::sendMobDamageBoard(Session& session, net::Connection& connection,
+                                    double nowMillis) {
+    if (nowMillis < session.boardNextSendMillis) return;
+    session.boardNextSendMillis = nowMillis + 250.0;
+
+    const auto clear = [&] {
+        if (!session.boardShown) return;
+        session.boardShown = false;
+        ByteWriter w;
+        w.u8(static_cast<std::uint8_t>(net::ServerMessage::MobDamageBoard));
+        w.u8(0);
+        connection.send(w);
+    };
+    // Turned off in the client's settings: nothing is built or sent.
+    if (!session.boardWanted) {
+        clear();
+        return;
+    }
+
+    // Pick up what combat has recorded since the last look.
+    constexpr double kLingerMillis = 120000.0;
+    constexpr std::size_t kMaxTracks = 16;
+    if (PlayerLocation* location = world_.tryGet<PlayerLocation>(session.entity)) {
+        for (const Entity m : location->damagedBoardMobs) {
+            const bool known = std::any_of(session.boardTracks.begin(), session.boardTracks.end(),
+                                           [&](const Session::BoardTrack& t) { return t.mob == m; });
+            if (!known && session.boardTracks.size() < kMaxTracks) {
+                session.boardTracks.push_back({m, 0.0, nowMillis});
+            }
+        }
+        location->damagedBoardMobs.clear();
+    }
+
+    // The nearest tracked mob wins, however far: the board is not about what is
+    // on screen. A mob that is gone, or that this player stopped hitting two
+    // minutes ago, is forgotten.
+    const Transform* here = world_.tryGet<Transform>(session.entity);
+    Entity mob = NULL_ENTITY;
+    double bestDistance = 0.0;
+    for (auto it = session.boardTracks.begin(); it != session.boardTracks.end();) {
+        const Bounty* ledger = world_.tryGet<Bounty>(it->mob);
+        const MobType* kind = world_.tryGet<MobType>(it->mob);
+        const Health* hp = world_.tryGet<Health>(it->mob);
+        const Transform* at = world_.tryGet<Transform>(it->mob);
+        bool keep = world_.isAlive(it->mob) && !world_.has<Dead>(it->mob) && ledger != nullptr &&
+                    kind != nullptr && hp != nullptr && hp->max > 0.0 && at != nullptr;
+        if (keep) {
+            double mine = 0.0;
+            for (const Bounty::Share& share : ledger->contributors) {
+                if (share.damage > 0.0 && session.owns(share.player)) mine += share.damage;
+            }
+            if (mine > it->own) {
+                it->own = mine;
+                it->lastHitMillis = nowMillis;
+            }
+            keep = mine > 0.0 && nowMillis - it->lastHitMillis <= kLingerMillis;
+        }
+        if (!keep) {
+            it = session.boardTracks.erase(it);
+            continue;
+        }
+        // Eternal and Apex always; Super unless the player turned it off.
+        const Rarity tier = kind->rarity;
+        const bool shownTier = tier == Rarity::Unique || tier == Rarity::Apex ||
+                               (tier == Rarity::Super && session.boardSuper);
+        if (shownTier && (here == nullptr || at->realm == here->realm)) {
+            const double distance = here == nullptr ? 0.0 : distanceSq(at->position, here->position);
+            if (mob == NULL_ENTITY || distance < bestDistance) {
+                mob = it->mob;
+                bestDistance = distance;
+            }
+        }
+        ++it;
+    }
+    if (mob == NULL_ENTITY) {
+        clear();
+        return;
+    }
+    const Bounty* bounty = world_.tryGet<Bounty>(mob);
+    const MobType* type = world_.tryGet<MobType>(mob);
+    const Health* health = world_.tryGet<Health>(mob);
+    const Rarity tier = type->rarity;
+
+    // The ledger, positive damage only, best first. A mob that hit another mob
+    // is not a contender; a player who died or left still holds their row, as
+    // the loot ledger keeps them.
+    std::vector<Bounty::Share> ranked;
+    for (const Bounty::Share& share : bounty->contributors) {
+        if (share.damage <= 0.0) continue;
+        if (world_.isAlive(share.player) && !world_.has<PlayerTag>(share.player)) continue;
+        ranked.push_back(share);
+    }
+    if (ranked.empty()) {
+        clear();
+        return;
+    }
+    std::stable_sort(ranked.begin(), ranked.end(),
+                     [](const Bounty::Share& a, const Bounty::Share& b) {
+                         return a.damage > b.damage;
+                     });
+
+    // Who the loot rule would pay RIGHT NOW: the very call the corpse's
+    // rewards make, floor, slot cap and squads included.
+    std::vector<Entity> recipients;
+    selectLootRecipients(ranked, lootSlotsForRarity(tier), &squadIndex_, recipients,
+                         lootDamageFloor(health->max));
+    const auto groupOf = [&](Entity body) -> long {
+        const auto it = squadIndex_.group.find(body);
+        return it == squadIndex_.group.end() ? -1 : static_cast<long>(it->second);
+    };
+    const long myGroup = groupOf(session.entity);
+
+    // One row per PERSON: a splitter's two bodies are one flower on the board.
+    struct Row {
+        std::string name;
+        double damage = 0.0;
+        bool self = false;
+        bool eligible = false;
+        bool squad = false;
+        const Session* owner = nullptr;
+    };
+    std::vector<Row> rows;
+    for (const Bounty::Share& share : ranked) {
+        const Session* who = creditedSession(share.player);
+        Row* row = nullptr;
+        if (who != nullptr) {
+            for (Row& existing : rows) {
+                if (existing.owner == who) { row = &existing; break; }
+            }
+        }
+        if (row == nullptr) {
+            rows.emplace_back();
+            row = &rows.back();
+            row->owner = who;
+            row->name = who != nullptr ? who->nameplate() : std::string();
+            row->self = who == &session;
+        }
+        row->damage += share.damage;
+        if (std::find(recipients.begin(), recipients.end(), share.player) != recipients.end()) {
+            row->eligible = true;
+            if (myGroup >= 0 && groupOf(share.player) == myGroup) row->squad = true;
+        }
+    }
+    // Squadmates who have not touched the mob still stand on the board at 0%:
+    // the squad is one contender and they are paid with it, so leaving them off
+    // would hide who is sharing the loot. Only this player's own squad, and only
+    // the members the loot rule counts (a bot that never fought, or a member who
+    // left before the fight, is not one).
+    if (myGroup >= 0) {
+        for (const SquadBody& member : squadIndex_.groups[static_cast<std::size_t>(myGroup)]) {
+            if (!member.banks()) continue;
+            const Session* who = creditedSession(member.body);
+            if (who == nullptr) continue;
+            const bool present = std::any_of(rows.begin(), rows.end(),
+                                             [&](const Row& r) { return r.owner == who; });
+            if (present) continue;
+            if (member.away) continue;
+            Row row;
+            row.name = who->nameplate();
+            row.owner = who;
+            row.self = who == &session;
+            row.eligible = std::find(recipients.begin(), recipients.end(), member.body) !=
+                           recipients.end();
+            row.squad = true;
+            rows.push_back(std::move(row));
+        }
+    }
+    std::stable_sort(rows.begin(), rows.end(),
+                     [](const Row& a, const Row& b) { return a.damage > b.damage; });
+
+    // The top ten, and this player's own row if it ranks lower, with its real
+    // place.
+    constexpr std::size_t kTop = 10;
+    std::vector<std::size_t> shown;
+    std::size_t selfIndex = rows.size();
+    for (std::size_t i = 0; i < rows.size(); ++i) {
+        if (rows[i].self) selfIndex = i;
+        if (i < kTop) shown.push_back(i);
+    }
+    if (selfIndex < rows.size() && selfIndex >= kTop) shown.push_back(selfIndex);
+
+    ByteWriter w;
+    w.u8(static_cast<std::uint8_t>(net::ServerMessage::MobDamageBoard));
+    w.u8(static_cast<std::uint8_t>(shown.size()));
+    w.u16(type->configIndex);
+    w.u8(static_cast<std::uint8_t>(tier));
+    const double age = nowMillis - bounty->spawnedAtMillis;
+    w.u32(bounty->spawnedAtMillis > 0.0 && age >= 0.0
+              ? static_cast<std::uint32_t>(std::min(age, 4.0e9))
+              : 0xFFFFFFFFu);
+    for (const std::size_t i : shown) {
+        const Row& row = rows[i];
+        w.str(row.name);
+        w.u16(static_cast<std::uint16_t>(std::min<std::size_t>(i + 1, 0xFFFF)));
+        // Out of the MOB'S health, not out of the damage dealt: the ledger
+        // counts damage swung, so a bar can reach the end before the mob dies.
+        const double share = std::clamp(row.damage / health->max, 0.0, 1.0);
+        w.u16(static_cast<std::uint16_t>(std::lround(share * 1000.0)));
+        w.u8(static_cast<std::uint8_t>((row.self ? 1 : 0) | (row.eligible ? 2 : 0) |
+                                       (row.squad ? 4 : 0)));
+    }
+    session.boardShown = true;
     connection.send(w);
 }
 

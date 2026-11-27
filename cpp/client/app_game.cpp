@@ -371,6 +371,7 @@ void App::sendInputFrame(double dt) {
     if (settings.invertDefend) input.flags |= net::InputInvertDefend;
 
     net_.sendInput(input);
+    net_.setMobDamageBoardPrefs(settings.showMobDamageBoard, settings.showMobDamageBoardSuper);
 }
 
 void App::updatePlaying(double dt) {
