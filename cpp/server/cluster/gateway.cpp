@@ -639,6 +639,46 @@ void GameServer::gwLinkMessage(net::Connection& link, ByteReader& frame) {
             }
             break;
         }
+        case ToGateway::CreditLoot: {
+            // Drops that server held for somebody who has left it: into the
+            // account's bag, wherever its row is now -- gwPassEdits carries
+            // the stacks to a server that has it on loan, as amounts.
+            const std::string user = reader.str();
+            const Account* account = std::as_const(database_).findUserById(user);
+            const int n = reader.u16();
+            bool gave = false;
+            for (int i = 0; i < n && reader.ok(); ++i) {
+                const std::uint16_t petal = content().petalIndex(reader.str());
+                const Rarity rarity = clampRarity(reader.u8());
+                const int count = static_cast<int>(std::min<std::uint32_t>(reader.u32(), 1u << 20));
+                if (!reader.ok() || account == nullptr || petal >= content().petalCount() ||
+                    count <= 0) {
+                    continue;
+                }
+                PlayerRecord& record = database_.progress(user);
+                if (rarity == Rarity::Universal) {
+                    // There is one of it, as at bankPickups: none for a flower
+                    // that holds it already, and every other copy is taken.
+                    if (holdsUniversal(record, petal)) continue;
+                    giveToInventory(record, petal, rarity, 1);
+                    if (tracksUniversals(user)) {
+                        takeUniversals(petal, user, UniversalTaken::Found);
+                        universalHolders_[petal] = HolderMemo{account->username, clockMillis_};
+                    }
+                } else {
+                    giveToInventory(record, petal, rarity, count);
+                }
+                gave = true;
+            }
+            if (!gave) break;
+            database_.markDirty();
+            gwPassEdits();
+            for (auto& entry : sessions_) {
+                Session& session = entry.second;
+                if (session.authenticated() && session.userId == user) sendProfile(session);
+            }
+            break;
+        }
         case ToGateway::TempAdminEnded: {
             const net::ConnectionId id = reader.u32();
             if (reader.ok() && clientOf(id) != nullptr) revokeTempAdmin(id);

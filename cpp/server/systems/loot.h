@@ -236,6 +236,12 @@ public:
     /// gone body alone, that share could never be seen or picked up by the
     /// body they come back in. The server answers this from Session::lastBody.
     std::function<net::ConnectionId(Entity)> ownerOfGoneBody;
+    /// Whether a body that is no longer in the world still makes a kill pay
+    /// out, as the credited flower. Null, or false, keeps the reference's
+    /// gate: a mob whose credit has left pays nothing. A server of a sharded
+    /// game answers true for a player who has gone to another server, whose
+    /// share it then banks for them (GameServer::shBankAbsentLoot).
+    std::function<bool(Entity)> creditsGoneBody;
 
     /// Whether this flower may roll the Universal Champion's Crown off an apex
     /// kill: a signed-in player, outside an arena run or a hosted kit, who

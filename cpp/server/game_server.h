@@ -588,6 +588,12 @@ private:
     void shAskTitanHolder(const Session&, std::uint16_t petalIndex);
     /// A kill earned here by somebody whose row is not on loan here any more.
     void shCreditKill(const std::string& userId, const std::string& mob, Rarity, double stars);
+    /// Every drop on this server still reserved for a player who no longer
+    /// plays here -- walked to another server, respawned on one, or back on
+    /// the title screen -- taken off the ground and sent to the gateway for
+    /// their bag. `only`: that session's alone, now; null: everyone's, at most
+    /// once a second (`nowMillis` is the tick clock).
+    void shBankAbsentLoot(const Session* only, double nowMillis);
     void shTempAdminEnded(net::ConnectionId);
     void shClientClosed(net::ConnectionId);
     void shSquadLeaving(net::ConnectionId, const std::string& toBiome);

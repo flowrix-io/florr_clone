@@ -658,7 +658,10 @@ void LootSystem::awardDeaths(World& world, const ContentRegistry& content, Rng& 
         // a mob, a pet whose owner left. If that player is no longer in the
         // world the mob pays out nothing at all, which is the reference's gate.
         const Entity credit = world.has<PlayerTag>(killer) ? killer : ranked_.front().player;
-        if (!world.has<PlayerTag>(credit)) continue;
+        if (!world.has<PlayerTag>(credit) &&
+            !(creditsGoneBody && !world.isAlive(credit) && creditsGoneBody(credit))) {
+            continue;
+        }
 
         // A piece of a divided mob has that share of every drop rate the mob
         // has, so killing every piece pays what killing it whole does on

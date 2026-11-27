@@ -8,6 +8,7 @@
 #include "server/cluster/row_merge.h"
 #include "server/game_server.h"
 #include "server_harness.h"
+#include "server/systems/spawning.h"
 #include "shared/game/components.h"
 
 #include <unistd.h>
@@ -1572,4 +1573,100 @@ TEST(a_hang_up_right_behind_a_redirect_is_not_a_lost_connection) {
     client.onDisconnect(gateway, "peer closed");
     CHECK(client.status() != NetClient::Status::Failed);
     CHECK(client.lastError().empty());
+}
+
+TEST(loot_left_lying_on_a_server_follows_its_flower_into_the_bag) {
+    Cluster c("cluster-loot-left", 2, seedTwo);
+    CHECK(apart(c));
+    NetClient alice;
+    CHECK(c.signIn(alice, "alice"));
+    CHECK(c.join(alice, {}));
+    c.step(20, {&alice});
+    GameServer& garden = *c.serverFor("garden");
+    GameServer& desert = *c.serverFor("desert");
+    const Entity body = GameServerPeer::bodyOf(garden, "alice");
+    const Vec2 at = garden.world().get<Transform>(body).position;
+    const net::ConnectionId owner = garden.world().get<PlayerAccount>(body).connection;
+    // Hers, out of reach; and somebody else's, which stays where it is.
+    const Entity hers = GameServerPeer::loot(garden).spawnDrop(
+        garden.world(), content().petalIndex("bone"), Rarity::Epic, at + Vec2{3000.0, 0.0},
+        Realm::Overworld, {});
+    garden.world().get<DropItem>(hers).eligible.emplace_back(body, owner);
+    const Entity theirs = GameServerPeer::loot(garden).spawnDrop(
+        garden.world(), content().petalIndex("bone"), Rarity::Rare, at + Vec2{3000.0, 0.0},
+        Realm::Overworld, {});
+    garden.world().get<DropItem>(theirs).eligible.emplace_back(NULL_ENTITY, owner + 1000);
+    c.step(2, {&alice});
+    CHECK_EQ(owned(c, "alice", "petal_bone", Rarity::Epic), 0);
+
+    const Realm to = c.realm("desert");
+    CHECK(GameServerPeer::carry(garden, "alice", to, c.gateway.terrain().spawnPoint(to)));
+    CHECK(c.stepUntil({&alice}, [&] { return GameServerPeer::bodyOf(desert, "alice") != NULL_ENTITY; }));
+    CHECK(c.stepUntil({&alice}, [&] { return stacked(alice, "bone", Rarity::Epic) == 1; }));
+    CHECK_EQ(owned(c, "alice", "petal_bone", Rarity::Epic), 1);
+    CHECK_EQ(GameServerPeer::record(desert, "alice").itemCount(Rarity::Epic, "petal_bone"), 1);
+    CHECK(!garden.world().isAlive(hers));
+    CHECK(garden.world().isAlive(theirs));
+    // Once: nothing is left on the garden's ground to be paid twice.
+    c.step(60, {&alice});
+    CHECK_EQ(owned(c, "alice", "petal_bone", Rarity::Epic), 1);
+}
+
+TEST(a_kill_that_lands_after_its_flower_crossed_servers_pays_its_bag) {
+    Cluster c("cluster-loot-late", 2, seedTwo);
+    CHECK(apart(c));
+    // Bobby stays in the garden: a server nobody is on simulates nothing.
+    NetClient alice, bobby;
+    CHECK(c.signIn(bobby, "bobby"));
+    CHECK(c.join(bobby, {}));
+    CHECK(c.signIn(alice, "alice"));
+    CHECK(c.join(alice, {&bobby}));
+    c.step(20, {&alice, &bobby});
+    GameServer& garden = *c.serverFor("garden");
+    GameServer& desert = *c.serverFor("desert");
+    const Entity body = GameServerPeer::bodyOf(garden, "alice");
+    const Vec2 at = garden.world().get<Transform>(body).position;
+    Rng rng(7);
+    const Entity mob = GameServerPeer::spawning(garden).spawnMob(
+        garden.world(), garden.terrain(), content(), content().mobIndex("ladybug"),
+        Rarity::Legendary, at + Vec2{2500.0, 0.0}, Realm::Overworld, 0, rng, false);
+    CHECK(mob != NULL_ENTITY);
+    if (mob == NULL_ENTITY) return;
+    garden.world().get<Bounty>(mob).credit(body, garden.world().get<Health>(mob).max);
+
+    // A legendary ladybug leaves one of everything it has: roses and lights.
+    const auto paid = [&] {
+        int total = 0;
+        for (const char* petal : {"petal_rose", "petal_light"}) {
+            for (int r = 0; r < kRarityCount; ++r) total += owned(c, "alice", petal, static_cast<Rarity>(r));
+        }
+        return total;
+    };
+    const int before = paid();
+
+    const Realm to = c.realm("desert");
+    CHECK(GameServerPeer::carry(garden, "alice", to, c.gateway.terrain().spawnPoint(to)));
+    // Finished off after she has gone -- her body with her -- by nobody, as a
+    // poison tick would.
+    c.step(3, {&alice, &bobby});
+    CHECK(!garden.world().isAlive(body));
+    CHECK(garden.world().isAlive(mob));
+    garden.world().get<Health>(mob).current = 0;
+    garden.world().add<Dead>(mob, Dead{NULL_ENTITY});
+    CHECK(c.stepUntil({&alice, &bobby}, [&] { return GameServerPeer::bodyOf(desert, "alice") != NULL_ENTITY; }));
+    CHECK(c.stepUntil({&alice, &bobby}, [&] { return paid() >= before + 2; }));
+    // On the body she is playing, too, and nothing more for the same kill.
+    c.step(60, {&alice, &bobby});
+    CHECK_EQ(paid(), before + 2);
+    int onDesert = 0;
+    for (const char* petal : {"petal_rose", "petal_light"}) {
+        for (int r = 0; r < kRarityCount; ++r) {
+            onDesert += GameServerPeer::record(desert, "alice").itemCount(static_cast<Rarity>(r), petal);
+        }
+    }
+    CHECK_EQ(onDesert, paid());
+    int lying = 0;
+    Query<DropItem> drops{garden.world()};
+    drops.each([&](Entity, DropItem&) { ++lying; });
+    CHECK_EQ(lying, 0);
 }

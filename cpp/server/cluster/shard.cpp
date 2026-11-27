@@ -773,6 +773,101 @@ void GameServer::shCreditKill(const std::string& userId, const std::string& mob,
     shSend(w);
 }
 
+void GameServer::shBankAbsentLoot(const Session* only, double nowMillis) {
+    Shard& s = *shard_;
+    if (only == nullptr) {
+        if (nowMillis < s.nextAbsentLootMillis) return;
+        s.nextAbsentLootMillis = nowMillis + 1000.0;
+    }
+    // Somebody this server knows by their connection, signed in, whose row is
+    // not on loan here: they are playing somewhere else, or between lives.
+    // Their loot cannot be walked over here, so it goes to their bag instead.
+    const auto absent = [&](net::ConnectionId owner) -> const Session* {
+        if (owner == 0) return nullptr;
+        const Session* session = sessionFor(owner);
+        if (session == nullptr || session->userId.empty()) return nullptr;
+        if (session->lease != 0 || session->playing()) return nullptr;
+        return session;
+    };
+    const auto mine = [&](const Session* session) {
+        return session != nullptr && (only == nullptr || session == only);
+    };
+    struct Owed {
+        std::uint16_t petal;
+        Rarity rarity;
+        std::uint32_t count;
+    };
+    std::vector<std::pair<std::string, std::vector<Owed>>> owed;
+    const auto owe = [&](const std::string& userId, std::uint16_t petal, Rarity rarity) {
+        auto user = std::find_if(owed.begin(), owed.end(),
+                                 [&](const auto& entry) { return entry.first == userId; });
+        if (user == owed.end()) user = owed.insert(owed.end(), {userId, {}});
+        for (Owed& item : user->second) {
+            if (item.petal == petal && item.rarity == rarity) {
+                ++item.count;
+                return;
+            }
+        }
+        user->second.push_back({petal, rarity, 1});
+    };
+    std::vector<Entity> finished;
+    Query<DropItem, Transform> drops{world_};
+    drops.each([&](Entity e, DropItem& item, Transform& at) {
+        // A free-for-all is nobody's in particular.
+        if (item.eligible.empty()) return;
+        // The ring's loot is the run's, and a run ends at the ring's edge:
+        // left lying there, it is not the account's to bank whole.
+        if (at.realm == Realm::Arena || at.realm == kAdminArenaRealm) return;
+        if (item.singleCopy) {
+            // One copy, raced for: it waits while anybody it is reserved for
+            // is still here to take it.
+            if (!item.pickedUpBy.empty()) return;
+            const Session* taker = nullptr;
+            for (const LootClaim& claim : item.eligible) {
+                if (claim.owner == 0) continue;
+                const Session* session = absent(claim.owner);
+                if (session == nullptr) return;
+                if (taker == nullptr && mine(session)) taker = session;
+            }
+            if (taker == nullptr) return;
+            owe(taker->userId, item.configIndex, item.rarity);
+            item.pickedUpBy.emplace_back(NULL_ENTITY, taker->connection);
+            finished.push_back(e);
+            return;
+        }
+        bool took = false;
+        for (const LootClaim& claim : item.eligible) {
+            if (claimed(item.pickedUpBy, claim.body, claim.owner)) continue;
+            const Session* session = absent(claim.owner);
+            if (!mine(session)) continue;
+            owe(session->userId, item.configIndex, item.rarity);
+            item.pickedUpBy.push_back(claim);
+            took = true;
+        }
+        if (!took) return;
+        const bool done = std::all_of(item.eligible.begin(), item.eligible.end(),
+                                      [&](const LootClaim& claim) {
+                                          return claimed(item.pickedUpBy, claim.body, claim.owner);
+                                      });
+        if (done) finished.push_back(e);
+    });
+    for (const Entity e : finished) commands_.destroy(e);
+    if (owed.empty()) return;
+    // Behind every row this server changed, as any word about a bag is.
+    shSendRows();
+    for (const auto& [userId, items] : owed) {
+        ByteWriter w = begin(ToGateway::CreditLoot);
+        w.str(userId);
+        w.u16(static_cast<std::uint16_t>(items.size()));
+        for (const Owed& item : items) {
+            w.str(content().petal(item.petal).id);
+            w.u8(static_cast<std::uint8_t>(item.rarity));
+            w.u32(item.count);
+        }
+        shSend(w);
+    }
+}
+
 void GameServer::shTempAdminEnded(net::ConnectionId id) {
     ByteWriter w = begin(ToGateway::TempAdminEnded);
     w.u32(id);
@@ -887,6 +982,8 @@ void GameServer::crossToServer(Session& session, Realm realm, Vec2 position) {
     state.position = position;
     despawnPlayer(session, false);
     shReturnLease(session, &state);
+    // What was still lying here for it goes with it, into its bag.
+    shBankAbsentLoot(&session, clockMillis_);
 }
 
 bool GameServer::respawnElsewhere(Session& session) {
@@ -897,6 +994,7 @@ bool GameServer::respawnElsewhere(Session& session) {
     state.dead = false;
     if (session.entity != NULL_ENTITY) despawnPlayer(session, false);
     shReturnLease(session, &state);
+    shBankAbsentLoot(&session, clockMillis_);
     return true;
 }
 
