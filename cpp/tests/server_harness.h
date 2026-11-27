@@ -928,6 +928,14 @@ struct GameServerPeer {
         }
         return out;
     }
+    /// Splits `username`'s flower now, as wearing a splitter does.
+    static bool split(GameServer& server, const std::string& username) {
+        for (auto& entry : server.sessions_) {
+            Session& session = entry.second;
+            if (session.username == username && session.playing()) return server.splitSession(session);
+        }
+        return false;
+    }
     /// Carries `username`'s flower to `realm`, as a pad would. False when this
     /// server has no such flower.
     static bool carry(GameServer& server, const std::string& username, Realm realm, Vec2 to) {

@@ -726,7 +726,12 @@ constexpr ChangelogEntry kChangelog[] = {
         "Gave Rainbow less health",
         "Carrot now flies twice as fast",
         "Battery lightning now does 3x damage",
-        "Moved \"Spawn At\" on the title screen"
+        "Moved \"Spawn At\" on the title screen",
+        "Reduced server lag while farming",
+        "Rainbow petal causes less lag",
+        "Hidden Super spawn/kill messages no longer push other chat messages away",
+        "Fixed Air and Splitter pushing you through sewer walls",
+        "Cactus now gives 3x more extra health"
       }
     },
 };

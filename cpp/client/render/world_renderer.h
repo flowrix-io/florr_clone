@@ -701,6 +701,10 @@ private:
     void paintSkin(Canvas&, const CustomSkin&) const;
 
     const ContentRegistry* content_ = nullptr;
+    /// Which petal is the plain animated rainbow (isPlainRainbowArt), asked
+    /// once per content: its shots are drawn as one circle each.
+    mutable const ContentRegistry* rainbowCheckedFor_ = nullptr;
+    mutable std::uint16_t rainbowIndex_ = 0xFFFF;
     const std::vector<LightDisc>* lightClip_ = nullptr;
     const SpriteCache* sprites_ = nullptr;
     const std::vector<CustomSkin>* skinCatalog_ = nullptr;

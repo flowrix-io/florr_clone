@@ -49,18 +49,6 @@ using namespace flix::ui;
 
 namespace {
 
-/// Whether a line is the server's "A Super X has spawned" or "A Super X has
-/// been defeated" announcement (GameServer::announceBosses and its defeat
-/// counterpart), which the "Show Super Spawn/Kill Messages" setting hides.
-/// Only the System channel: nobody can type a line onto it.
-bool isSuperBossLine(const ChatLine& line) {
-    if (line.channel != net::ChatChannel::System) return false;
-    const std::string& text = line.text;
-    if (text.find(">A Super ") == std::string::npos) return false;
-    return text.find(" has spawned") != std::string::npos ||
-           text.find(" has been defeated") != std::string::npos;
-}
-
 // The box is pinned to the bottom-left corner, so every height here is
 // measured up from the BOTTOM of the window.
 //

@@ -2392,10 +2392,7 @@ void NetClient::pushChat(net::ChatChannel channel, std::string author, std::stri
 
     chat_.push_back(std::move(line));
     ++chatSeq_;
-    if (chat_.size() > kMaxChatLines) {
-        chat_.erase(chat_.begin(),
-                    chat_.begin() + static_cast<std::ptrdiff_t>(chat_.size() - kMaxChatLines));
-    }
+    trimChat();
 }
 
 void NetClient::addSystemMessage(const std::string& text) {
@@ -2743,10 +2740,30 @@ void NetClient::handleChatHistory(ByteReader& reader) {
     // still against, and nothing landed there.
     chat_.insert(chat_.begin(), std::make_move_iterator(backlog.begin()),
                  std::make_move_iterator(backlog.end()));
-    if (chat_.size() > kMaxChatLines) {
-        chat_.erase(chat_.begin(),
-                    chat_.begin() + static_cast<std::ptrdiff_t>(chat_.size() - kMaxChatLines));
+    trimChat();
+}
+
+void NetClient::trimChat() {
+    if (chat_.size() <= kMaxChatLines) return;
+    // Newest first, counting each kind: a line is kept while its kind is
+    // under its cap. Only old lines go, so chatSeq_ -- which counts lines
+    // landing at the bottom -- means what it did.
+    std::size_t supers = 0, others = 0;
+    std::vector<bool> keep(chat_.size(), false);
+    for (std::size_t i = chat_.size(); i-- > 0;) {
+        std::size_t& count = isSuperBossLine(chat_[i]) ? supers : others;
+        if (count < kMaxChatLines) {
+            ++count;
+            keep[i] = true;
+        }
     }
+    std::size_t out = 0;
+    for (std::size_t i = 0; i < chat_.size(); ++i) {
+        if (!keep[i]) continue;
+        if (out != i) chat_[out] = std::move(chat_[i]);
+        ++out;
+    }
+    chat_.resize(out);
 }
 
 void NetClient::handleNotice(ByteReader& reader) {
