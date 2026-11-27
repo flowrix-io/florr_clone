@@ -1472,6 +1472,13 @@ struct Projectile {
     /// ever overlapping it. Seeded to the spawn position so the shot's first
     /// tick tests a degenerate segment rather than a line from the origin.
     Vec2 lastPosition{};
+    /// Actual velocity of the last flight step, including a wasp's sideways
+    /// weave. Server-only: a complete reflection reverses the arriving path,
+    /// not merely the launch axis stored in Motion. Zero before the first step.
+    Vec2 lastStepVelocity{};
+    /// A wall changed Motion after that step. Contact before the next move
+    /// sees the outgoing bounce; a swept hit earlier on the step does not.
+    bool lastStepBounced = false;
     /// Fired by a glitch-family mob: touching this shot leaves the flower
     /// glitched. Stamped at spawn from the shooter's config, as the reference
     /// stamps `sourceType`, so a shot still infects after its shooter is gone

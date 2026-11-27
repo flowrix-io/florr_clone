@@ -1160,18 +1160,18 @@ private:
 /// The assembler: what the craft card becomes while the flower stands at an
 /// assembler NPC.
 ///
-/// florr's assemble window, read out of florr's client: its 356-tall card
-/// with no grid, in machine grey. The assembler's recipe's inputs on seats
+/// The assemble window has no grid, in machine grey. The selected recipe's inputs on seats
 /// about the slot's centre, each labelled "held/needed"; an Assemble
 /// button; and under it the count, a field between a triangle that takes one
-/// off and one that adds one. See menu_assembler.cpp.
+/// off and one that adds one. A row of recipe choices adds any alternatives
+/// this station offers at its tier and map. See menu_assembler.cpp.
 class AssemblerPanel {
 public:
     /// `mobIndex`, `tier` and `recipe` are the assembler the flower is
     /// standing at: whose recipes, at what tier, and which one it makes.
     bool render(MenuContext&, std::uint16_t mobIndex, Rarity tier, std::uint8_t recipe);
     void reset();
-    /// florr's window: as wide as its least, and its body deep, no grid.
+    /// The card's body and its recipe-choice row, with no inventory grid.
     static Vec2 size();
 
 private:
@@ -1182,6 +1182,9 @@ private:
     std::uint16_t stationMob_ = 0xFFFF;
     Rarity stationTier_ = Rarity::Common;
     std::uint8_t stationRecipe_ = 0;
+    /// The station's assigned recipe, or an available alternative chosen in
+    /// this panel. The request sends this index through ordinary Assemble.
+    std::uint8_t selectedRecipe_ = 0;
 
     /// The count field: what is typed, and the field's caret and focus.
     std::string count_ = "1";
