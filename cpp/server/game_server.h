@@ -584,6 +584,7 @@ private:
                          std::uint32_t speakerNetId);
     void shNotify(const std::string& type, const std::string& message);
     void shTitanForged(const Session&, std::uint16_t petalIndex);
+    void shUniversalFound(const Session&, std::uint16_t petalIndex);
     void shAskTitanHolder(const Session&, std::uint16_t petalIndex);
     /// A kill earned here by somebody whose row is not on loan here any more.
     void shCreditKill(const std::string& userId, const std::string& mob, Rarity, double stars);
@@ -773,10 +774,20 @@ private:
     /// The username of a tracked account holding `petalIndex` at universal,
     /// or empty: the memo while it is fresh, else a sweep of every account.
     std::string universalHolderName(std::uint16_t petalIndex);
+    /// Why takeUniversals is sweeping: a titan forge, which refunds, or a
+    /// universal picked up off the ground (the champion's crown off an apex),
+    /// which does not.
+    enum class UniversalTaken : std::uint8_t { Forged, Found };
     /// Takes every universal `petalIndex` from every tracked account but
-    /// `keeperId`, bag and loadout, refunding kTitanForgeRefund apex for each,
-    /// and tells the live ones. Returns how many universals were taken.
-    int takeUniversals(std::uint16_t petalIndex, const std::string& keeperId);
+    /// `keeperId`, bag and loadout, refunding kTitanForgeRefund apex for each
+    /// when it was Forged, and tells the live ones. Returns how many
+    /// universals were taken.
+    int takeUniversals(std::uint16_t petalIndex, const std::string& keeperId,
+                       UniversalTaken how = UniversalTaken::Forged);
+    /// A tracked account has just picked up the universal `petalIndex`: it is
+    /// now the one holder, everyone else's is taken without a refund, and the
+    /// titan remembers it there. Through the gateway when sharded.
+    void claimFoundUniversal(const Session&, std::uint16_t petalIndex);
     void handleRespawn(Session&);
     void handlePing(net::Connection&, ByteReader&);
     void handleUpgradeSkill(Session&, net::Connection&, ByteReader&);
@@ -1764,7 +1775,9 @@ private:
                             const std::vector<Bounty::Share>& ranked);
     /// Broadcasts "An Apex <petal> has been collected by @handle [Flower]!"
     /// for a ground pickup at apex or above, the player credited exactly as a
-    /// boss kill credits them. Anything below apex is silent.
+    /// boss kill credits them. Anything below apex is silent. The champion's
+    /// crown has its own line, "The Champion's Crown has been taken by ...",
+    /// and only at universal, the one there is.
     void announceRarePickup(const Session&, std::uint16_t petalIndex, Rarity rarity);
     /// The world half of a yggdrasil revival has already happened when this is
     /// called; the SESSION half is here -- a body whose death was announced

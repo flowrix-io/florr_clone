@@ -32,6 +32,11 @@ bool takeFromInventory(PlayerRecord& record, std::uint16_t petalIndex, Rarity ra
 /// Adds `count` to the bag; nothing for no petal or a count of none.
 void giveToInventory(PlayerRecord& record, std::uint16_t petalIndex, Rarity rarity, int count);
 
+/// Whether the account holds `petalIndex` at universal anywhere: in the bag
+/// or worn in a loadout slot. One of each petal may exist at universal, and
+/// both are where it can be. (crafting.cpp)
+bool holdsUniversal(const PlayerRecord& record, std::uint16_t petalIndex);
+
 /// A worn or saved slot holding `petalType` at `rarity`, and nothing else.
 StoredItem petalItem(const std::string& petalType, Rarity rarity);
 

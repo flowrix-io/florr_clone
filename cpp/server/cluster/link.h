@@ -33,7 +33,7 @@ namespace flix::cluster {
 /// Bump whenever anything below changes shape. Checked with the client
 /// protocol's version and the content hash: a gateway takes no server built
 /// from another tree.
-inline constexpr std::uint32_t kLinkVersion = 5;
+inline constexpr std::uint32_t kLinkVersion = 6;
 
 /// A frame between servers carries a whole guild table or a whole account.
 inline constexpr std::uint32_t kLinkMaxFrame = 64u << 20;
@@ -91,6 +91,8 @@ enum class ToGateway : std::uint8_t {
                      ///< SquadInviteReceived sent straight to a client here, which
                      ///< says where its squad is, which is where its squad
                      ///< commands have to go
+    UniversalFound,  ///< str user, str username, u16 petal -- picked up off the
+                     ///< ground at universal: TitanForged without the refund
 };
 
 enum class ToServer : std::uint8_t {

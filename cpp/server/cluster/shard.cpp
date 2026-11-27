@@ -746,6 +746,16 @@ void GameServer::shTitanForged(const Session& session, std::uint16_t petalIndex)
     shSend(w);
 }
 
+void GameServer::shUniversalFound(const Session& session, std::uint16_t petalIndex) {
+    // Behind the rows, as a forge is: the finder's row already holds it.
+    shSendRows();
+    ByteWriter w = begin(ToGateway::UniversalFound);
+    w.str(session.userId);
+    w.str(session.username);
+    w.u16(petalIndex);
+    shSend(w);
+}
+
 void GameServer::shAskTitanHolder(const Session& session, std::uint16_t petalIndex) {
     ByteWriter w = begin(ToGateway::TitanHolder);
     w.u32(session.connection);

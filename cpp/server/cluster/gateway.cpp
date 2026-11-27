@@ -599,6 +599,16 @@ void GameServer::gwLinkMessage(net::Connection& link, ByteReader& frame) {
             gwPassEdits();
             break;
         }
+        case ToGateway::UniversalFound: {
+            const std::string user = reader.str();
+            const std::string username = reader.str();
+            const std::uint16_t petal = reader.u16();
+            if (!reader.ok()) break;
+            takeUniversals(petal, user, UniversalTaken::Found);
+            universalHolders_[petal] = HolderMemo{username, clockMillis_};
+            gwPassEdits();
+            break;
+        }
         case ToGateway::TitanHolder: {
             const net::ConnectionId id = reader.u32();
             const std::uint16_t petal = reader.u16();

@@ -292,6 +292,19 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
         const Session* session = creditedSession(body);
         return session != nullptr ? session->connection : 0;
     };
+    // The crown's roll is the account's: a bot, a run in the arena or a hosted
+    // kit has no account bag for the one crown to be in, and a flower already
+    // holding it would roll for nothing (bankPickups gives no second one).
+    loot_->mayFindUniversalCrown = [this](Entity body) {
+        const Session* session = sessionForEntity(body);
+        if (session == nullptr || !session->authenticated() || session->userId.empty()) {
+            return false;
+        }
+        if (session->arena || session->eventKit) return false;
+        const PlayerRecord* record = database_.findProgress(session->userId);
+        return record == nullptr ||
+               !holdsUniversal(*record, content().petalIndex(kChampionCrownPetalId));
+    };
 
     // The annotation layer is a read-only service, so the systems that need it
     // hold a pointer rather than being handed it per call. Left null they fall
