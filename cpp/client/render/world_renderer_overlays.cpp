@@ -28,11 +28,12 @@ namespace {
 constexpr double kChatBubbleTextSize = 18.0;
 constexpr double kChatBubblePadding = 3.0;      ///< pill half-height minus half the text
 constexpr double kChatBubbleGap = 45.0;         ///< clear of the body's edge
-/// The "@accountname" over every flower: a soft green, a little under the
-/// nameplate's size, its baseline this far above the drawn body. Low enough
-/// that a chat bubble (kChatBubbleGap) still clears it.
-constexpr double kPlayerHandleSize = 11.0;
-constexpr double kPlayerHandleGap = 8.0;
+/// The "@accountname" over every flower: a soft green, its baseline this far
+/// above the drawn body. Its cap height (~0.75 of the size) tops out near
+/// 30 units, under a chat bubble's lower edge (kChatBubbleGap less half the
+/// pill, ~33), so the two never overlap.
+constexpr double kPlayerHandleSize = 18.7;
+constexpr double kPlayerHandleGap = 16.0;
 constexpr std::uint32_t kPlayerHandleFill = 0x7DDB72u;
 constexpr double kChatBubbleRowStep = 28.0;     ///< one row to the next
 /// The pill is the flower's own yellow at the reference's 0xc0 alpha, so a
