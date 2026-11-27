@@ -28,7 +28,9 @@
 //    the game, and a tier moves in game only through promote_admin and
 //    demote_admin. Nor is an admin ban (`adminBanned...`): those commands and
 //    ban_admin hold tiers and bans to the tier order, which the editor would
-//    step round. And an admin's password is not set here either
+//    step round. Nor is the mute history (`muteHistory`), which is not even
+//    shown: it is tier 1's to read, and a record anyone could rewrite would
+//    say nothing. And an admin's password is not set here either
 //    (Database::setPassword).
 //
 //  * One of the unmodelled top-level TABLES (codes, guilds, notifications,
@@ -282,10 +284,13 @@ ByteWriter beginReply(AdminDbReply kind) {
 }
 
 /// The account row as the editor shows it: everything but the password hash,
-/// which is no use to read and is set through its own action.
+/// which is no use to read and is set through its own action, and the mute
+/// history, which is tier 1's and the owner's to read (`/admin mute_history`)
+/// while the editor opens at tier 2.
 Json accountDocument(const Account& account, const PlayerRecord* record) {
     Json shown = accountRecordJson(account);
     shown.erase("password");
+    shown.erase("muteHistory");
     Json doc = Json::object();
     doc["account"] = std::move(shown);
     doc["progress"] = record != nullptr ? playerRecordJson(*record) : Json::object();
@@ -306,6 +311,10 @@ std::string lockedFieldReason(const std::string& field) {
         field.rfind("adminBanned", 0) == 0) {
         return "The admin flag, tier, owner and ban cannot be changed from the editor, for "
                "security. Use promote_admin, demote_admin, ban_admin and unban_admin.";
+    }
+    if (field == "muteHistory") {
+        return "The mute history is a record of who muted and unmuted the account; it cannot "
+               "be changed here. Tier 1 admins read it with mute_history.";
     }
     return {};
 }
@@ -739,6 +748,7 @@ void GameServer::adminDbEdit(Session& session, net::Connection& connection, Byte
         updated.adminBanned = account->adminBanned;
         updated.adminBannedAtMillis = account->adminBannedAtMillis;
         updated.adminBannedBy = account->adminBannedBy;
+        updated.muteHistory = account->muteHistory;
         *account = std::move(updated);
         after = accountRecordJson(*account);
     } else {

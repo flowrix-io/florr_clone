@@ -261,6 +261,17 @@ std::string localeTimestamp(std::int64_t millis) {
     return buffer;
 }
 
+/// "2026-11-26 14:03:09 UTC": one instant every admin reads the same, wherever
+/// the server and they are.
+std::string utcTimestamp(std::int64_t millis) {
+    const std::time_t seconds = static_cast<std::time_t>(millis / 1000);
+    std::tm parts{};
+    gmtime_r(&seconds, &parts);
+    char buffer[64];
+    if (std::strftime(buffer, sizeof buffer, "%Y-%m-%d %H:%M:%S UTC", &parts) == 0) return {};
+    return buffer;
+}
+
 /// Eight characters of A-Z0-9, as the browser build minted them, so codes from
 /// before and after the port look the same and paste into the same shop field.
 ///
@@ -365,6 +376,27 @@ bool GameServer::chatModerates(const Session& session) const {
     return effectiveAdmin(session) || chatModerator(session);
 }
 
+std::string GameServer::muteStanding(const Session& session) const {
+    if (!effectiveAdmin(session)) return "chat moderator";
+    std::string standing = adminTierLabel(adminTier(session));
+    if (!session.admin) {
+        const auto grant = tempAdmins_.find(session.connection);
+        if (grant != tempAdmins_.end()) standing += ", lent by " + grant->second.grantedBy;
+    }
+    return standing;
+}
+
+void GameServer::noteMute(Account& account, const Session& session, bool muted, bool all) const {
+    Account::MuteEvent event;
+    event.atMillis = database_.nowMillis();
+    event.muted = muted;
+    event.by = session.username;
+    event.byId = session.userId;
+    event.standing = muteStanding(session);
+    event.all = all;
+    account.noteMute(std::move(event));
+}
+
 void GameServer::setMuted(const Session& session, const std::string& username, bool muting,
                           std::string& said) {
     const bool admin = effectiveAdmin(session);
@@ -408,10 +440,11 @@ void GameServer::setMuted(const Session& session, const std::string& username, b
     account->muted = muting;
     account->mutedAtMillis = muting ? database_.nowMillis() : 0;
     account->mutedBy = muting ? session.username : std::string();
+    noteMute(*account, session, muting, false);
     database_.markDirty();
     std::printf("[chat] %s (%s) %s %s\n", session.username.c_str(),
-                admin ? adminTierLabel(adminTier(session)).c_str() : "chat moderator",
-                muting ? "muted" : "unmuted", account->username.c_str());
+                muteStanding(session).c_str(), muting ? "muted" : "unmuted",
+                account->username.c_str());
 
     Session* holder = sessionForUser(account->username);
     if (holder != nullptr) {
@@ -1174,6 +1207,8 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
             command("mute &lt;username&gt; - Bar an account from chat, persists across sessions");
             command("unmute &lt;username&gt;");
             command("unmute_all - Lift every mute");
+            command("mute_history [username] - Who muted and unmuted an account, and when; "
+                    "without a name, the newest on every account (tier 1 only)");
             command("grant_mod &lt;username&gt; - Make a chat moderator: /mod mute, unmute and "
                     "the filter's terms (full admins only)");
             command("revoke_mod &lt;username&gt;");
@@ -3369,6 +3404,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             account->muted = false;
             account->mutedAtMillis = 0;
             account->mutedBy.clear();
+            noteMute(*account, session, false, true);
             ++lifted;
             Session* holder = sessionForUser(account->username);
             if (holder == nullptr) continue;
@@ -3383,6 +3419,93 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         }
         database_.markDirty();
         out("Unmuted " + plural(lifted, "account", "accounts") + ".");
+        return;
+    }
+
+    if (verb == "mute_history" || verb == "mutelog") {
+        // Who muted and unmuted whom, and when: tier 1's and the owner's, as
+        // a record of what the other tiers and the moderators did. Read off
+        // the accounts through the const lookup, so looking writes nothing.
+        if (lacks(AdminPower::MuteHistory)) return;
+        if (words.size() > 2) {
+            out("Usage: mute_history [username]");
+            return;
+        }
+        const std::int64_t now = database_.nowMillis();
+        // "boss (tier 2)", with the name it goes by now if it has changed.
+        const auto actor = [&](const Account::MuteEvent& event) {
+            std::string name = event.by.empty() ? std::string("Unknown") : event.by;
+            if (!event.byId.empty()) {
+                const Account* still = std::as_const(database_).findUserById(event.byId);
+                if (still != nullptr && still->username != event.by) {
+                    name += " (now " + still->username + ")";
+                }
+            }
+            std::string standing = event.standing;
+            if (event.all) standing += standing.empty() ? "unmute_all" : ", unmute_all";
+            return standing.empty() ? name : name + " (" + standing + ")";
+        };
+        const auto when = [&](std::int64_t at) {
+            return at != 0 ? utcTimestamp(at) + " (" + agoLabel(now - at) + ")"
+                           : std::string("at an unknown time");
+        };
+        constexpr std::size_t kShown = 30;
+
+        if (words.size() == 2) {
+            const Account* account = std::as_const(database_).findUser(words[1]);
+            if (account == nullptr) {
+                out("No account named \"" + words[1] + "\" exists.");
+                return;
+            }
+            const std::vector<Account::MuteEvent>& history = account->muteHistory;
+            if (history.empty()) {
+                out(account->username + " has never been muted or unmuted" +
+                    (account->muted ? " since mutes were recorded (muted now" +
+                                          (account->mutedBy.empty()
+                                               ? std::string()
+                                               : " by " + account->mutedBy) +
+                                          ")."
+                                    : "."));
+                return;
+            }
+            out("Mute history of " + account->username + " (" +
+                (account->muted ? "muted now" : "not muted now") + "), oldest first:");
+            const std::size_t from = history.size() > kShown ? history.size() - kShown : 0;
+            if (from > 0) out("  ... and " + std::to_string(from) + " earlier");
+            for (std::size_t i = from; i < history.size(); ++i) {
+                const Account::MuteEvent& event = history[i];
+                out("  " + when(event.atMillis) + " \xE2\x80\x94 " +
+                    (event.muted ? "muted by " : "unmuted by ") + actor(event));
+            }
+            return;
+        }
+
+        // No name: the newest across every account, online or not.
+        struct Row {
+            std::int64_t at;
+            std::string text;
+        };
+        std::vector<Row> rows;
+        for (const std::string& name : database_.usernames()) {
+            const Account* account = std::as_const(database_).findUser(name);
+            if (account == nullptr) continue;
+            for (const Account::MuteEvent& event : account->muteHistory) {
+                rows.push_back({event.atMillis, when(event.atMillis) + " \xE2\x80\x94 " +
+                                                    account->username +
+                                                    (event.muted ? " muted by " : " unmuted by ") +
+                                                    actor(event)});
+            }
+        }
+        if (rows.empty()) {
+            out("No mutes or unmutes have been recorded.");
+            return;
+        }
+        std::stable_sort(rows.begin(), rows.end(),
+                         [](const Row& a, const Row& b) { return a.at < b.at; });
+        out("Recent mutes and unmutes, oldest first (mute_history <username> for one account):");
+        const std::size_t from = rows.size() > kShown ? rows.size() - kShown : 0;
+        if (from > 0) out("  ... and " + std::to_string(from) + " earlier");
+        for (std::size_t i = from; i < rows.size(); ++i) out("  " + rows[i].text);
         return;
     }
 

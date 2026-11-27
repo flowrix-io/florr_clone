@@ -277,6 +277,7 @@ constexpr ChatCommand kChatCommands[] = {
     {"/admin mute", "Bar a player from chat until unmuted: /admin mute <player>", kForAdmins},
     {"/admin unmute", "Let a muted player chat again: /admin unmute <player>", kForAdmins},
     {"/admin unmute_all", "Lift every mute on every account", kForAdmins},
+    {"/admin mute_history", "Who muted and unmuted a player, and when (tier 1): /admin mute_history [player]", kForAdmins},
     {"/admin grant_mod", "Make a player a chat moderator: /admin grant_mod <player>", kForAdmins},
     {"/admin revoke_mod", "Take chat moderator away: /admin revoke_mod <player>", kForAdmins},
     {"/admin list_mods", "List chat moderators", kForAdmins},

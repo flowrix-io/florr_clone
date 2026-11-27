@@ -459,8 +459,73 @@ TEST(an_admin_tier_is_read_strictly_and_kept_by_a_save) {
     CHECK(adminTierAllows(kOwnerAdminTier, AdminPower::UpdateServer));
     CHECK(!adminTierAllows(kNotAnAdmin, AdminPower::SpawnMobs));
     CHECK(!adminTierAllows(5, AdminPower::SpawnMobs));
+    CHECK(adminTierAllows(kOwnerAdminTier, AdminPower::MuteHistory));
+    CHECK(adminTierAllows(1, AdminPower::MuteHistory));
+    CHECK(!adminTierAllows(2, AdminPower::MuteHistory));
+    CHECK(!adminTierAllows(kNotAnAdmin, AdminPower::MuteHistory));
 
     std::remove(path.c_str());
+}
+
+TEST(a_mute_history_round_trips_and_keeps_only_what_it_can_read) {
+    Account account;
+    account.id = "u-loud";
+    account.username = "loud";
+    Account::MuteEvent mute;
+    mute.atMillis = 1700000000000;
+    mute.muted = true;
+    mute.by = "boss";
+    mute.byId = "u-boss";
+    mute.standing = "tier 2";
+    account.noteMute(mute);
+    Account::MuteEvent lift;
+    lift.atMillis = 1700000060000;
+    lift.muted = false;
+    lift.by = "chief";
+    lift.byId = "u-chief";
+    lift.standing = "the server owner";
+    lift.all = true;
+    account.noteMute(lift);
+
+    Json row = accountRecordJson(account);
+    CHECK(row["muteHistory"].isArray());
+    CHECK_EQ(row["muteHistory"].size(), static_cast<std::size_t>(2));
+    // An entry that does not say what was done is dropped, never guessed at.
+    Json junk = Json::object();
+    junk["action"] = Json("ban");
+    junk["by"] = Json("someone");
+    row["muteHistory"].push(junk);
+    row["muteHistory"].push(Json(7.0));
+
+    const Account read = parseAccountRecord(row, "loud");
+    CHECK_EQ(read.muteHistory.size(), static_cast<std::size_t>(2));
+    CHECK(read.muteHistory[0].muted);
+    CHECK_EQ(read.muteHistory[0].atMillis, static_cast<std::int64_t>(1700000000000));
+    CHECK_EQ(read.muteHistory[0].by, std::string("boss"));
+    CHECK_EQ(read.muteHistory[0].byId, std::string("u-boss"));
+    CHECK_EQ(read.muteHistory[0].standing, std::string("tier 2"));
+    CHECK(!read.muteHistory[0].all);
+    CHECK(!read.muteHistory[1].muted);
+    CHECK_EQ(read.muteHistory[1].standing, std::string("the server owner"));
+    CHECK(read.muteHistory[1].all);
+    // Read as a known field, not kept beside itself as an unknown one.
+    CHECK(read.extra.size() == 0);
+    CHECK_EQ(accountRecordJson(read).dump(0), accountRecordJson(account).dump(0));
+
+    // The newest kMuteHistoryKept, oldest first.
+    Account busy;
+    for (int i = 0; i < 70; ++i) {
+        Account::MuteEvent event;
+        event.atMillis = i;
+        event.muted = i % 2 == 0;
+        busy.noteMute(event);
+    }
+    CHECK_EQ(busy.muteHistory.size(), Account::kMuteHistoryKept);
+    CHECK_EQ(busy.muteHistory.front().atMillis, static_cast<std::int64_t>(20));
+    CHECK_EQ(busy.muteHistory.back().atMillis, static_cast<std::int64_t>(69));
+
+    // An account never muted writes nothing for it.
+    CHECK(!accountRecordJson(Account{}).contains("muteHistory"));
 }
 
 TEST(the_database_never_sets_an_admins_password) {

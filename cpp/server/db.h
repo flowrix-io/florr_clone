@@ -19,6 +19,7 @@
 // the tables below keep theirs, so a save produces a file that diffs cleanly
 // against the one it was loaded from instead of reshuffling every account.
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -217,6 +218,36 @@ struct Account {
     bool muted = false;
     std::int64_t mutedAtMillis = 0;
     std::string mutedBy;
+
+    /// One mute or unmute of this account, as `muteHistory` keeps it.
+    struct MuteEvent {
+        std::int64_t atMillis = 0;
+        /// True for a mute, false for an unmute.
+        bool muted = true;
+        /// The account that did it, by name as it was then and by id. The id is
+        /// empty only for one made without an account behind it.
+        std::string by;
+        std::string byId;
+        /// What they acted as: "the server owner", "tier 2", "tier 3, lent by
+        /// X" for a temporary grant, or "chat moderator".
+        std::string standing;
+        /// Lifted by `unmute_all` rather than one by one.
+        bool all = false;
+    };
+    /// Every mute and unmute of this account, oldest first, the newest
+    /// kMuteHistoryKept of them. `mutedBy` says who muted it last; this says
+    /// who muted and unmuted it, and when. Read only by tier 1 and the owner
+    /// (`/admin mute_history`); the database editor neither shows nor changes
+    /// it (server/admin_db.cpp), so it is a record nobody in game rewrites.
+    std::vector<MuteEvent> muteHistory;
+    static constexpr std::size_t kMuteHistoryKept = 50;
+    void noteMute(MuteEvent event) {
+        muteHistory.push_back(std::move(event));
+        if (muteHistory.size() > kMuteHistoryKept) {
+            muteHistory.erase(muteHistory.begin(),
+                              muteHistory.end() - static_cast<std::ptrdiff_t>(kMuteHistoryKept));
+        }
+    }
 
     /// A chat moderator: mutes and unmutes players and edits the chat
     /// filter's terms (`/mod`), and nothing else of the console. Given and

@@ -1396,6 +1396,12 @@ private:
     /// another moderator nor one of them.
     void setMuted(const Session& session, const std::string& username, bool muting,
                   std::string& said);
+    /// What `session` mutes and unmutes as, for the server log and the
+    /// account's mute history: "the server owner", "tier 2", "tier 3, lent by
+    /// X" for a temporary grant, or "chat moderator".
+    std::string muteStanding(const Session& session) const;
+    /// Puts one mute or unmute by `session` on `account`'s mute history.
+    void noteMute(Account& account, const Session& session, bool muted, bool all) const;
 
     /// What an admin command's `<player>` argument resolved to.
     ///
