@@ -386,8 +386,8 @@ InputLayout inputLayout(Rect r, InputLook look, const InputPrefix* prefix) {
             return {r.x + 10.0, r.w - 20.0, std::min(18.0, r.h * 0.6),
                     Rect{r.x + 5.0, r.y, r.w - 10.0, r.h}};
         case InputLook::Overlay:
-            // The size a browser gives an unstyled <input>, 6px in.
-            return {r.x + 6.0, r.w - 12.0, 13.333, Rect{r.x + 2.0, r.y, r.w - 4.0, r.h}};
+            // The closed chat line, in the chat's own size, 6px in.
+            return {r.x + 6.0, r.w - 12.0, kChatInputSize, Rect{r.x + 2.0, r.y, r.w - 4.0, r.h}};
         case InputLook::Standard:
             break;
     }
@@ -493,8 +493,11 @@ void inputField(Canvas& canvas, Rect r, const std::string& value, const std::str
             setStroke(canvas, kPaper, 0.3);
             canvas.stroke();
             canvas.restore();
+            // Outlined like every other label in the game, so the closed
+            // chat line reads in the same type as the transcript above it.
+            style.strokeWidth = -1;
             style.fill = kPaper;
-            placeholderFill = 0x757575u;
+            placeholderFill = kPaper;
             caretFill = kPaper;
             caretOffset = 0.0;
             caretBand = Rect{r.x, r.y + 4.0, r.w, std::max(2.0, r.h - 8.0)};
