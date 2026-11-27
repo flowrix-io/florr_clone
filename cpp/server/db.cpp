@@ -382,12 +382,51 @@ Json playerToJson(const PlayerRecord& record) { return playerTree(record, false)
 /// The stored inventory (the bag with every worn petal added back, exactly as
 /// playerToJson builds it) written straight to `out`. Only the rarity tiers a
 /// worn petal lands in are copied; the rest are dumped where they stand.
-void writeStoredInventory(const PlayerRecord& record, std::string& out) {
+void writeStoredInventory(const PlayerRecord& record, std::string& out,
+                          PlayerRecord::RenderedParts* cache = nullptr) {
     std::vector<std::string> tiers;                     // first-touched order
     for (const std::optional<StoredItem>& slot : record.loadout) {
         if (!slot || slot->petalType.empty()) continue;
         const std::string tier = raritySaveKey(slot->rarity);
         if (std::find(tiers.begin(), tiers.end(), tier) == tiers.end()) tiers.push_back(tier);
+    }
+    if (cache != nullptr && record.inventory.isObject()) {
+        // A tier at a time, each rendered once and kept until something
+        // changes it: what the tree path below writes, byte for byte -- its
+        // tiers in the bag's order, then the ones only a worn petal names.
+        const auto tierText = [&](const std::string& tier) -> const std::string& {
+            if (const std::string* kept = cache->tier(tier)) return *kept;
+            std::string text;
+            if (std::find(tiers.begin(), tiers.end(), tier) == tiers.end()) {
+                record.inventory[tier].dumpTo(text, 0, 0);
+            } else {
+                PlayerRecord stored;
+                stored.inventory = Json::object();
+                if (record.inventory.contains(tier)) stored.inventory[tier] = record.inventory[tier];
+                for (const std::optional<StoredItem>& slot : record.loadout) {
+                    if (!slot || slot->petalType.empty() || raritySaveKey(slot->rarity) != tier) continue;
+                    stored.addItem(slot->rarity, "petal_" + slot->petalType, 1);
+                }
+                std::as_const(stored.inventory)[tier].dumpTo(text, 0, 0);
+            }
+            cache->tiers.emplace_back(tier, std::move(text));
+            return cache->tiers.back().second;
+        };
+        char separator = '{';
+        const auto put = [&](const std::string& tier) {
+            out += separator;
+            separator = ',';
+            jsonEscapeTo(out, tier);
+            out += ':';
+            out += tierText(tier);
+        };
+        for (const std::string& tier : record.inventory.keys()) put(tier);
+        for (const std::string& tier : tiers) {
+            if (!record.inventory.contains(tier)) put(tier);
+        }
+        if (separator == '{') out += '{';
+        out += '}';
+        return;
     }
     if (tiers.empty()) {
         record.inventory.dumpTo(out, 0, 0);
@@ -453,18 +492,17 @@ std::string playerToText(const PlayerRecord& record) {
         return playerToJson(record).dump(0);
     }
     const Json head = playerTree(record, true);
-    // A row that keeps its big parts rendered renders them once and splices
-    // them in after that, until something takes the row mutably.
+    // A row that keeps its big parts rendered renders each once and splices
+    // it in after that, until something changes that part (RenderedParts).
     PlayerRecord::RenderedParts& parts = record.rendered;
-    if (parts.keep && !parts.valid) {
-        writeStoredInventory(record, parts.inventory);
+    const bool spliced = parts.keep;
+    if (spliced && !parts.mobKillsValid) {
         record.mobKills.dumpTo(parts.mobKills, 0, 0);
-        parts.valid = true;
+        parts.mobKillsValid = true;
     }
-    const bool spliced = parts.keep && parts.valid;
     std::string out;
-    out.reserve(spliced ? 256 + parts.inventory.size() + parts.mobKills.size()
-                        : 256 + record.inventory.size() * 64 + record.mobKills.size() * 48);
+    out.reserve(256 + record.inventory.size() * 64 +
+                (spliced ? parts.mobKills.size() : record.mobKills.size() * 48));
     char separator = '{';
     for (const std::string& key : head.keys()) {
         out += separator;
@@ -472,8 +510,7 @@ std::string playerToText(const PlayerRecord& record) {
         jsonEscapeTo(out, key);
         out += ':';
         if (key == "inventory") {
-            if (spliced) out += parts.inventory;
-            else writeStoredInventory(record, out);
+            writeStoredInventory(record, out, spliced ? &parts : nullptr);
         } else if (key == "mobKills") {
             if (spliced) out += parts.mobKills;
             else record.mobKills.dumpTo(out, 0, 0);
@@ -2772,6 +2809,25 @@ PlayerRecord& Database::progress(const std::string& userId) {
     PlayerRecord& record = players_.insert(userId);
     if (fresh) markDirty();
     return record;
+}
+
+PlayerRecord& Database::recordKill(const std::string& userId, const std::string& mobType,
+                                   Rarity rarity) {
+    PlayerRecord* record = players_.findKeepingParts(userId);
+    if (record == nullptr) record = &progress(userId);
+    record->rendered.forgetMobKills();
+    record->recordKill(mobType, rarity);
+    markDirty();
+    return *record;
+}
+
+void Database::addItem(const std::string& userId, Rarity rarity, const std::string& itemType,
+                       int delta) {
+    PlayerRecord* record = players_.findKeepingParts(userId);
+    if (record == nullptr) record = &progress(userId);
+    record->rendered.forgetTier(raritySaveKey(rarity));
+    record->addItem(rarity, itemType, delta);
+    markDirty();
 }
 
 void Database::setLiveProgress(const std::string& userId, bool maze, double totalXp, double stars) {

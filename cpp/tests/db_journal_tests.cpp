@@ -521,6 +521,58 @@ TEST(a_player_row_written_as_text_is_byte_for_byte_its_tree) {
     CHECK_EQ(mismatches, 0);
 }
 
+TEST(kills_and_pickups_rewrite_only_their_part_and_the_row_still_matches) {
+    // A farming flower's row is journalled on every kill and pickup. Those go
+    // through Database::recordKill and Database::addItem, which drop only the
+    // kill counts or the one tier they change -- and the text written from
+    // what is kept must be the same as a fresh render, every time.
+    Database db;
+    seededDatabase("part-parts", db);
+    const std::string id = "p-farm";
+    {
+        PlayerRecord& record = db.progress(id);
+        record.addItem(Rarity::Rare, "petal_rose", 3);
+        record.addItem(Rarity::Common, "petal_light", 9);
+        StoredItem worn;
+        worn.rarity = Rarity::Rare;
+        worn.petalType = "rose";
+        record.loadout.push_back(worn);
+        worn.rarity = Rarity::Eternal;
+        worn.petalType = "stinger";
+        record.loadout.push_back(worn);   // a tier only the loadout names
+    }
+    const auto fresh = [&] {
+        PlayerRecord copy = *std::as_const(db).findProgress(id);
+        return playerRecordJson(copy).dump(0);
+    };
+    db.setLiveProgress(id, false, 10, 0);
+    CHECK_EQ(db.progressText(id), fresh());
+    std::uint32_t seed = 7;
+    const auto next = [&](std::uint32_t n) { seed = seed * 1664525u + 1013904223u; return (seed >> 8) % n; };
+    const char* const petals[] = {"rose", "light", "stinger", "basic"};
+    int mismatches = 0;
+    for (int round = 0; round < 400; ++round) {
+        const Rarity rarity = static_cast<Rarity>(next(10));
+        switch (next(4)) {
+            case 0: db.recordKill(id, next(2) ? "bee" : "ladybug", rarity); break;
+            case 1: db.addItem(id, rarity, std::string("petal_") + petals[next(4)], 1); break;
+            // Down to nothing, which takes the stack and maybe the tier away.
+            case 2: db.addItem(id, rarity, std::string("petal_") + petals[next(4)], -2); break;
+            default: db.setLiveProgress(id, false, 10 + round, round); break;
+        }
+        if (db.progressText(id) != fresh() && ++mismatches <= 3) {
+            std::fprintf(stderr, "  round %d:\n    kept  %s\n    fresh %s\n", round,
+                         db.progressText(id).c_str(), fresh().c_str());
+        }
+    }
+    CHECK_EQ(mismatches, 0);
+    // And they really were kept: a kill leaves the tiers rendered.
+    db.setLiveProgress(id, false, 999, 0);
+    (void)db.progressText(id);
+    db.recordKill(id, "bee", Rarity::Common);
+    CHECK(!std::as_const(db).findProgress(id)->rendered.tiers.empty());
+}
+
 TEST(live_xp_rewrites_a_row_from_its_kept_parts_and_any_other_change_drops_them) {
     // setLiveProgress runs on every tick a flower's XP or stars move, and its
     // row is rewritten for the journal each time from the inventory and kill
@@ -540,19 +592,19 @@ TEST(live_xp_rewrites_a_row_from_its_kept_parts_and_any_other_change_drops_them)
     }
     const auto fresh = [&] {
         PlayerRecord copy = *std::as_const(db).findProgress(id);   // a copy keeps no parts
-        CHECK(!copy.rendered.valid);
+        CHECK(!copy.rendered.any());
         return playerRecordJson(copy).dump(0);
     };
     db.setLiveProgress(id, false, 120, 2);
     CHECK_EQ(db.progressText(id), fresh());
-    CHECK(std::as_const(db).findProgress(id)->rendered.valid);
+    CHECK(std::as_const(db).findProgress(id)->rendered.any());
     db.setLiveProgress(id, true, 40, 3);
     CHECK_EQ(db.progressText(id), fresh());
     CHECK(db.progressText(id).find("\"mazeTotalXP\":40") != std::string::npos);
 
     // The bag, the loadout and the kills, each through the mutable accessor.
     db.progress(id).addItem(Rarity::Epic, "petal_stinger", 1);
-    CHECK(!std::as_const(db).findProgress(id)->rendered.valid);
+    CHECK(!std::as_const(db).findProgress(id)->rendered.any());
     db.setLiveProgress(id, false, 121, 2);
     CHECK_EQ(db.progressText(id), fresh());
     CHECK(db.progressText(id).find("petal_stinger") != std::string::npos);

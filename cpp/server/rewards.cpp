@@ -101,7 +101,13 @@ void GameServer::bankPickups() {
 
         // Into the bag the body is playing with: an arena pickup is the run's,
         // not the account's, until the run ends.
-        giveToInventory(liveRecord(*session), pickup.petalIndex, pickup.rarity, 1);
+        // The account's bag through Database::addItem, which keeps the
+        // other tiers of the row rendered for the journal.
+        if (session->eventKit || session->arena) {
+            giveToInventory(liveRecord(*session), pickup.petalIndex, pickup.rarity, 1);
+        } else {
+            database_.addItem(session->userId, pickup.rarity, inventoryKey(pickup.petalIndex), 1);
+        }
         if (session->eventKit) enforceHostedRules(*session);
         database_.markDirty();
 
@@ -195,8 +201,13 @@ void GameServer::bankKills() {
                 shCreditKill(session->userId, mobId, type->rarity, stars);
                 continue;
             }
-            PlayerRecord& record = session->eventKit ? *session->eventKit : database_.progress(session->userId);
-            record.recordKill(mobId, type->rarity);
+            // Through the database's own recordKill for the account: it keeps
+            // the rest of the row rendered, and a farming flower's row is
+            // written to the journal on every kill.
+            PlayerRecord& record = session->eventKit
+                                       ? *session->eventKit
+                                       : database_.recordKill(session->userId, mobId, type->rarity);
+            if (session->eventKit) record.recordKill(mobId, type->rarity);
 
             // Stars are the mythic-and-above bounty. Awarded on the live entity
             // rather than the record so the HUD sees them this tick;
