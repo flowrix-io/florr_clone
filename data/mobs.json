@@ -2719,7 +2719,7 @@
         "min_rarity": "unique",
         "noEggDrop": true,
         "replace_chance": {
-            "unique": 0.08
+            "unique": 0.1
         },
         "replace_biomes": [
             "computer"
