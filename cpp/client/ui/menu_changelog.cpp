@@ -719,7 +719,7 @@ constexpr ChangelogEntry kChangelog[] = {
         "Magic Stick and Magic Wand now cost 3x less mana",
         "Magic Stick now summons 4x as often",
         "Peas have 3x less health",
-        "Rainbow now has 10 health",
+        "Gave Rainbow less health",
         "Carrot now flies twice as fast",
         "Battery lightning now does 3x damage",
         "Moved \"Spawn At\" on the title screen"
