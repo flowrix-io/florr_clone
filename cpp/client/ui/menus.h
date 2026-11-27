@@ -91,6 +91,10 @@ enum class MenuId : std::uint8_t {
     /// row only; its key is unbound and not rebindable.
     Account,
     PollCreator, // Standalone, opened only by /admin createpoll.
+    /// Another player's card: level, counters, loadout and bag. Opened by the
+    /// server's answer to `/profile <name>` and by nothing else: it is on no
+    /// strip button, and its key is unbound and not rebindable.
+    PlayerProfile,
     Count,
 };
 
@@ -1482,6 +1486,23 @@ public:
     static Rect bounds(int w,int h);
 };
 
+/// One account's public card, over the game: its level bar, the bar it wears,
+/// the counters the server keeps for it and its bag. Read from what
+/// NetClient::playerProfileView() holds, so closing and reopening it does not
+/// ask the server again. Opened centred, like the poll creator.
+class PlayerProfilePanel {
+public:
+    bool render(MenuContext&);
+    void reset();
+    static double preferredWidth();
+    static Rect bounds(int viewWidth, int viewHeight);
+
+private:
+    ui::Scroller scroll_;
+    /// The card the scroll position belongs to: a new answer starts at the top.
+    std::string shownName_;
+};
+
 /// Frame time and memory graphs, client and server, this frame's drawing
 /// broken down, and where the server's tick time goes. Reachable only while
 /// the settings switch that puts the bug button in the strip is on.
@@ -2069,6 +2090,7 @@ private:
     NotificationsPanel notifications_;
     GuildPanel guild_;
     PollCreatorPanel pollCreator_;
+    PlayerProfilePanel playerProfile_;
     Rect pollRect_;
     bool externalPointerBlock_ = false;
     DebugPanel debug_;

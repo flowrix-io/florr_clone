@@ -837,6 +837,13 @@ private:
     void handleBrowseSkins(Session&, net::Connection&, ByteReader&);
     void handleFetchSkins(Session&, net::Connection&, ByteReader&);
     void handleLeaderboard(const Session&, net::Connection&, ByteReader&);
+    /// `/profile [name]`: tells `connection` one account's public card -- its
+    /// level and counters, the bar it wears and its bag -- as a PlayerProfileView,
+    /// or says in chat that no account has that name. An empty `name` is the
+    /// asker's own. Works for an account that is offline: it reads the saved
+    /// row, so what an online account shows is the row as last written.
+    /// (profile_view.cpp)
+    void sendPlayerProfileView(Session&, net::Connection&, const std::string& name);
     void handleNotifications(net::Connection&, ByteReader&);
     void handleUsePetal(Session&, ByteReader&);
 

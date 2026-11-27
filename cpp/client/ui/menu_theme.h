@@ -41,6 +41,8 @@ inline constexpr std::uint32_t kCloseFace = 0xAE5B58u;
 inline constexpr std::uint32_t kCloseRim = borderOf(kCloseFace);
 
 inline constexpr PanelSkin kInventorySkin{0x6B9DD6u};
+/// The /profile card: gray, drawn translucent so the game shows through.
+inline constexpr PanelSkin kProfileSkin{0x555555u};
 /// The craft key's four windows are florr's, in florr's themes: each is the
 /// colour its controller answers with. Its border is borderOf(theme), like
 /// every menu's; its empty slots and cells are slotCardShade(theme).
