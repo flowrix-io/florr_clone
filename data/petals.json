@@ -861,7 +861,7 @@
         "damage": 10,
         "health": 100,
         "size": 2,
-        "cooldown": 10000,
+        "cooldown": 1000,
         "price": 10,
         "description": "Gas but more powerful",
         "color": "#000000",
@@ -870,7 +870,7 @@
         "projectile": {
             "count": 10,
             "distance": 500,
-            "speed": 50,
+            "speed": 1600,
             "spreadAngle": 1
         },
         "isAdminPetal": false
