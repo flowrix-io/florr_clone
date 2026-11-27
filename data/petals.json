@@ -719,7 +719,7 @@
         "size": 1,
         "cooldown": 1000,
         "price": 15,
-        "poison": 0.00625,
+        "poison": 0.01625,
         "poisonDuration": 500,
         "description": "It goes poof. Now with a secret ingredient: poison.",
         "color": "#000000",
