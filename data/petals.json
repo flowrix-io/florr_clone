@@ -527,7 +527,7 @@
     "c++": {
         "name": "C++",
         "damage": 128,
-        "health": 128,
+        "health": 48,
         "size": 1,
         "cooldown": 2000,
         "price": 1000000,
@@ -1993,7 +1993,7 @@
     "c--": {
         "name": "C--",
         "damage": 128,
-        "health": 128,
+        "health": 48,
         "size": 1,
         "cooldown": 2000,
         "price": 1000000,
