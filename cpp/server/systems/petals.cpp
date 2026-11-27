@@ -383,7 +383,9 @@ double actionIntervalMillis(const PetalConfig& config, const PetalStats& stats, 
         interval = std::max(interval, stats.healChargeMillis);
     }
     if (config.radiation.present) interval = std::max(interval, config.radiation.intervalMillis * (rarity == Rarity::Admin ? 0.5 : 1.0));
-    if (config.hatchesPets()) interval = std::max(interval, stats.reloadMillis);
+    if (config.hatchesPets()) {
+        interval = std::max(interval, stats.reloadMillis * config.petSummonIntervalScale);
+    }
     interval = std::max(interval, behaviourOf(config.id).intervalMillis * (rarity == Rarity::Admin ? 0.5 : 1.0));
     return std::max(interval, net::kTickMillis);
 }
@@ -3520,7 +3522,11 @@ void PetalSystem::strikeBatteries(World& world, const ContentRegistry& registry,
         instance->nextChargeMillis = nowMillis + kBatteryStrikeIntervalMillis;
         const bool flat = --instance->charges == 0;
 
-        strikeLightning(world, player, at, stats.damage, batteryRarity);
+        const double strike =
+            (stats.damage > 0.0 ? stats.damage
+                                : kLightningFallbackDamage * petalStrengthScale(batteryRarity)) *
+            kBatteryStrikeScale;
+        strikeLightning(world, player, at, strike, batteryRarity);
         // The last charge retires the petal. spendPetal finds no Health on it
         // and takes the by-hand path: off the ring now, back on the slot's own
         // cooldown, holding three again.

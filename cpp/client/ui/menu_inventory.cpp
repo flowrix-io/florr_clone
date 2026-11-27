@@ -723,6 +723,17 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         summon.altText = label + exactNumber(stats.petManaCost) + unit;
         lines.push_back(summon);
     }
+    if (config.hatchesPets() && config.petSummonIntervalScale != 1.0) {
+        TooltipLine every{"Spawn Time: " +
+                              exactNumber(std::round(stats.reloadMillis *
+                                                     config.petSummonIntervalScale / 100.0) /
+                                          10.0) +
+                              "s",
+                          12.0};
+        every.alpha = 0.56;
+        every.labelColor = kStatDuration;
+        lines.push_back(every);
+    }
     if (config.petLifetimeMillis > 0.0) {
         TooltipLine span{"Summon Lifetime: " + exactNumber(config.petLifetimeMillis / 1000.0) + "s",
                          12.0};
@@ -884,7 +895,7 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         if (config.id == "battery") {
             const double base = stats.damage > 0.0 ? stats.damage
                                                    : kLightningFallbackDamage * strength;
-            const double strike = std::round(base * talentDamage);
+            const double strike = std::round(base * kBatteryStrikeScale * talentDamage);
             effectLine("Lightning: " + abbreviate(strike), kStatLightning,
                        "Lightning: " + exactNumber(strike));
             effectLine("Charges: " + std::to_string(kBatteryCharges), kStatGeneric);

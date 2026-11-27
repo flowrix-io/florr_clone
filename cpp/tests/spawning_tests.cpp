@@ -127,6 +127,11 @@ double groundWithBossChance(double chance) {
 void makeSingularBandWorld(WorldMaps& out, const Rect& band, const std::string& mobs,
                            double difficulty = 0.0);
 
+/// The same, with `respawnSeconds` on its one band: how long a mob killed in
+/// somebody's view waits for its replacement. See MapElement::respawnMillis.
+void makeBreedingBandWorld(WorldMaps& out, const Rect& band, const std::string& mobs,
+                           double seconds);
+
 /// The population a band of these bounds is stocked to: the same figure
 /// SpawnSystem derives from kTargetMobDensity, so a test can say "its target"
 /// rather than write a number down.
@@ -2129,6 +2134,67 @@ TEST(a_killed_mob_is_replaced_where_it_died_rather_than_anywhere_in_its_band) {
     // instead, they would have gone to a hundred and forty million square
     // units of somewhere else and left the corner permanently thin.
     CHECK(sim.populationIn(watched) >= before - 3);
+}
+
+TEST(a_band_with_respawn_seconds_refills_a_cleared_screen_that_fast) {
+    // The fire ant hell's top zones breed: a mob killed on somebody's screen
+    // is back in half a second rather than the usual 1..4. Cleared, then
+    // looked at 1.2 seconds on -- after the half second and two population
+    // passes, before most of the usual rolls are up.
+    const Rect band{kCentre.x - 900.0, kCentre.y - 500.0, 1800.0, 1000.0};
+    int recovered[2] = {0, 0};
+    int cleared[2] = {0, 0};
+    for (int breeds = 0; breeds < 2; ++breeds) {
+        WorldMaps maps;
+        // Dense enough to have a crowd in a screen-sized band.
+        if (breeds) makeBreedingBandWorld(maps, band, "bee 100%", 0.5);
+        else makeBandedWorld(maps, {band}, "bee 100%");
+        Sim sim;
+        sim.spawner.worldMaps = &maps;
+        const std::vector<Vec2> viewer{kCentre};
+        for (int round = 0; round < 6; ++round) {
+            for (int i = 0; i < 300; ++i) sim.tick(viewer);
+            std::vector<Entity> doomed;
+            Query<MobTag, Transform> mobs{sim.world};
+            mobs.each([&](Entity e, MobTag&, Transform& at) {
+                if (!sim.world.has<Dead>(e) && band.contains(at.position)) doomed.push_back(e);
+            });
+            for (const Entity e : doomed) sim.world.add<Dead>(e, Dead{NULL_ENTITY});
+            cleared[breeds] += static_cast<int>(doomed.size());
+            sim.tick(viewer);
+            for (const Entity e : doomed) {
+                if (sim.world.isAlive(e)) sim.world.destroy(e);
+            }
+            for (int i = 0; i < static_cast<int>(1200.0 / net::kTickMillis); ++i) {
+                sim.tick(viewer);
+            }
+            recovered[breeds] += sim.mobsIn(band);
+        }
+    }
+    std::printf("cleared %d/%d, back after 1.2s: usual %d, breeding %d\n", cleared[0],
+                cleared[1], recovered[0], recovered[1]);
+    CHECK(cleared[0] > 10 && cleared[1] > 10);
+    // Every slot of a breeding band is back; the usual roll has most still
+    // waiting.
+    CHECK(recovered[1] * 10 >= cleared[1] * 8);
+    CHECK(recovered[0] * 2 < recovered[1]);
+}
+
+TEST(the_fire_ant_hells_mythic_and_ultra_zones_breed) {
+    // Its prestige twin is the same map, zones and all, so it breeds too;
+    // counted here on the plain one.
+    int breeding = 0;
+    for (const MapData& map : shippedMaps().maps()) {
+        if (map.prestige()) continue;
+        for (const MapElement& element : map.elements()) {
+            if (element.respawnMillis < 0.0) continue;
+            ++breeding;
+            CHECK_EQ(map.id(), std::string("ant_hell"));
+            CHECK_NEAR(element.respawnMillis, 500.0, 1e-9);
+            CHECK(element.difficulty >= 80.0);
+        }
+    }
+    CHECK_EQ(breeding, 2);
 }
 
 TEST(a_band_hunted_for_one_mob_keeps_its_tables_mix) {
@@ -6084,6 +6150,25 @@ void makeSingularBandWorld(WorldMaps& out, const Rect& band, const std::string& 
     std::string error;
     if (!map.loadTiled(path, error)) {
         std::fprintf(stderr, "[test] the singular fixture world did not load: %s\n",
+                     error.c_str());
+    }
+    std::remove(path.c_str());
+    out.adoptSingle(map);
+}
+
+void makeBreedingBandWorld(WorldMaps& out, const Rect& band, const std::string& mobs,
+                           double seconds) {
+    std::string object = spawnObject(1, band.x, band.y, band.w, band.h, true, 0.0, mobs);
+    const std::size_t at = object.find("{\"name\": \"mobs\"");
+    object.insert(at, "{\"name\": \"respawnSeconds\", \"type\": \"float\", \"value\": " +
+                          std::to_string(seconds) + "},");
+    const std::string path =
+        writeTiledFixture("flix_breeding_world.tmj", fixtureMapBody(object));
+    MapData map;
+    map.setId("breeding");
+    std::string error;
+    if (!map.loadTiled(path, error)) {
+        std::fprintf(stderr, "[test] the breeding fixture world did not load: %s\n",
                      error.c_str());
     }
     std::remove(path.c_str());

@@ -1382,6 +1382,7 @@ PetalConfig parsePetal(Ctx& ctx, const std::string& id, const Json& src,
     p.petCountMax = ctx.integer(src, "petCountMax", p.petCount, p.petCount, 64);
     p.petLifetimeMillis = ctx.range(src, "petLifetimeMs", 0.0, 0.0, kMaxDurationMillis);
     p.petManaCost = ctx.range(src, "petManaCost", 0.0, 0.0, kMaxBaseStat);
+    p.petSummonIntervalScale = ctx.range(src, "petSummonIntervalScale", 1.0, 0.01, 100.0);
 
     p.slowFactor = ctx.range(src, "slowFactor", 1.0, 0.0, 1.0);
     p.slowDurationMillis = ctx.range(src, "slowDuration", 0.0, 0.0, kMaxDurationMillis);

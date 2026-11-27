@@ -295,6 +295,7 @@ const Replicator::SpawnFacts& Replicator::spawnFactsOf(World& world, std::uint32
     }
     if (const PlayerAccount* account = world.tryGet<PlayerAccount>(e)) {
         if (!account->username.empty()) facts.username = &account->username;
+        if (!account->handle.empty()) facts.handle = &account->handle;
     }
     if (info.kind == net::EntityKind::Petal) {
         Entity owner = NULL_ENTITY;
@@ -670,6 +671,7 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
             out.u8(visuals.shield);
             out.str(skinIdOf(visuals));
             out.str(guildTagOf(visuals));
+            out.str(info.handle != nullptr ? *info.handle : std::string());
         }
         if (info.kind == net::EntityKind::Petal) {
             // Petals are placed on an absolute ring around the owner's SERVER

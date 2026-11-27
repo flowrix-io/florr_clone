@@ -518,7 +518,8 @@ Entity GameServer::createPlayerBody(Session& session, Realm realm, Vec2 spawn) {
     // asked for; the account name stays on the session for chat and for saves.
     world_.add<PlayerAccount>(entity,
                               PlayerAccount{session.userId, session.nameplate(),
-                                            session.connection, session.admin});
+                                            session.connection, session.admin,
+                                            session.username});
 
     const PlayerRecord& record = liveRecord(session);
     applyAccountToEntity(record, entity);

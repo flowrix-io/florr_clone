@@ -1781,10 +1781,11 @@ double lastStrikeDamage(Rig& rig) {
     return damage;
 }
 
-/// PetalSystem's own kLightningFallbackDamage, which is private to it. The
-/// battery declares `damage: 0` -- it does not hit anything with its body --
-/// so this is what its shock is worth at common.
-constexpr double kFallbackStrike = 25.0;
+/// PetalSystem's own kLightningFallbackDamage, which is private to it, times
+/// the battery's kBatteryStrikeScale (3). The battery declares `damage: 0` --
+/// it does not hit anything with its body -- so this is what its shock is
+/// worth at common.
+constexpr double kFallbackStrike = 25.0 * 3.0;
 
 TEST(a_strike_is_paid_at_the_petal_damage_rate) {
     if (!contentLoaded()) return;

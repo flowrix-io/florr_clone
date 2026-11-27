@@ -1068,6 +1068,12 @@ struct PetalConfig {
     /// as requiredMana. A summon that cannot be paid for is skipped until the
     /// next action; the petal itself still goes on the ring for free.
     double petManaCost = 0;
+    /// The summon's own timer -- its "secondary reload" -- as a share of the
+    /// petal's reload: how often a summoning petal on the ring hatches, which
+    /// is not how long the petal takes to come back once broken. 1 (the
+    /// default) keeps the two the same; the magic stick hatches four times a
+    /// reload.
+    double petSummonIntervalScale = 1.0;
     /// Whether this petal summons anything, by name or by roll.
     bool hatchesPets() const { return petMobRandom || petMobIndex != kInvalidIndex; }
     /// What a rolled petal's next summon comes to, before its tier's multiples.

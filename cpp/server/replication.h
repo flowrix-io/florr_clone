@@ -512,6 +512,8 @@ private:
         /// The entity's own name, or null for none (SpawnHasName). Borrowed
         /// from its PlayerAccount, which nothing changes during a pass.
         const std::string* username = nullptr;
+        /// A flower's account name (PlayerAccount::handle), or null for none.
+        const std::string* handle = nullptr;
         /// A petal's flower or a ring seed's mob, by net id; 0 for none.
         std::uint32_t petalOwnerNetId = 0;
         /// An NPC's recipe.

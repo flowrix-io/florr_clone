@@ -398,7 +398,8 @@ void App::drawHudFlower(Canvas& canvas, std::uint32_t netId, double centreX, dou
         // shows it.
         canvas.rotate(static_cast<float>(found->second.angle));
         canvas.scale(static_cast<float>(radius / 25.0), static_cast<float>(radius / 25.0));
-        renderer_.drawDeadFlower(canvas, found->second.equipFlags, 5.0, time);
+        renderer_.drawDeadFlower(canvas, found->second.equipFlags, 5.0, time,
+                                 found->second.equippedSkinId);
     } else if (found != net_.view().entities().end()) {
         // The world's own painter, not a HUD-local copy of it: the avatar
         // wears the flower's colour, face, antennae and skin because it IS

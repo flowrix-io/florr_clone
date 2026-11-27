@@ -709,6 +709,22 @@ constexpr ChangelogEntry kChangelog[] = {
         "Made the antennae zoom animation smooth"
       }
     },
+    {"November 27, 2026",
+      {
+        "Your account name now shows above your flower as @name",
+        "Damaging a Super or Apex now tells you in chat how much damage you dealt when it dies",
+        "You now keep your skin when you die",
+        "Purchases and crafts are now saved more safely when the server restarts",
+        "Mythic and Ultra Fire Ant Hell mobs now respawn in 0.5s",
+        "Magic Stick and Magic Wand now cost 3x less mana",
+        "Magic Stick now summons 4x as often",
+        "Peas have 3x less health",
+        "Rainbow now has 10 health",
+        "Carrot now flies twice as fast",
+        "Battery lightning now does 3x damage",
+        "Moved \"Spawn At\" on the title screen"
+      }
+    },
 };
 
 constexpr int kEntryCount = static_cast<int>(sizeof(kChangelog) / sizeof(kChangelog[0]));

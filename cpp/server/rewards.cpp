@@ -4,6 +4,10 @@
 #include "server/game_server.h"
 
 #include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <string>
+#include <utility>
 #include <vector>
 
 #include "server/game_server_internal.h"
@@ -128,6 +132,7 @@ void GameServer::bankKills() {
         if (death.killer == NULL_ENTITY || !world_.isAlive(death.killer) ||
             !world_.has<PlayerTag>(death.killer)) {
             announceBossDefeat(death.entity, *type, {});
+            reportBossDamage(death.entity, *type);
             continue;
         }
 
@@ -216,6 +221,70 @@ void GameServer::bankKills() {
         }
 
         announceBossDefeat(death.entity, *type, ranked);
+        reportBossDamage(death.entity, *type);
+    }
+}
+
+namespace {
+
+/// 950, 12.3k, 450k, 55m, 1.2b: whole units from ten up, one decimal below
+/// that, in thousands, millions, billions or trillions. Rounded down, so a
+/// figure never reads as more than was dealt.
+std::string compactDamage(double value) {
+    static constexpr struct { double scale; const char* suffix; } kSteps[] = {
+        {1e12, "t"}, {1e9, "b"}, {1e6, "m"}, {1e3, "k"}, {1.0, ""},
+    };
+    value = std::max(0.0, value);
+    char buffer[32];
+    for (const auto& step : kSteps) {
+        if (value < step.scale && step.scale > 1.0) continue;
+        const double scaled = value / step.scale;
+        const double tenths = std::floor(scaled * 10.0) / 10.0;
+        if (scaled >= 10.0 || step.scale == 1.0 || tenths == std::floor(tenths)) {
+            std::snprintf(buffer, sizeof buffer, "%.0f%s", std::floor(scaled), step.suffix);
+        } else {
+            std::snprintf(buffer, sizeof buffer, "%.1f%s", tenths, step.suffix);
+        }
+        return buffer;
+    }
+    return "0";
+}
+
+} // namespace
+
+void GameServer::reportBossDamage(Entity mob, const MobType& type) {
+    if (type.rarity != Rarity::Super && type.rarity != Rarity::Apex) return;
+    // A summon is a flower's, and a centipede's beads each die on their own
+    // ledger: the head's line is the animal's, as the defeat line is.
+    if (world_.has<Pet>(mob)) return;
+    if (content().mob(type.configIndex).chainBody) return;
+    const Bounty* bounty = world_.tryGet<Bounty>(mob);
+    if (bounty == nullptr) return;
+
+    // One line per PERSON: a splitter's two halves are two rows of the same
+    // account, and what they dealt is one figure.
+    std::vector<std::pair<net::ConnectionId, double>> dealt;
+    for (const Bounty::Share& share : bounty->contributors) {
+        if (share.damage <= 0.0) continue;
+        if (world_.isAlive(share.player) && !world_.has<PlayerTag>(share.player)) continue;
+        const Session* session = creditedSession(share.player);
+        if (session == nullptr || !session->authenticated()) continue;
+        auto row = std::find_if(dealt.begin(), dealt.end(), [&](const auto& entry) {
+            return entry.first == session->connection;
+        });
+        if (row == dealt.end()) dealt.emplace_back(session->connection, share.damage);
+        else row->second += share.damage;
+    }
+    if (dealt.empty()) return;
+
+    const std::string target = std::string(rarityLabel(type.rarity)) + " " +
+                               content().mob(type.configIndex).name;
+    for (const auto& [connectionId, damage] : dealt) {
+        net::Connection* connection = listener_.find(connectionId);
+        if (connection == nullptr) continue;
+        sendChatTo(*connection, net::ChatChannel::System, "",
+                   "<b style=\"color: #8c8cff;\">You dealt " + compactDamage(damage) +
+                       " damage to the " + target + ".</b>");
     }
 }
 

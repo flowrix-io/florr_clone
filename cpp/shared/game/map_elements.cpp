@@ -574,6 +574,16 @@ void MapData::adopt(const Json& array) {
                 }
             }
 
+            if (properties.contains("respawnSeconds")) {
+                element.respawnMillis =
+                    std::max(0.0, properties["respawnSeconds"].asDouble()) * 1000.0;
+                if (!element.hasDifficulty) {
+                    contentWarning("[map] a spawn object has `respawnSeconds` but no "
+                                   "`difficulty`, so it owns no population; the property "
+                                   "does nothing\n");
+                }
+            }
+
             element.spawnId = properties["spawnId"].asString();
             element.label = properties["label"].asString();
             element.backdrop = properties["backdrop"].asString();

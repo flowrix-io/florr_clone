@@ -1203,6 +1203,11 @@ std::string Database::serialiseWith(const std::string& journalId) const {
     return out;
 }
 
+namespace {
+void syncDescriptor(int fd);
+void syncDirectoryOf(const std::string& path, bool wait);
+} // namespace
+
 bool Database::save() {
     // Nothing of a replica's is its own to save: the link has it, or will.
     if (replica_) return true;
@@ -1227,7 +1232,8 @@ bool Database::save() {
     if (!file) return false;
     const std::size_t written = text.empty() ? 0 : std::fwrite(text.data(), 1, text.size(), file);
     const bool flushed = std::fflush(file) == 0;
-    if (flushed) ::fsync(::fileno(file));
+    // Through the real descriptor: ::fsync is a no-op on emscripten's NODEFS.
+    if (flushed) syncDescriptor(::fileno(file));
     const bool closed = std::fclose(file) == 0;
     if (written != text.size() || !flushed || !closed) {
         std::remove(tmp.c_str());
@@ -1252,6 +1258,9 @@ bool Database::save() {
         std::remove(tmp.c_str());
         return false;
     }
+    // The new name on the disk before the journal it names replaces the old
+    // one: the other order can leave the OLD snapshot beside the NEW journal.
+    syncDirectoryOf(path_, true);
     dirty_ = false;
 
     // Everything the old journal held, and every line that could not be
@@ -1287,6 +1296,41 @@ void syncDescriptor(int fd) {
     }, fd);
 #else
     ::fsync(fd);
+#endif
+}
+
+/// Makes a rename inside `path`'s directory durable: the new name is a change
+/// to the DIRECTORY, and until the directory itself is synced a power cut or
+/// a machine reset can bring back the old name -- an old snapshot beside a
+/// new, empty journal, which loses everything since the snapshot before.
+/// `wait` false starts the sync on Node's thread pool and returns at once,
+/// for a path the tick is on.
+void syncDirectoryOf(const std::string& path, bool wait) {
+    const std::size_t slash = path.find_last_of('/');
+    const std::string dir = slash == std::string::npos ? "." : (slash == 0 ? "/" : path.substr(0, slash));
+#ifdef __EMSCRIPTEN__
+    EM_ASM({
+        if (typeof require !== "function") return;
+        const fs = require("fs");
+        const dir = UTF8ToString($0);
+        if ($1) {
+            let fd = -1;
+            try { fd = fs.openSync(dir, "r"); fs.fsyncSync(fd); } catch (e) {}
+            try { if (fd >= 0) fs.closeSync(fd); } catch (e) {}
+            return;
+        }
+        fs.open(dir, "r", (openError, fd) => {
+            if (openError) return;
+            fs.fsync(fd, () => fs.close(fd, () => {}));
+        });
+    }, dir.c_str(), wait ? 1 : 0);
+#else
+    (void)wait;
+    const int fd = ::open(dir.c_str(), O_RDONLY);
+    if (fd >= 0) {
+        ::fsync(fd);
+        ::close(fd);
+    }
 #endif
 }
 
@@ -1505,6 +1549,7 @@ bool Database::startJournal(const std::string& id) {
         std::remove(tmp.c_str());
         return false;
     }
+    syncDirectoryOf(path, true);
     closeJournal();
     journalFd_ = ::open(path.c_str(), O_WRONLY | O_APPEND);
     if (journalFd_ < 0) return false;
@@ -1986,6 +2031,8 @@ Database::SaveProgress Database::finishBackgroundSave() {
         if (journalNextFd_ >= 0) ::close(journalNextFd_);
         journalBroken_ = true;
     }
+    // Both renames durable: on Node's thread pool, since this is on the tick.
+    syncDirectoryOf(path_, false);
     journalNextFd_ = -1;
     journalNextBytes_ = 0;
     save_.reset();
@@ -2088,7 +2135,7 @@ bool Database::backup(const std::string& label, BackupInfo& out, std::string& er
     }
     const std::size_t written = text.empty() ? 0 : std::fwrite(text.data(), 1, text.size(), handle);
     const bool flushed = std::fflush(handle) == 0;
-    if (flushed) ::fsync(::fileno(handle));
+    if (flushed) syncDescriptor(::fileno(handle));
     const bool closed = std::fclose(handle) == 0;
 
     struct stat info {};

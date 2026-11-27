@@ -1941,6 +1941,7 @@ void SpawnSystem::rebuildZones(const ContentRegistry& content) {
             zone.difficulty = element.difficulty;
             zone.realm = map.realm();
             zone.singular = element.singular;
+            zone.respawnMillis = element.respawnMillis;
             zone.prestige = map.prestige();
             zone.biomeName = map.biome();
 
@@ -2616,9 +2617,12 @@ bool SpawnSystem::stockZone(World& world, const Terrain& terrain, const ContentR
         // does not wait to be full: the first player onto a server, or an
         // operator after a killall, sees the band full on the next pass, on
         // their own screen too.
-        const double delay = slot == Slot::Killed && seenBy(viewers, zone.realm, at, 0.0)
-                                 ? rng.range(kInViewRespawnMinMillis, kInViewRespawnMaxMillis)
-                                 : 0.0;
+        const double delay =
+            slot == Slot::Killed && seenBy(viewers, zone.realm, at, 0.0)
+                ? (zone.respawnMillis >= 0.0
+                       ? zone.respawnMillis
+                       : rng.range(kInViewRespawnMinMillis, kInViewRespawnMaxMillis))
+                : 0.0;
         zone.latent.push_back(LatentMob{at, nowMillis + delay, type, rarity});
         return true;
     }

@@ -199,6 +199,7 @@ void WorldRenderer::drawEntity(Canvas& canvas, const RemoteEntity& entity, const
                 drawPlayerPlate(canvas, entity, camera, at, timeSeconds);
             }
             drawFlower(canvas, entity, camera, at, timeSeconds);
+            drawPlayerHandle(canvas, entity, camera, at);
             break;
 
         case net::EntityKind::Mob: {

@@ -151,6 +151,12 @@ struct MapElement {
     /// mob's tier would tell a player the whole district is that dangerous.
     bool singular = false;
 
+    /// How long, in milliseconds, a band's mob killed in somebody's view
+    /// waits before its replacement may appear, instead of the usual
+    /// kInViewRespawnMin..Max roll. Negative (the default) keeps the roll.
+    /// The `respawnSeconds` property; the fire ant hell's top zones breed.
+    double respawnMillis = -1.0;
+
     /// True when this `spawn` object owns a POPULATION: a difficulty band,
     /// stocked to a density of its own.
     ///

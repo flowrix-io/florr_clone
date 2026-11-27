@@ -397,6 +397,7 @@ it carries decides which kind of object it is:
 | `difficulty` | **how dangerous** this ground is, a number from 0 up, or `-1` for the random spread. Makes this a **band**. |
 | `mobs` | the **distribution**: what actually appears here |
 | `singular` | a bool. This band holds **exactly one mob**, however large it is drawn. Bands only. |
+| `respawnSeconds` | a number. How long a mob killed **where a player can see it** waits before its replacement appears, instead of the usual 1–4 s roll. `0.5` makes a band breed. Bands only. |
 
 - A shape with `difficulty` is a **band**. It owns a population of its own,
   stocked to a density scaled by the outline's area. **Bands are the only thing

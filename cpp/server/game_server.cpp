@@ -392,6 +392,11 @@ void GameServer::shutdown() {
     listener_.stop();
     if (gateway_) gateway_->door.stop();
     if (shard_) {
+        // What the stop itself banked -- every body dropped above -- into the
+        // lease journal and onto the link before the link goes: closing the
+        // journal does not write rows nobody handed it.
+        shSendRows();
+        shFlush();
         shard_->dialer.disconnect();
         if (shard_->door) shard_->door->listener.stop();
         shard_->journal.close();

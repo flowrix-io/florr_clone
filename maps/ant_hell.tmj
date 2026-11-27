@@ -3768,6 +3768,11 @@
                          "name":"mobs",
                          "type":"string",
                          "value":"fire_ant_hell"
+                        },
+                        {
+                         "name":"respawnSeconds",
+                         "type":"float",
+                         "value":0.5
                         }],
                  "rotation":0,
                  "type":"",
@@ -3871,6 +3876,11 @@
                          "name":"mobs",
                          "type":"string",
                          "value":"fire_ant_hell"
+                        },
+                        {
+                         "name":"respawnSeconds",
+                         "type":"float",
+                         "value":0.5
                         }],
                  "rotation":0,
                  "type":"",

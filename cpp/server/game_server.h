@@ -1762,6 +1762,11 @@ private:
     /// is never announced.
     void announceBossDefeat(Entity mob, const MobType&,
                             const std::vector<Bounty::Share>& ranked);
+    /// Tells everyone who landed damage on a dying super or apex, privately,
+    /// how much: "You dealt 55m damage to the Super Ladybug." Read straight
+    /// off the corpse's Bounty ledger, so it reaches every contributor --
+    /// whether or not they earned loot, whoever landed the last blow.
+    void reportBossDamage(Entity mob, const MobType&);
     /// Broadcasts "An Apex <petal> has been collected by @handle [Flower]!"
     /// for a ground pickup at apex or above, the player credited exactly as a
     /// boss kill credits them. Anything below apex is silent.

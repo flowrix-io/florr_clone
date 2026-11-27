@@ -579,9 +579,13 @@ struct PlayerInput {
 /// types in chat.
 struct PlayerAccount {
     std::string userId;
+    /// What the nameplate says: the flower's typed name, or the account's.
     std::string username;
     net::ConnectionId connection = 0;
     bool admin = false;
+    /// The ACCOUNT's name, which every flower wears over its head as
+    /// "@name". Empty for a body no account plays (a bot).
+    std::string handle;
 };
 
 /// The talent tree as the simulation sees it.

@@ -215,27 +215,37 @@ void WorldRenderer::drawCorpse(Canvas& canvas, const RemoteEntity& entity, const
     canvas.save();
     canvas.translate(static_cast<float>(screen.x), static_cast<float>(screen.y));
     // A corpse lies where it fell: rotated to its facing, at a fixed radius 25
-    // whatever the flower's size multiplier was, and with no skin, no status
-    // tint, no plate and no petals.
+    // whatever the flower's size multiplier was, in its skin if it wore one,
+    // and with no status tint, no plate and no petals.
     // It frowns: the HUD avatar and the death card draw this same body, and
     // the death screen they were measured from frowns on all of them.
     canvas.rotate(static_cast<float>(entity.angle));
     canvas.scale(static_cast<float>(zoom), static_cast<float>(zoom));
-    drawDeadFlower(canvas, entity.equipFlags, 5.0, timeSeconds);
+    drawDeadFlower(canvas, entity.equipFlags, 5.0, timeSeconds, entity.equippedSkinId);
     canvas.restore();
 }
 
 void WorldRenderer::drawDeadFlower(Canvas& canvas, std::uint16_t equipFlags, double mouth,
-                                   double timeSeconds) const {
+                                   double timeSeconds, const std::string& skinId) const {
+    // A skinned flower dies in its skin: snapping back to the plain yellow
+    // body the moment it falls read as losing the skin.
+    if (const CustomSkin* skin = skinById(skinId)) {
+        paintSkin(canvas, *skin);
+        return;
+    }
     drawFace(canvas, FaceDeadEyes, equipFlags, 0, 0, mouth, timeSeconds);
 }
 
 const CustomSkin* WorldRenderer::wornSkin(const RemoteEntity& entity) const {
-    if (entity.equippedSkinId.empty() || skinCatalog_ == nullptr) return nullptr;
+    return skinById(entity.equippedSkinId);
+}
+
+const CustomSkin* WorldRenderer::skinById(const std::string& id) const {
+    if (id.empty() || skinCatalog_ == nullptr) return nullptr;
     for (const CustomSkin& skin : *skinCatalog_) {
         // A skin with no shapes would paint nothing at all and read as an
         // invisible flower, so it falls back to the default body instead.
-        if (skin.id == entity.equippedSkinId) return skin.shapes.empty() ? nullptr : &skin;
+        if (skin.id == id) return skin.shapes.empty() ? nullptr : &skin;
     }
     // Taken down since this snapshot was built, or published before this
     // client authenticated. Either way there is nothing to draw.
@@ -264,37 +274,7 @@ void WorldRenderer::drawFlowerBody(Canvas& canvas, const RemoteEntity& entity,
         // kFlowerArtRadius, not the flower's grown radius: the caller has
         // already scaled into the artwork's own radius-25 space, which is the
         // space the studio authors in.
-        //
-        // Through the bitmap cache, because a skin is the most expensive thing
-        // on a flower by a wide margin and none of it moves. It is a list of
-        // authored shapes, and every one of them costs a save, a translate, a
-        // path, a fill, usually a stroke with its own join and cap, and a
-        // restore -- eight to fourteen drawing calls each, repainted from
-        // scratch for every skinned flower on screen on every frame. A busy
-        // screen of them ran to thousands of calls a frame on its own. Baked,
-        // a skin is one blit.
-        //
-        // The box is the disc renderSkinShapes clips to (100 authored units,
-        // so four times the art radius), which is the most a skin can paint.
-        // The cache refuses a rotated or mirrored transform for itself, and
-        // falls through to the real painter when it does.
-        const double reach = kFlowerArtRadius * 4.0;
-        // Keyed on the skin's address AND its id, because the catalog can be
-        // replaced wholesale and a fresh allocation is free to land on an
-        // address a retired skin used to have -- and on when it was last
-        // edited, because an edit keeps both and changes the picture.
-        std::uint64_t variant = 1469598103934665603ull;
-        for (const char c : skin->id) variant = (variant ^ static_cast<unsigned char>(c)) * 1099511628211ull;
-        variant = variant * 1099511628211ull + skin->shapes.size();
-        variant = variant * 1099511628211ull + static_cast<std::uint64_t>(skin->editedAt);
-        if (!drawCachedPicture(canvas, skin, variant, -reach, -reach, reach * 2.0, reach * 2.0,
-                               [&](Canvas& bitmap) {
-                                   bitmap.translate(static_cast<float>(reach),
-                                                    static_cast<float>(reach));
-                                   renderSkinShapes(bitmap, skin->shapes, kFlowerArtRadius);
-                               })) {
-            renderSkinShapes(canvas, skin->shapes, kFlowerArtRadius);
-        }
+        paintSkin(canvas, *skin);
         // A worn bandage shows through any body: the face's wrap, over the
         // skin.
         if (wrappedInBandage(entity.faceFlags, entity.equipFlags)) {
@@ -303,6 +283,39 @@ void WorldRenderer::drawFlowerBody(Canvas& canvas, const RemoteEntity& entity,
         return;
     }
     drawDefaultFlower(canvas, entity, timeSeconds);
+}
+
+void WorldRenderer::paintSkin(Canvas& canvas, const CustomSkin& skin) const {
+    // Through the bitmap cache, because a skin is the most expensive thing
+    // on a flower by a wide margin and none of it moves. It is a list of
+    // authored shapes, and every one of them costs a save, a translate, a
+    // path, a fill, usually a stroke with its own join and cap, and a
+    // restore -- eight to fourteen drawing calls each, repainted from
+    // scratch for every skinned flower on screen on every frame. A busy
+    // screen of them ran to thousands of calls a frame on its own. Baked,
+    // a skin is one blit.
+    //
+    // The box is the disc renderSkinShapes clips to (100 authored units,
+    // so four times the art radius), which is the most a skin can paint.
+    // The cache refuses a rotated or mirrored transform for itself, and
+    // falls through to the real painter when it does.
+    const double reach = kFlowerArtRadius * 4.0;
+    // Keyed on the skin's address AND its id, because the catalog can be
+    // replaced wholesale and a fresh allocation is free to land on an
+    // address a retired skin used to have -- and on when it was last
+    // edited, because an edit keeps both and changes the picture.
+    std::uint64_t variant = 1469598103934665603ull;
+    for (const char c : skin.id) variant = (variant ^ static_cast<unsigned char>(c)) * 1099511628211ull;
+    variant = variant * 1099511628211ull + skin.shapes.size();
+    variant = variant * 1099511628211ull + static_cast<std::uint64_t>(skin.editedAt);
+    if (!drawCachedPicture(canvas, &skin, variant, -reach, -reach, reach * 2.0, reach * 2.0,
+                           [&](Canvas& bitmap) {
+                               bitmap.translate(static_cast<float>(reach),
+                                                static_cast<float>(reach));
+                               renderSkinShapes(bitmap, skin.shapes, kFlowerArtRadius);
+                           })) {
+        renderSkinShapes(canvas, skin.shapes, kFlowerArtRadius);
+    }
 }
 
 void WorldRenderer::drawDefaultFlower(Canvas& canvas, const RemoteEntity& entity,

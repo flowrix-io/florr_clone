@@ -27,6 +27,9 @@ inline constexpr double kLightningFallbackDamage = 25.0;
 /// ordinary cooldown is what hands a full one back.
 inline constexpr std::uint8_t kBatteryCharges = 3;
 inline constexpr double kBatteryStrikeIntervalMillis = 500.0;
+/// A battery's discharge lands three times the strike a lightning petal of its
+/// tier would: it is three charges and done, so each one has to count.
+inline constexpr double kBatteryStrikeScale = 3.0;
 
 /// How far apart a worn lightning cutter's strikes are: 500 ms, so at most
 /// twice a second. The limiter is per PLAYER rather than per petal, so a second
