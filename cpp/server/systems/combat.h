@@ -815,9 +815,17 @@ private:
     ///
     /// `skip`, when given, leaves out the shots it names (see ShotSkip) a run
     /// of them at a time rather than one candidate at a time.
+    ///
+    /// `overlapping` asks the grid for only the bodies whose filed circle
+    /// overlaps the disc (SpatialGrid::queryOverlapping) instead of its whole
+    /// cells. For a caller whose victims need overlap with a disc that holds
+    /// its whole reach, and that sorts what it finds -- the projectile pass;
+    /// not a field, whose reach is not the filed radius and which spends
+    /// itself in candidate order.
     struct ShotSkip;
     void queryBodies(const SpatialGrid& grid, Realm realm, Vec2 center, double radius,
-                     std::vector<Entity>& out, const ShotSkip* skip = nullptr);
+                     std::vector<Entity>& out, const ShotSkip* skip = nullptr,
+                     bool overlapping = false);
     /// Appends every filed shot that could overlap the circle -- candidates,
     /// as a grid query returns, for the caller's exact test -- less those
     /// `skip` names. What it does append comes in the order it would without

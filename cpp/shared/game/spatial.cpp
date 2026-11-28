@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include "shared/game/realm.h"
 #include "shared/game/terrain.h"
@@ -46,6 +47,7 @@ SpatialGrid::SpatialGrid(double cellSize) {
         Layer& layer = layers_[static_cast<std::size_t>(i)];
         fitLayer(layer.cols, layer.rows, layer.buckets, layer.bucketEpoch, span, invCellSize_,
                  span > 0.0 ? kMaxAxisCells : 1);
+        fitFine(layer);
     }
 }
 
@@ -58,16 +60,26 @@ void SpatialGrid::sizeToRealms(const Terrain& terrain) {
         const bool live = !isWorldRealm(realm) || terrain.hasMap(realm);
         fitLayer(layer.cols, layer.rows, layer.buckets, layer.bucketEpoch,
                  terrain.realmSize(realm), invCellSize_, live ? kMaxAxisCells : 1);
+        fitFine(layer);
     }
     // Every bucket is new or reused, and any that was reused may still hold
     // last tick's entities under a live epoch. Retire the lot.
     epoch_ = 1;
     for (Layer& layer : layers_) {
         std::fill(layer.bucketEpoch.begin(), layer.bucketEpoch.end(), 0);
+        std::fill(layer.fineEpoch.begin(), layer.fineEpoch.end(), 0);
     }
     std::fill(filed_.begin(), filed_.end(), 0);
     refiled_ = false;
     inserted_ = 0;
+    fineEpoch_ = 0;
+    fineUsed_ = 0;
+}
+
+void SpatialGrid::fitFine(Layer& layer) {
+    if (layer.fineEpoch.size() == layer.buckets.size()) return;
+    layer.fineEpoch.assign(layer.buckets.size(), 0);
+    layer.fineSlot.assign(layer.buckets.size(), 0);
 }
 
 int SpatialGrid::cellIndex(double offset, double invCellSize, int axisCells) {
@@ -88,9 +100,11 @@ void SpatialGrid::clear() {
         // session; cheap enough that it does not need to be.
         for (Layer& layer : layers_) {
             std::fill(layer.bucketEpoch.begin(), layer.bucketEpoch.end(), 0);
+            std::fill(layer.fineEpoch.begin(), layer.fineEpoch.end(), 0);
         }
         std::fill(filed_.begin(), filed_.end(), 0);
         epoch_ = 1;
+        fineEpoch_ = 0;
     }
 }
 
@@ -126,6 +140,8 @@ void SpatialGrid::insert(Entity e, Realm realm, Vec2 position, double radius) {
                 target.bucketEpoch[b] = epoch_;
             }
             target.buckets[b].push_back(e);
+            // A split made before this insert no longer holds the bucket.
+            target.fineEpoch[b] = 0;
         }
     }
     ++inserted_;
@@ -189,6 +205,123 @@ void SpatialGrid::queryRect(Realm realm, Vec2 min, Vec2 max, std::vector<Entity>
                 *write++ = e;
             }
             out.resize(static_cast<std::size_t>(write - out.data()));
+        }
+    }
+}
+
+int SpatialGrid::fineIndex(double offset) const {
+    return cellIndex(offset, invCellSize_ * kFineSplit, kFineSplit);
+}
+
+const SpatialGrid::FineBucket& SpatialGrid::fineBucket(const Layer& source, std::size_t bucket,
+                                                       int cx, int cy) const {
+    if (fineEpoch_ != epoch_) {
+        fineEpoch_ = epoch_;
+        fineUsed_ = 0;
+    }
+    if (source.fineEpoch[bucket] == epoch_) return fine_[source.fineSlot[bucket]];
+
+    if (fineUsed_ == fine_.size()) fine_.emplace_back();
+    const std::size_t slot = fineUsed_++;
+    source.fineEpoch[bucket] = epoch_;
+    source.fineSlot[bucket] = static_cast<std::uint32_t>(slot);
+    FineBucket& split = fine_[slot];
+
+    // Sub-cells are counted from the bucket's own corner and clamped into it,
+    // as the bucket's are clamped into the layer: whatever sits past an edge
+    // shares the edge's sub-cells, and the part of a circle in the bucket next
+    // door is that bucket's to file.
+    const Vec2 corner{cx * cellSize_, cy * cellSize_};
+    const std::vector<Entity>& members = source.buckets[bucket];
+    const auto span = [&](const FiledCircle& circle, int& x0, int& x1, int& y0, int& y1) {
+        // insert()'s own clamp, so a sub-cell covers what its bucket does.
+        const double r = std::isfinite(circle.radius) && circle.radius > 0.0 ? circle.radius : 0.0;
+        x0 = fineIndex(circle.position.x - r - corner.x);
+        x1 = fineIndex(circle.position.x + r - corner.x);
+        y0 = fineIndex(circle.position.y - r - corner.y);
+        y1 = fineIndex(circle.position.y + r - corner.y);
+    };
+
+    // A counting sort: counted one sub-cell along, so that once summed each
+    // entry is where its own sub-cell starts.
+    split.start.fill(0);
+    for (const Entity e : members) {
+        int x0, x1, y0, y1;
+        span(filedCircles_[entityIndex(e)], x0, x1, y0, y1);
+        for (int sy = y0; sy <= y1; ++sy) {
+            for (int sx = x0; sx <= x1; ++sx) ++split.start[sy * kFineSplit + sx + 1];
+        }
+    }
+    for (int c = 1; c <= kFineCells; ++c) split.start[c] += split.start[c - 1];
+    split.entries.resize(split.start[kFineCells]);
+    std::array<std::uint32_t, kFineCells> cursor;
+    std::copy(split.start.begin(), split.start.begin() + kFineCells, cursor.begin());
+    for (const Entity e : members) {
+        const FiledCircle& circle = filedCircles_[entityIndex(e)];
+        int x0, x1, y0, y1;
+        span(circle, x0, x1, y0, y1);
+        const double reach = std::isnan(circle.radius)
+                                 ? std::numeric_limits<double>::infinity()
+                                 : std::max(0.0, circle.radius);
+        for (int sy = y0; sy <= y1; ++sy) {
+            for (int sx = x0; sx <= x1; ++sx) {
+                split.entries[cursor[sy * kFineSplit + sx]++] = FineEntry{e, circle.position, reach};
+            }
+        }
+    }
+    return split;
+}
+
+void SpatialGrid::queryOverlapping(Realm realm, Vec2 center, double radius,
+                                   std::vector<Entity>& out) const {
+    // Filed twice, no one circle is an entity's: query()'s superset is what
+    // is left to give.
+    if (refiled_) {
+        query(realm, center, radius, out);
+        return;
+    }
+    out.clear();
+    if (!std::isfinite(center.x) || !std::isfinite(center.y)) return;
+    if (!std::isfinite(radius) || radius < 0.0) radius = 0.0;
+
+    const Layer& source = layer(realm);
+    const Vec2 min{center.x - radius, center.y - radius};
+    const Vec2 max{center.x + radius, center.y + radius};
+    const int x0 = cellX(realm, min.x);
+    const int x1 = cellX(realm, max.x);
+    const int y0 = cellY(realm, min.y);
+    const int y1 = cellY(realm, max.y);
+
+    // Every answer is stamped, because a body touching two sub-cells or two
+    // buckets is under both -- but only once it has passed the overlap test,
+    // which is what turns most entries away.
+    if (++queryEpoch_ == 0) {
+        std::fill(stamp_.begin(), stamp_.end(), 0);
+        queryEpoch_ = 1;
+    }
+    for (int cy = y0; cy <= y1; ++cy) {
+        for (int cx = x0; cx <= x1; ++cx) {
+            const std::size_t b = source.bucketAt(cx, cy);
+            if (source.bucketEpoch[b] != epoch_) continue;   // last tick's contents
+            const FineBucket& split = fineBucket(source, b, cx, cy);
+            const Vec2 corner{cx * cellSize_, cy * cellSize_};
+            const int sx0 = fineIndex(min.x - corner.x);
+            const int sx1 = fineIndex(max.x - corner.x);
+            const int sy0 = fineIndex(min.y - corner.y);
+            const int sy1 = fineIndex(max.y - corner.y);
+            for (int sy = sy0; sy <= sy1; ++sy) {
+                const std::uint32_t begin = split.start[sy * kFineSplit + sx0];
+                const std::uint32_t end = split.start[sy * kFineSplit + sx1 + 1];
+                for (std::uint32_t i = begin; i < end; ++i) {
+                    const FineEntry& entry = split.entries[i];
+                    const double reach = radius + entry.reach;
+                    if (distanceSq(entry.position, center) > reach * reach) continue;
+                    const std::uint32_t idx = entityIndex(entry.entity);
+                    if (stamp_[idx] == queryEpoch_) continue;   // another of its cells
+                    stamp_[idx] = queryEpoch_;
+                    out.push_back(entry.entity);
+                }
+            }
         }
     }
 }

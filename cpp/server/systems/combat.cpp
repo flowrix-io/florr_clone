@@ -3605,6 +3605,15 @@ void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
         // nothing this leaves out. It used to add the tick's travel on top, a
         // leftover from when the query was centred on the head: for a fast
         // shot that more than doubled the area searched for nothing.
+        //
+        // And only the bodies whose filed circle reaches that disc, not the
+        // main grid's whole 600-unit cells: those handed every shot in a crowd
+        // a hundred-odd petals, flowers and mobs to turn away for its one or
+        // two hits, and turning them away was most of what this pass cost.
+        // The disc holds every point of the segment, so a body that reaches
+        // the segment reaches it; the pad covers a body combat has pushed
+        // since it was filed, as it always has. The impacts are sorted below,
+        // so the order the candidates come in decides nothing.
         const Vec2 flown = shot.position - shot.from;
         const double flownLength = flown.length();
         const Vec2 midpoint = shot.from + flown * 0.5;
@@ -3620,7 +3629,7 @@ void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
         const Entity shooter = self != nullptr ? self->player : NULL_ENTITY;
         const ShotSkip skip = self != nullptr ? shotSkip(world, *self) : ShotSkip{};
         queryBodies(grid, shot.realm, midpoint, shot.radius + flownLength * 0.5 + kBroadphasePad,
-                    candidates_, &skip);
+                    candidates_, &skip, /*overlapping=*/true);
 
         // Gathered whole before a single hit lands. The loop below marks
         // victims Dead and that relocates their rows, so nothing here may hold
@@ -4262,8 +4271,9 @@ bool CombatSystem::phaseSidesRefuse(const World& world, Entity source, Entity vi
 }
 
 void CombatSystem::queryBodies(const SpatialGrid& grid, Realm realm, Vec2 center, double radius,
-                               std::vector<Entity>& out, const ShotSkip* skip) {
-    grid.query(realm, center, radius, out);
+                               std::vector<Entity>& out, const ShotSkip* skip, bool overlapping) {
+    if (overlapping) grid.queryOverlapping(realm, center, radius, out);
+    else grid.query(realm, center, radius, out);
     // The server's grid files no shots, but a focused simulation that builds
     // its grid from every body does -- and must not be handed a shot twice.
     if (!filedShots_.empty()) {
