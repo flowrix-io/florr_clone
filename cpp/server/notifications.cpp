@@ -22,7 +22,10 @@ constexpr std::size_t kNotificationHistory = 1000;
 // tags are real.
 net::NotificationKind notificationKind(const std::string& type) {
     if (type == "super_craft") return net::NotificationKind::SuperCraft;
-    if (type == "unique_craft") return net::NotificationKind::UniqueCraft;
+    // The database tags an eternal craft unique_craft, eternal's old name, as
+    // it files eternal items under "unique"; eternal_craft, which rows were
+    // briefly written with, still reads.
+    if (type == "unique_craft" || type == "eternal_craft") return net::NotificationKind::EternalCraft;
     if (type == "apex_craft") return net::NotificationKind::ApexCraft;
     if (type == "star_code") return net::NotificationKind::StarCode;
     if (type == "universal_craft") return net::NotificationKind::UniversalCraft;

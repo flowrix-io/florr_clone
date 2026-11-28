@@ -52,6 +52,10 @@ constexpr double kMinSpawnIntervalMillis = 50.0;
 /// Poison the JSON writes per millisecond; a full second's worth is the cap.
 constexpr double kMaxPoisonPerMillis = 1000.0;
 
+/// Exact reflection overrides may amplify damage, while still rejecting
+/// unbounded authored multipliers. The legacy linear curve remains capped at 1.
+constexpr double kMaxReflectionDamageMultiplier = 1000.0;
+
 /// A weaving shot crosses its own axis twice per cycle, and the server steps
 /// 30 times a second. Fifteen cycles a second is the Nyquist point, where the
 /// weave aliases into a straight line with jitter on it; a third of that still
@@ -347,6 +351,57 @@ std::uint16_t parseEquipFlags(const std::string& text) {
 // ---------------------------------------------------------------------------
 // Nested specs
 // ---------------------------------------------------------------------------
+
+ProjectileReflectionSpec parseProjectileReflection(Ctx& ctx, const Json& owner) {
+    ProjectileReflectionSpec spec;
+    if (!owner.contains("projectileReflection")) return spec;
+    const Json& node = owner["projectileReflection"];
+    if (!node.isObject()) {
+        ctx.warn(std::string("projectileReflection is ") + typeName(node) +
+                 ", not an object; ignored");
+        return spec;
+    }
+    spec.present = true;
+    spec.speedMultiplier = ctx.range(node, "speedMultiplier", 1.5, 1.0, 10.0);
+    spec.speedMultiplierPerRarity =
+        ctx.range(node, "speedMultiplierPerRarity", 0.25, 0.0, 1.0);
+    spec.damageMultiplier = ctx.range(node, "damageMultiplier", 0.1, 0.0, 1.0);
+    spec.damageMultiplierPerRarity =
+        ctx.range(node, "damageMultiplierPerRarity", 0.1, 0.0, 1.0);
+    spec.damageCap = ctx.range(node, "damageCap", 0.0, 0.0, kMaxBaseStat);
+    if (node.contains("damageMultiplierByRarity")) {
+        const Json& shares = node["damageMultiplierByRarity"];
+        if (!shares.isObject()) {
+            ctx.warn(std::string("damageMultiplierByRarity is ") + typeName(shares) +
+                     ", not an object; ignored");
+        } else {
+            for (int tier = 0; tier < kLadderRarityCount; ++tier) {
+                const char* name = kRarityNames[static_cast<std::size_t>(tier)];
+                if (!shares.contains(name)) continue;
+                const double fallback = std::min(1.0, spec.damageMultiplier +
+                                                       spec.damageMultiplierPerRarity * tier);
+                spec.damageMultiplierByRarity[static_cast<std::size_t>(tier)] =
+                    ctx.range(shares, name, fallback, 0.0, kMaxReflectionDamageMultiplier);
+            }
+        }
+    }
+    spec.reloadDivisorPerRarity =
+        ctx.range(node, "reloadDivisorPerRarity", 1.35, 1.0, 2.0);
+    if (node.contains("reloadReductionMillisByRarity")) {
+        const Json& reductions = node["reloadReductionMillisByRarity"];
+        if (!reductions.isObject()) {
+            ctx.warn(std::string("reloadReductionMillisByRarity is ") + typeName(reductions) +
+                     ", not an object; ignored");
+        } else {
+            for (int tier = 0; tier < kRarityCount; ++tier) {
+                const char* name = kRarityNames[static_cast<std::size_t>(tier)];
+                spec.reloadReductionMillisByRarity[static_cast<std::size_t>(tier)] =
+                    ctx.range(reductions, name, 0.0, 0.0, kMaxDurationMillis);
+            }
+        }
+    }
+    return spec;
+}
 
 ProjectileSpec parseProjectile(Ctx& ctx, const Json& owner,
                                const std::unordered_map<std::string, std::uint16_t>* petalIds,
@@ -774,19 +829,19 @@ void parseMobGroups(Ctx& ctx, MobConfig& m, std::uint16_t mobIndex, const Json& 
 
 /// The mandatory `xp` table: what killing this mob is worth, per tier.
 ///
-/// Every tier from common to unique must be there and must be a finite,
+/// Every tier from common to eternal must be there and must be a finite,
 /// non-negative number. It used to live in its own file (cpp/data/mob_xp.json)
 /// where a mob could simply be missing, and eleven of them were -- silently
-/// worth one XP at every tier including unique, which reads as a balance
+/// worth one XP at every tier including eternal, which reads as a balance
 /// decision and never was one. Requiring it here means a new mob cannot be
 /// added without saying what it is worth.
 ///
-/// Apex is the ONE derived tier: the tables stop at unique, and apex is a 3x
-/// step above unique everywhere else in the game, so deriving it keeps an apex
+/// Apex is the ONE derived tier: the tables stop at eternal, and apex is a 3x
+/// step above eternal everywhere else in the game, so deriving it keeps an apex
 /// kill from paying the same as a common one without asking every entry to
 /// write the multiplication out.
 std::array<double, kLadderRarityCount> parseXp(Ctx& ctx, const Json& src) {
-    constexpr std::size_t kUnique = static_cast<std::size_t>(Rarity::Unique);
+    constexpr std::size_t kEternal = static_cast<std::size_t>(Rarity::Eternal);
     constexpr std::size_t kApex = static_cast<std::size_t>(Rarity::Apex);
     std::array<double, kLadderRarityCount> xp{};
     xp.fill(1.0);
@@ -801,7 +856,7 @@ std::array<double, kLadderRarityCount> parseXp(Ctx& ctx, const Json& src) {
         ctx.fail(std::string("xp is ") + typeName(row) + ", not an object");
         return xp;
     }
-    for (std::size_t i = 0; i <= kUnique; ++i) {
+    for (std::size_t i = 0; i <= kEternal; ++i) {
         const char* tier = kRarityNames[i];
         if (!row.contains(tier)) {
             ctx.fail(std::string("xp has no ") + tier + " tier");
@@ -820,9 +875,9 @@ std::array<double, kLadderRarityCount> parseXp(Ctx& ctx, const Json& src) {
         xp[i] = v;
     }
     if (row.contains("apex")) {
-        ctx.warn("xp names an apex tier; apex is derived as 3x unique and the value is ignored");
+        ctx.warn("xp names an apex tier; apex is derived as 3x eternal and the value is ignored");
     }
-    xp[kApex] = xp[kUnique] * 3.0;
+    xp[kApex] = xp[kEternal] * 3.0;
     return xp;
 }
 
@@ -979,6 +1034,44 @@ NpcSpec parseNpcSpec(Ctx& ctx, const Json& owner,
                     return out;
                 };
                 AssemblyRecipe recipe;
+                // A malformed restriction must not broaden a recipe's access.
+                if (entry.contains("availableAtEveryStation") &&
+                    !entry["availableAtEveryStation"].isBool()) {
+                    ctx.warn(where + " availableAtEveryStation is not a boolean; dropped");
+                    continue;
+                }
+                recipe.availableAtEveryStation = ctx.boolean(entry, "availableAtEveryStation");
+                const auto readTier = [&](const char* key, Rarity& out) {
+                    if (!entry.contains(key)) return true;
+                    if (entry[key].isString() && tryParseRarity(entry[key].stringRef(), out) &&
+                        rarityIndex(out) < kLadderRarityCount) return true;
+                    ctx.warn(where + " " + key + " is not a ladder rarity; dropped");
+                    return false;
+                };
+                if (!readTier("minRarity", recipe.minRarity) ||
+                    !readTier("maxRarity", recipe.maxRarity)) continue;
+                if (rarityIndex(recipe.minRarity) > rarityIndex(recipe.maxRarity)) {
+                    ctx.warn(where + " minRarity exceeds maxRarity; dropped");
+                    continue;
+                }
+                if (entry.contains("maps")) {
+                    const Json& maps = entry["maps"];
+                    bool validMaps = maps.isArray() && maps.size() > 0;
+                    if (validMaps) {
+                        for (std::size_t k = 0; k < maps.size(); ++k) {
+                            const Json& map = maps[k];
+                            if (!map.isString() || map.stringRef().empty()) {
+                                validMaps = false;
+                                break;
+                            }
+                            recipe.maps.push_back(map.stringRef());
+                        }
+                    }
+                    if (!validMaps) {
+                        ctx.warn(where + " maps is not a nonempty list of map ids; dropped");
+                        continue;
+                    }
+                }
                 const Json& from = entry["from"];
                 for (std::size_t k = 0; k < from.size(); ++k) {
                     recipe.inputs.push_back(stack(from[k], "input"));
@@ -1264,6 +1357,7 @@ PetalConfig parsePetal(Ctx& ctx, const std::string& id, const Json& src,
     p.price = ctx.required(src, "price", 0.0, kMaxBaseStat);
 
     p.damage = ctx.range(src, "damage", 0.0, -kMaxBaseStat, kMaxBaseStat);
+    p.damageFromMobBody = ctx.boolean(src, "damageFromMobBody");
 
     // A missing or null health is not a petal with no hit points -- ten
     // entries use it to mean "this thing has no health pool at all" (pure
@@ -1291,6 +1385,7 @@ PetalConfig parsePetal(Ctx& ctx, const std::string& id, const Json& src,
 
     p.knockback = ctx.range(src, "knockback", p.knockback, -kMaxBaseStat, kMaxBaseStat);
     p.projectile = parseProjectile(ctx, src, nullptr, &mobIds);
+    p.projectileReflection = parseProjectileReflection(ctx, src);
     p.range = ctx.range(src, "range", 0.0, 0.0, kWorldSize);
     p.bodyDamage = ctx.range(src, "bodyDamage", 0.0, 0.0, kMaxBaseStat);
     p.armorReduction = ctx.range(src, "armorReduction", 0.0, 0.0, kMaxBaseStat);
@@ -1382,6 +1477,7 @@ PetalConfig parsePetal(Ctx& ctx, const std::string& id, const Json& src,
     p.petCountMax = ctx.integer(src, "petCountMax", p.petCount, p.petCount, 64);
     p.petLifetimeMillis = ctx.range(src, "petLifetimeMs", 0.0, 0.0, kMaxDurationMillis);
     p.petManaCost = ctx.range(src, "petManaCost", 0.0, 0.0, kMaxBaseStat);
+    p.petSummonIntervalScale = ctx.range(src, "petSummonIntervalScale", 1.0, 0.01, 100.0);
 
     p.slowFactor = ctx.range(src, "slowFactor", 1.0, 0.0, 1.0);
     p.slowDurationMillis = ctx.range(src, "slowDuration", 0.0, 0.0, kMaxDurationMillis);
@@ -1507,10 +1603,10 @@ PetalConfig eggPetal(const std::string& mobId, const MobConfig& mob,
 
 /// Multiplicative modifier scaled for a tier.
 ///
-/// The bonus is the distance from 1.0, so a +10% at common is +40% at unique.
+/// The bonus is the distance from 1.0, so a +10% at common is +40% at eternal.
 /// A multiplier at or below zero is a sign flip or an off switch and is left
 /// alone -- yin_yang reverses the ring with -1, and scaling that would spin
-/// the ring at -4x by unique.
+/// the ring at -4x by eternal.
 double scaledMultiplier(double value, double scale) {
     if (value <= 0.0) return value;
     return 1.0 + (value - 1.0) * scale;
@@ -1938,7 +2034,9 @@ MobStats buildMobStats(const MobConfig& c, Rarity r) {
 
 PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
     // Universal reads everything below at apex, `tier`, except health and
-    // damage, which take `strength` -- apex's times sqrt(2).
+    // damage, which take `strength` -- apex's times sqrt(2). Projectile
+    // reflection is an explicit exception: its curves use the actual rarity,
+    // with optional reload reductions for individually named tiers.
     const Rarity graded = clampRarity(rarityIndex(r));
     const Rarity tier = ladderRarity(graded);
     const double strength = petalStrengthScale(graded == Rarity::Admin ? Rarity::Universal : graded);
@@ -1967,6 +2065,24 @@ PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
     // A fraction of the damage dealt, and that damage already climbs.
     s.lifesteal = c.lifesteal;
     s.reloadMillis = c.cooldownMillis;
+    if (c.projectileReflection.present) {
+        const double reflectionTier = rarityIndex(graded);
+        s.reflectionSpeedMultiplier = c.projectileReflection.speedMultiplier +
+            c.projectileReflection.speedMultiplierPerRarity * reflectionTier;
+        s.reflectionDamageMultiplier = std::min(1.0, c.projectileReflection.damageMultiplier +
+            c.projectileReflection.damageMultiplierPerRarity * ladderIndex(graded));
+        const auto& exactShare = c.projectileReflection.damageMultiplierByRarity[
+            static_cast<std::size_t>(ladderIndex(graded))];
+        if (exactShare) s.reflectionDamageMultiplier = *exactShare;
+        s.reflectionDamageCap = c.projectileReflection.damageCap * strength;
+        s.reloadMillis /= std::pow(c.projectileReflection.reloadDivisorPerRarity,
+                                   reflectionTier);
+        const double reloadReduction = c.projectileReflection.reloadReductionMillisByRarity[
+            static_cast<std::size_t>(rarityIndex(graded))];
+        if (reloadReduction > 0.0) {
+            s.reloadMillis = std::max(1.0, s.reloadMillis - reloadReduction);
+        }
+    }
     if (c.id == "yggdrasil") {
         // TypeScript overrides every row: it is always a 1/1 petal and its
         // cooldown halves at each rarity from 512 seconds.

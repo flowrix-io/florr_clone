@@ -4,6 +4,10 @@
 #include "server/game_server.h"
 
 #include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <string>
+#include <utility>
 #include <vector>
 
 #include "server/game_server_internal.h"
@@ -101,12 +105,18 @@ void GameServer::bankPickups() {
         // is now the only holder. An admin's is outside that rule, as an
         // admin's forge is (tracksUniversals): nobody's is taken for it.
         const bool universal = pickup.rarity == Rarity::Universal;
-        PlayerRecord& record = liveRecord(*session);
-        if (universal && holdsUniversal(record, pickup.petalIndex)) continue;
+        // Read, not taken: taking the account's row mutably drops what it
+        // keeps rendered for the journal, and the credit below keeps it.
+        if (universal && holdsUniversal(viewRecord(*session), pickup.petalIndex)) continue;
 
         // Into the bag the body is playing with: an arena pickup is the run's,
-        // not the account's, until the run ends.
-        giveToInventory(record, pickup.petalIndex, pickup.rarity, 1);
+        // not the account's, until the run ends. The account's goes through
+        // Database::addItem, which keeps the other tiers of the row rendered.
+        if (session->eventKit || session->arena) {
+            giveToInventory(liveRecord(*session), pickup.petalIndex, pickup.rarity, 1);
+        } else {
+            database_.addItem(session->userId, pickup.rarity, inventoryKey(pickup.petalIndex), 1);
+        }
         if (session->eventKit) enforceHostedRules(*session);
         database_.markDirty();
 
@@ -143,6 +153,7 @@ void GameServer::bankKills() {
         if (death.killer == NULL_ENTITY || !world_.isAlive(death.killer) ||
             !world_.has<PlayerTag>(death.killer)) {
             announceBossDefeat(death.entity, *type, {});
+            reportBossDamage(death.entity, *type);
             continue;
         }
 
@@ -150,7 +161,7 @@ void GameServer::bankKills() {
         // LOOT rights on the corpse, not to the finisher alone: five flowers
         // that bring down an apex are five apex kills and five lots of 250
         // stars. Same ledger and the same selectLootRecipients() the XP and
-        // drop paths call -- squads, per-tier slot cap and 3% damage floor
+        // drop paths call -- squads, per-tier slot cap and damage floor
         // included -- so the three cannot disagree about who was in on a kill.
         ranked.clear();
         if (const Bounty* bounty = world_.tryGet<Bounty>(death.entity)) {
@@ -169,7 +180,7 @@ void GameServer::bankKills() {
                          });
         const Health* health = world_.tryGet<Health>(death.entity);
         selectLootRecipients(ranked, lootSlotsForRarity(type->rarity), &squadIndex_, recipients,
-                             lootDamageFloor(health != nullptr ? health->max : 0.0));
+                             lootDamageFloor(health != nullptr ? health->max : 0.0, type->rarity));
 
         const std::string mobId = content().mob(type->configIndex).id;
         const int stars = starsForKill(type->rarity);
@@ -205,8 +216,13 @@ void GameServer::bankKills() {
                 shCreditKill(session->userId, mobId, type->rarity, stars);
                 continue;
             }
-            PlayerRecord& record = session->eventKit ? *session->eventKit : database_.progress(session->userId);
-            record.recordKill(mobId, type->rarity);
+            // Through the database's own recordKill for the account: it keeps
+            // the rest of the row rendered, and a farming flower's row is
+            // written to the journal on every kill.
+            PlayerRecord& record = session->eventKit
+                                       ? *session->eventKit
+                                       : database_.recordKill(session->userId, mobId, type->rarity);
+            if (session->eventKit) record.recordKill(mobId, type->rarity);
 
             // Stars are the mythic-and-above bounty. Awarded on the live entity
             // rather than the record so the HUD sees them this tick;
@@ -231,6 +247,70 @@ void GameServer::bankKills() {
         }
 
         announceBossDefeat(death.entity, *type, ranked);
+        reportBossDamage(death.entity, *type);
+    }
+}
+
+namespace {
+
+/// 950, 12.3k, 450k, 55m, 1.2b: whole units from ten up, one decimal below
+/// that, in thousands, millions, billions or trillions. Rounded down, so a
+/// figure never reads as more than was dealt.
+std::string compactDamage(double value) {
+    static constexpr struct { double scale; const char* suffix; } kSteps[] = {
+        {1e12, "t"}, {1e9, "b"}, {1e6, "m"}, {1e3, "k"}, {1.0, ""},
+    };
+    value = std::max(0.0, value);
+    char buffer[32];
+    for (const auto& step : kSteps) {
+        if (value < step.scale && step.scale > 1.0) continue;
+        const double scaled = value / step.scale;
+        const double tenths = std::floor(scaled * 10.0) / 10.0;
+        if (scaled >= 10.0 || step.scale == 1.0 || tenths == std::floor(tenths)) {
+            std::snprintf(buffer, sizeof buffer, "%.0f%s", std::floor(scaled), step.suffix);
+        } else {
+            std::snprintf(buffer, sizeof buffer, "%.1f%s", tenths, step.suffix);
+        }
+        return buffer;
+    }
+    return "0";
+}
+
+} // namespace
+
+void GameServer::reportBossDamage(Entity mob, const MobType& type) {
+    if (type.rarity != Rarity::Super && type.rarity != Rarity::Apex) return;
+    // A summon is a flower's, and a centipede's beads each die on their own
+    // ledger: the head's line is the animal's, as the defeat line is.
+    if (world_.has<Pet>(mob)) return;
+    if (content().mob(type.configIndex).chainBody) return;
+    const Bounty* bounty = world_.tryGet<Bounty>(mob);
+    if (bounty == nullptr) return;
+
+    // One line per PERSON: a splitter's two halves are two rows of the same
+    // account, and what they dealt is one figure.
+    std::vector<std::pair<net::ConnectionId, double>> dealt;
+    for (const Bounty::Share& share : bounty->contributors) {
+        if (share.damage <= 0.0) continue;
+        if (world_.isAlive(share.player) && !world_.has<PlayerTag>(share.player)) continue;
+        const Session* session = creditedSession(share.player);
+        if (session == nullptr || !session->authenticated()) continue;
+        auto row = std::find_if(dealt.begin(), dealt.end(), [&](const auto& entry) {
+            return entry.first == session->connection;
+        });
+        if (row == dealt.end()) dealt.emplace_back(session->connection, share.damage);
+        else row->second += share.damage;
+    }
+    if (dealt.empty()) return;
+
+    const std::string target = std::string(rarityLabel(type.rarity)) + " " +
+                               content().mob(type.configIndex).name;
+    for (const auto& [connectionId, damage] : dealt) {
+        net::Connection* connection = listener_.find(connectionId);
+        if (connection == nullptr) continue;
+        sendChatTo(*connection, net::ChatChannel::System, "",
+                   "<b style=\"color: #6666ff;\">You dealt " + compactDamage(damage) +
+                       " damage to the " + target + ".</b>");
     }
 }
 
@@ -243,13 +323,13 @@ void GameServer::announceBossDefeat(Entity mob, const MobType& type,
     if (rarityIndex(type.rarity) < rarityIndex(kAnnouncedRarity)) return;
     // Nor does a prestige biome's super, whose spawn was never announced
     // either: there it is the bands' everyday stock (shared/game/prestige.h).
-    // Nor a wave's, below unique, for the same reason (announceIfNotable).
+    // Nor a wave's, below eternal, for the same reason (announceIfNotable).
     // Nor a super born on ground that grows them as everyday stock
     // (kQuietBossChance): its spawn was silent, so its defeat is.
     if (world_.has<QuietBoss>(mob)) return;
     if (const Transform* at = world_.tryGet<Transform>(mob)) {
         if (worldMaps_.isPrestige(at->realm)) return;
-        if (at->realm == kWavesRealm && rarityIndex(type.rarity) < rarityIndex(Rarity::Unique)) {
+        if (at->realm == kWavesRealm && rarityIndex(type.rarity) < rarityIndex(Rarity::Eternal)) {
             return;
         }
     }

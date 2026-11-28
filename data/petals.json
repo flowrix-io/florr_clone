@@ -160,7 +160,7 @@
         "count": 1,
         "image": "<svg width=\"40\" height=\"40\" viewBox=\"-20 -20 40 40\" xmlns=\"http://www.w3.org/2000/svg\">\n  <path d=\"M 15 0 Q 11.087 4.592 10.607 10.607 Q 4.592 11.087 0 15 Q -4.592 11.087 -10.607 10.607 Q -11.087 4.592 -15 0 Q -11.087 -4.592 -10.607 -10.607 Q -4.592 -11.087 0 -15 Q 4.592 -11.087 10.607 -10.607 Q 11.087 -4.592 15 0 Z\"\n        fill=\"#38c75f\"\n        stroke=\"#2d9f4c\"\n        stroke-width=\"3\"\n        stroke-linecap=\"round\"\n        stroke-linejoin=\"round\" />\n  <circle cx=\"0\"\n          cy=\"0\"\n          r=\"8\"\n          fill=\"#74d68f\" />\n</svg>",
         "playerModifiers": {
-            "maxHealth": 1.1
+            "maxHealth": 1.3
         },
         "isAdminPetal": false
     },
@@ -694,7 +694,7 @@
     "peas": {
         "name": "Peas",
         "damage": 2.5,
-        "health": 10,
+        "health": 3.333333,
         "size": 1,
         "cooldown": 1000,
         "price": 10,
@@ -858,17 +858,17 @@
     },
     "rainbow": {
         "name": "Rainbow",
-        "damage": 10,
-        "health": 100,
+        "damage": 1,
+        "health": 1,
         "size": 2,
-        "cooldown": 1000,
+        "cooldown": 20000,
         "price": 10,
         "description": "Gas but more powerful",
         "color": "#000000",
         "count": 1,
         "image": "<svg width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" xmlns=\"http://www.w3.org/2000/svg\">\n  <circle cx=\"16\" cy=\"16\" r=\"16\">\n    <animate \n      attributeName=\"fill\" \n      values=\"#ff0000;#ff7f00;#ffff00;#00ff00;#0000ff;#4b0082;#9400d3;#ff0000\" \n      dur=\"4s\" \n      repeatCount=\"indefinite\" \n    />\n  </circle>\n</svg>\n",
         "projectile": {
-            "count": 10,
+            "count": 2,
             "distance": 500,
             "speed": 1600,
             "spreadAngle": 1
@@ -1427,7 +1427,8 @@
         "petMobRarity": "common",
         "petCount": 1,
         "petLifetimeMs": 20000,
-        "petManaCost": 16.666667,
+        "petManaCost": 5.555556,
+        "petSummonIntervalScale": 0.25,
         "image": "<svg width=\"32\" height=\"32\" viewBox=\"-9.5 -13.5 17 27\" xmlns=\"http://www.w3.org/2000/svg\"><g fill=\"none\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M 0 10 L 0 0 L 4 -7 M 0 0 L -6 -10\" stroke=\"#35B8C6\" stroke-width=\"7\" /><path d=\"M 0 10 L 0 0 L 4 -7 M 0 0 L -6 -10\" stroke=\"#42E3F5\" stroke-width=\"3\" /></g></svg>",
         "isAdminPetal": false
     },
@@ -1727,7 +1728,7 @@
         "projectile": {
             "count": 1,
             "distance": 500,
-            "speed": 600,
+            "speed": 1200,
             "spreadAngle": 0
         },
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"-30.05 -11.65 60.1 23.3\"><g transform=\"scale(0.078)translate(-50 15)rotate(-48)translate(-256 -256)\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M228.063 16.72a9 9 0 00-2.47.5c-16.076 5.625-27.55 10.77-36.155 21.81-6.477 8.313-10.984 18.854-16.063 34.407-11.313-12.292-26.732-22.486-43.875-30.812-23.817-11.568-51.083-19.46-76.156-22.78a9 9 0 00-6.282 16.343c21.685 14.934 40.525 29.268 53.407 43.687 9.964 11.155 16.21 22.01 18.436 33.53-32.89-3.705-62.75 3.47-99.406 23.25a9 9 0 005.125 16.907c34.352-3.265 69.484-3.808 96.563.625 13.54 2.217 25.007 5.723 33.218 10.25 3.168 1.747 5.82 3.57 8 5.532 5.365-8.13 12.033-15.638 19.438-22.22 13.09-11.637 28.792-20.638 45.03-24.094-11.326-18.24-14.138-30.23-12.843-41.5 1.588-13.813 10.567-28.893 22.564-52.344a9 9 0 00-8.53-13.093z\" fill=\"#39b54a\" stroke=\"#2e933c\" stroke-width=\"35\"/><path d=\"M241.969 140.156c-.527-.003-1.062.016-1.595.03-14.925.428-32.515 8.518-46.594 21.033-16.088 14.3-26.977 33.817-26.78 50 .39 32.175 18.688 67.77 47.344 102.124 28.655 34.354 67.3 67.31 106.375 94.72 39.073 27.406 78.66 49.316 108.78 61.936 15.06 6.31 27.857 10.275 36.313 11.5 3.958.574 6.797.448 8.187.188.065-.798.153-1.837.063-3.22-.205-3.113-.814-7.504-1.844-12.75-2.06-10.49-5.772-24.554-10.97-40.812-10.397-32.516-26.75-73.9-47.688-114.937-13.56-26.58-29.085-53.016-46.093-76.814-32.28-39.672-35.592-43.134-38.939-46.438-35.283-30.88-58.4-43.184-81.937-46.25-1.505-.197-3.047-.304-4.625-.314z\" fill=\"#f09148\" stroke=\"#c2753a\" stroke-width=\"35\"/></g></svg>"
@@ -2034,7 +2035,7 @@
         "petMobRandom": true,
         "petCount": 1,
         "petCountMax": 3,
-        "petManaCost": 16.666667,
+        "petManaCost": 5.555556,
         "ignoresMobs": true,
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\"><g transform=\"translate(-.486 1.228)scale(.04686)\"><path d=\"m821.503 174.478-4.913-38.233-34.199-17.549 34.797-16.479 6.131-37.962 26.376 27.948 37.972-5.899-18.395 33.835 17.334 34.267-37.775-7.114zM703.811 333.193l-5.714-43.964-39.41-20.23 40.006-19.03 7.119-43.678 30.454 32.185 43.794-6.744-21.255 38.908 20.017 39.522-43.534-8.19zM270.783 294.4l3.91-29.08-21.793-19.726 28.89-5.348 12.075-26.732 13.96 25.787 29.177 3.195-20.303 21.297 6.065 28.761-26.502-12.743zm244.079 65.376-2.967-22.819-20.421-10.488 20.761-9.83 3.642-22.715 15.808 16.755 22.68-3.533-10.995 20.191 10.33 20.44-22.559-4.21Zm425.464 58.177-2.576-19.77-17.705-9.101 17.996-8.544 3.183-19.65 13.689 14.474 19.675-3.042-9.542 17.487 8.98 17.771-19.576-3.665Zm-833.19 62.006-5.944-14.414-15.29-3.259 11.869-10.097-1.574-15.496 13.335 8.135 14.193-6.259-3.62 15.122 10.368 11.624-15.555 1.203zm759.747-36.615 2.02-15.43-11.481-10.489 15.327-2.805 6.308-14.178 7.475 13.676 15.423 1.712-10.733 11.278 3.213 15.206-14.08-6.701zm-255.059-4.906-1.813-13.709-12.33-6.31 12.558-5.96 2.22-13.657 9.49 10.062 13.663-2.113-6.635 12.144 6.274 12.36-13.619-2.574z\" fill=\"#cce4e0\"/><path d=\"m647.9 6.155-53.6 15.18 48.9 58.34 39-32.49z\" fill=\"#78feff\"/><path d=\"m681.5 46.305-38.9 32.6 48.8 58.47 24.4-50.03z\" fill=\"#0161fe\"/><path d=\"M594.5 20.925 570 71.545l34.2 40.93 39.2-32.9Z\" fill=\"#03b3f7\"/><path d=\"m642.7 78.695-39.2 32.88 34.4 41.1 53.8-15.3z\" fill=\"#04bdf7\"/><path d=\"m671.8 34.645-49.1 20.59 40.2 47.94 30.3-42.78Z\" fill=\"#08b5fd\"/><path d=\"m623.1 55.215-28.5 44.06 21.5 25.6 46.9-22.1Z\" fill=\"#026bfe\"/><path d=\"m553.6 86.645 34.5 41.23-561.13 469.7-16.53-19.9Z\" fill=\"#c87e09\"/><path d=\"m619.7 165.675-34.5-41.1-561.03 469.6 16.5 19.7Z\" fill=\"#884233\"/><path d=\"M504 210.875c-3.4-4.2-10.3-9.6-22.7-12.5-22.4-4.9-36.5 19.6-36.5 19.6s26.5 58.3-21.7 98.6c-2.8 2.3-5.8 4.2-8.7 5.6l-83.9 65.1c30.7 13.8 71.5 20.6 117.4-17.8 72.8-60.9 59.7-152.8 59.7-152.8s-.7-2.5-3.6-5.8m-196.1 97.8c-32.8-8.2-66.3-11-94.7 12.8-66.6 55.8-16.2 131.6-15.8 160.4.5 28.9-24.5 30.3-24.5 30.3s8 12.9 28.9 6.3c20.9-6.4 22.1-36.6 23.6-96.2-.4-18.1-4.3-35.8 2.7-41.6z\" fill=\"#5e8b21\"/><path d=\"M504 210.875c-3.4-4.2-10.3-9.6-22.7-12.5-2.8-.5-5.6-.7-8.1-.5 2.5 6.3 4.3 11.7 5.2 15.5 6.2 25.5 5.6 92.7-34.6 126.2-17.3 14.3-43.2 16.5-69.5 13.8l-43.8 33.9c30.7 13.8 71.5 20.6 117.4-17.8 72.8-60.9 59.7-152.8 59.7-152.8s-.7-2.5-3.6-5.8m-225.9 124.8c-28.7-1.2-50.8 10.5-65.6 28-16 19.1-3.9 70.1-4.9 98.7-1.1 28 6.8 46-34 50.8 2.6 3 11 10.7 28.2 5.3 20.9-6.4 22.1-36.6 23.6-96.2-.4-18.1-2.8-37 2.7-41.6z\" fill=\"#8bcd31\"/><ellipse transform=\"matrix(.4965 .868 -.9673 .2535 0 -5.225)\" ry=\"30.53\" rx=\"21.65\" cy=\"-313.9\" cx=\"347.3\" fill=\"#76ae2a\"/><ellipse transform=\"rotate(50.067 5.594 -2.613)\" ry=\"10.8\" rx=\"9.596\" cy=\"-220.4\" cx=\"482.1\" fill=\"#fff\" opacity=\".851\"/><ellipse transform=\"rotate(50.067 5.594 -2.613)\" rx=\"6.699\" ry=\"7.54\" cy=\"-442.9\" cx=\"445.6\" fill=\"#fff\"/><path d=\"m550.5 156.675 3-72.23 34.4 41.03 34.4 40.8z\" fill=\"#7d3d2f\"/><path fill=\"#9caa94\" d=\"m570.598 70.072 35.574 42.496-16.954 14.192-35.573-42.496z\"/><path fill=\"#738b87\" d=\"m603.784 109.715 35.574 42.496-16.954 14.192-35.574-42.495z\"/></g></svg>"
     },
@@ -2283,5 +2284,39 @@
         "count": 1,
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\"><defs><filter id=\"b\"><feGaussianBlur stdDeviation=\"3.694\"/></filter><path id=\"a\" d=\"M328.37 395.7h-250c-105.24 0-101.21-104.29 0-104.29H525.6c114.04 0 115.1 81.674 0 81.674H78.37c-51.464 0-52.904-60.49 0-60.49h250\"/></defs><g transform=\"translate(.696 -1.17)scale(.04997)\" fill=\"none\" stroke-width=\"12\" stroke-linecap=\"square\"><use href=\"#a\" stroke=\"#000\"/><use href=\"#a\" stroke=\"gray\" filter=\"url(#b)\"/></g></svg>",
         "isAdminPetal": false
+    },
+    "prism_mirror": {
+        "name": "Prism Mirror",
+        "damage": 0,
+        "health": null,
+        "size": 1.25,
+        "cooldown": 3000,
+        "price": 50,
+        "knockback": 0,
+        "description": "Hits harder the more damage your enemies do. Also reflects projectiles.\nAssemble 30 Super or Apex Glass, or 50 Eternal Glass, into one Prism of the same rarity at a Computer Assembler.\nCreator: Itz",
+        "color": "#B8F4FF",
+        "count": 1,
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\">\n  <path d=\"M16 2 26 8 29 20 22 29 10 29 3 20 6 8Z\" fill=\"#B8F4FF\" stroke=\"#346977\" stroke-width=\"2.5\" stroke-linejoin=\"round\"/>\n  <path d=\"M16 5 23.5 10 21.5 22 16 26 10.5 22 8.5 10Z\" fill=\"#F3FCFF\" stroke=\"#70B5C4\" stroke-width=\"1.2\" stroke-linejoin=\"round\"/>\n  <path d=\"M16 5 8.5 10 10.5 22 16 26Z\" fill=\"#C6F4FF\"/>\n  <path d=\"M16 5 23.5 10 21.5 22 16 26Z\" fill=\"#E8DFFF\"/>\n  <path d=\"M8.5 10 16 5 16 26 10.5 22Z\" fill=\"#D9FAFF\"/>\n  <path d=\"M16 5 23.5 10 16 15 8.5 10Z\" fill=\"#FFFFFF\"/>\n  <path d=\"M8.5 10 16 15 10.5 22Z\" fill=\"#91DDEB\"/>\n  <path d=\"M23.5 10 21.5 22 16 15Z\" fill=\"#CABBF0\"/>\n  <path d=\"M10.5 22 16 15 21.5 22 16 26Z\" fill=\"#EDF9FF\"/>\n  <path d=\"M6 8 8.5 10M3 20 10.5 22M10 29 16 26M22 29 16 26M29 20 21.5 22M26 8 23.5 10\" fill=\"none\" stroke=\"#70B5C4\" stroke-width=\"1.2\" stroke-linejoin=\"round\"/>\n  <path d=\"M12 11 18 8M12 14 21 9\" fill=\"none\" stroke=\"#FFFFFF\" stroke-width=\"1.5\" stroke-linecap=\"round\"/>\n  <path d=\"M16 2 26 8 29 20 22 29 10 29 3 20 6 8Z\" fill=\"none\" stroke=\"#346977\" stroke-width=\"2.5\" stroke-linejoin=\"round\"/>\n</svg>",
+        "isAdminPetal": false,
+        "projectileReflection": {
+            "speedMultiplier": 1.5,
+            "speedMultiplierPerRarity": 0.25,
+            "reloadDivisorPerRarity": 1.35,
+            "damageMultiplier": 0.1,
+            "damageMultiplierPerRarity": 0.1,
+            "damageCap": 40,
+            "damageMultiplierByRarity": {
+                "super": 0.7,
+                "eternal": 4,
+                "apex": 400
+            },
+            "reloadReductionMillisByRarity": {
+                "super": 100,
+                "eternal": 100,
+                "apex": 100
+            }
+        },
+        "damageCooldown": 1000,
+        "damageFromMobBody": true
     }
 }

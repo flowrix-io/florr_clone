@@ -24,10 +24,10 @@
 // numerous, and cannot pad its average by leaving the passengers out of it.
 //
 // A CONTENDER MUST HAVE EARNED IT. Nobody is paid for a mob they did less than
-// 3% of its health to -- a solo player on their own damage, a squad on that
-// same average over its full membership. Without the floor a single stray
-// petal on a boss twenty other flowers are killing is a full share of its
-// drops and XP.
+// 5% of its health to (1% on an apex) -- a solo player on their own damage, a
+// squad on that same average over its full membership. Without the floor a
+// single stray petal on a boss twenty other flowers are killing is a full
+// share of its drops and XP.
 
 #include <algorithm>
 #include <cstddef>
@@ -45,25 +45,31 @@ namespace flix {
 ///
 /// Everything up to and including mythic shares the base count; the boss tiers
 /// open up because they take a crowd to kill. Apex was not in the table these
-/// numbers came from -- it sits above unique, so it inherits unique's count
+/// numbers came from -- it sits above eternal, so it inherits eternal's count
 /// rather than falling back to the base four.
 inline int lootSlotsForRarity(Rarity rarity) {
     if (rarity == Rarity::Ultra) return 15;
     if (rarity == Rarity::Super) return 20;
-    if (rarity == Rarity::Unique || rarity == Rarity::Apex) return 25;
+    if (rarity == Rarity::Eternal || rarity == Rarity::Apex) return 25;
     return 4;
 }
 
 /// The least damage a contender must have dealt to a mob of `mobMaxHealth` to
-/// be paid for it: 3% of the mob's health, measured against the ledger, which
-/// holds the damage SWUNG rather than what fitted in the health left.
+/// be paid for it: 5% of the mob's health, or 1% on an apex -- they have so
+/// much health, and draw such a crowd, that 5% would shut most of it out.
+/// Measured against the ledger, which holds the damage SWUNG rather than what
+/// fitted in the health left.
 ///
 /// Multiplied by a whole number and divided by 100 rather than multiplied by
-/// 0.03, so a round health lands on an exact floor and a contender who did
-/// exactly 3% is not refused by a rounding ulp.
-inline constexpr double kLootDamageFloorPercent = 3.0;
-inline double lootDamageFloor(double mobMaxHealth) {
-    return mobMaxHealth > 0.0 ? mobMaxHealth * kLootDamageFloorPercent / 100.0 : 0.0;
+/// 0.05, so a round health lands on an exact floor and a contender who did
+/// exactly the percentage is not refused by a rounding ulp.
+inline constexpr double kLootDamageFloorPercent = 5.0;
+inline constexpr double kApexLootDamageFloorPercent = 1.0;
+inline double lootDamageFloorPercent(Rarity rarity) {
+    return rarity == Rarity::Apex ? kApexLootDamageFloorPercent : kLootDamageFloorPercent;
+}
+inline double lootDamageFloor(double mobMaxHealth, Rarity rarity) {
+    return mobMaxHealth > 0.0 ? mobMaxHealth * lootDamageFloorPercent(rarity) / 100.0 : 0.0;
 }
 
 /// How many PEOPLE a group of bodies holds.
@@ -184,7 +190,7 @@ inline void selectLootRecipients(const std::vector<Bounty::Share>& contributors,
         // end of everyone who earned a share. The floor reads the SAME score
         // the ranking does: a squad qualifies on its average over the whole
         // membership, and once it qualifies it is paid as a squad -- a member
-        // who did less than 3% alone is carried by the ones who did more.
+        // who did less than the floor alone is carried by the ones who did more.
         if (contender.score < minScore) break;
 
         members.clear();

@@ -650,7 +650,7 @@ enum PlayerProfileViewFlags : std::uint8_t {
 enum class NotificationKind : std::uint8_t {
     Generic = 0,
     SuperCraft,
-    UniqueCraft,
+    EternalCraft,
     ApexCraft,
     StarCode,
     UniversalCraft,     ///< a universal forged at a titan (version 47)
@@ -893,7 +893,8 @@ enum class EntityKind : std::uint8_t {
 /// u32 render flags, u16 level, u8 best-loadout rarity, u32 arena score
 /// (zero outside the PVP ring, where nothing keeps one), u8 shield in 255ths
 /// of max health, the str id of the custom skin that flower is wearing, "" for
-/// none, and the str tag of its player's guild, "" for none (version 97); a
+/// none, and the str tag of its player's guild, "" for none (version 97), then the
+/// str account name of its player, "" for none (version 99); a
 /// Petal record carries the u32 net id of the flower it orbits, which is what lets the
 /// client anchor a ring to the DRAWN owner rather than to a snapshot-old one;
 /// an Npc record carries u8 recipe, the index into its mob's `npc.recipes` of

@@ -12,7 +12,7 @@ TEST(trials_have_two_floors_for_every_rarity_through_apex) {
     }
     CHECK_EQ(trialRarity(1), Rarity::Common);
     CHECK_EQ(trialRarity(16), Rarity::Super);
-    CHECK_EQ(trialRarity(17), Rarity::Unique);
+    CHECK_EQ(trialRarity(17), Rarity::Eternal);
     CHECK_EQ(trialRarity(20), Rarity::Apex);
 }
 
@@ -92,7 +92,7 @@ TEST(trial_chamber_fits_its_mobs) {
     }
 }
 
-TEST(only_unique_and_apex_trials_refresh) {
+TEST(only_eternal_and_apex_trials_refresh) {
     CHECK(!trialIsRefreshing(16));
     CHECK(trialIsRefreshing(17));
     CHECK(trialIsRefreshing(20));
@@ -107,11 +107,11 @@ TEST(trial_reward_bundles_scale_with_floor_and_keep_a_separate_full_clear_bonus)
     CHECK_EQ(trialBaseRewardStars(20), 615093);
     CHECK_EQ(trialBaseRewardXp(20), 163840000.0);
     CHECK_EQ(trialBaseRewardPetals(20), 100);
-    CHECK_EQ(trialRewardRarity(20), Rarity::Unique);
+    CHECK_EQ(trialRewardRarity(20), Rarity::Eternal);
     CHECK_EQ(trialFullRewardStars(20), 307546);
     CHECK_EQ(trialFullRewardXp(20), 81920000.0);
     CHECK_EQ(trialFullRewardPetals(20), 20);
-    CHECK_EQ(trialRewardRarity(18), Rarity::Unique);
+    CHECK_EQ(trialRewardRarity(18), Rarity::Eternal);
     CHECK_EQ(trialBaseRewardPetals(18), 4);
     CHECK(trialBaseRewardStars(18) > trialBaseRewardStars(17));
     CHECK(trialBaseRewardXp(19) > trialBaseRewardXp(18));

@@ -163,6 +163,9 @@ struct RemoteEntity {
     /// Player-only: the tag of the guild this flower's player is in, empty for
     /// none. The plate draws it in brackets under the health bar.
     std::string guildName;
+    /// Player-only: the account name, drawn over the flower as "@name";
+    /// empty for a bot. Set by the spawn record and fixed for the body's life.
+    std::string handle;
 
     /// Petal-only: the flower this petal orbits, and the petal's DRAWN offset
     /// from it.

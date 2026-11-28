@@ -28,6 +28,13 @@ namespace {
 constexpr double kChatBubbleTextSize = 18.0;
 constexpr double kChatBubblePadding = 3.0;      ///< pill half-height minus half the text
 constexpr double kChatBubbleGap = 45.0;         ///< clear of the body's edge
+/// The "@accountname" over every flower while ALT is held, drawn the way
+/// ~/gardn draws a player's name (Client/Render/RenderName.cc): 18-unit
+/// white text with the default black outline, centred on a point 18 units
+/// clear of the body. Its top edge lands near 27 units, under a chat bubble's
+/// lower edge (kChatBubbleGap less half the pill, ~33).
+constexpr double kPlayerHandleSize = 36.0;
+constexpr double kPlayerHandleGap = 80.0;
 constexpr double kChatBubbleRowStep = 28.0;     ///< one row to the next
 /// The pill is the flower's own yellow at the reference's 0xc0 alpha, so a
 /// bubble reads as coming off the body it sits over.
@@ -302,6 +309,22 @@ void WorldRenderer::drawPlayerPlate(Canvas& canvas, const RemoteEntity& entity,
             ui::text(canvas, tagLabel, tagLeft, barY + 20.0 * zoom, tag);
         }
     }
+}
+
+void WorldRenderer::drawPlayerHandle(Canvas& canvas, const RemoteEntity& entity,
+                                     const Camera& camera, Vec2 at) const {
+    if (!options.handles || entity.handle.empty() || entity.dead()) return;
+    const double zoom = camera.zoom();
+    // gardn's draw_text defaults: white fill, black stroke at 0.12 of the
+    // size (ui::TextStyle's own), centred on a middle baseline.
+    ui::TextStyle style;
+    style.size = kPlayerHandleSize * zoom;
+    if (style.size < 1.0) return;
+    style.align = ui::Align::Centre;
+    style.baseline = ui::Baseline::Middle;
+    const Vec2 screen = camera.worldToScreen(at);
+    const double lift = kFlowerArtRadius * playerSizeMultiplier(entity) + kPlayerHandleGap;
+    ui::text(canvas, "@" + entity.handle, screen.x, screen.y - lift * zoom, style);
 }
 
 void WorldRenderer::drawChatBubbles(Canvas& canvas, const EntityMap& entities,

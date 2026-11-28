@@ -97,7 +97,7 @@ struct AmbientMob {
     /// destroyed outright, because no band is keeping a slot for it.
     std::uint16_t zone = kInvalidIndex;
     /// When this mob appeared relative to every other, counting up from one.
-    /// What "the extra one" means when a biome holds two uniques (or two
+    /// What "the extra one" means when a biome holds two eternals (or two
     /// apexes): the later of them is the one that goes. A sequence rather
     /// than a time, because a band stocks dozens in one tick.
     std::uint64_t spawnOrder = 0;
@@ -356,7 +356,7 @@ inline constexpr int kZonePlacementAttempts = 60;
 inline constexpr double kTargetMobDensity = 9000.0 / (kWorldSize * kWorldSize);
 
 /// The tier at which a spawn is worth telling the whole server about, and at
-/// which a mob is simulated wherever it stands. Supers, uniques and apexes are
+/// which a mob is simulated wherever it stands. Supers, eternals and apexes are
 /// events; everything below is scenery.
 ///
 /// There is no boss PASS any more -- supers come from band difficulty, and a
@@ -371,7 +371,7 @@ inline constexpr Rarity kAnnouncedRarity = Rarity::Super;
 /// dies without a line in chat. The deep Ant Hell bands (102.5, 105, 130) are
 /// the shipped ground past it; a difficulty-100 band is 2% and still announces.
 ///
-/// Supers only. A unique or apex is its biome's clock's to hand out, at most
+/// Supers only. An eternal or apex is its biome's clock's to hand out, at most
 /// one per cooldown however steep the band, so it is announced wherever it
 /// stands. Ground no band covers rolls nothing and reads as 0%, so a console
 /// super there, or in a map-less realm, still announces.
@@ -384,11 +384,11 @@ inline constexpr double kQuietBossChance = 0.03;
 struct QuietBoss {};
 
 /// The two tiers above super are not band difficulty's to hand out: a band's
-/// roll stops at super, and a wild unique or apex is a super spawn that a
+/// roll stops at super, and a wild eternal or apex is a super spawn that a
 /// BIOME'S CLOCK upgraded. Each biome keeps one clock per tier, and while a
 /// clock is ready every super that biome spawns has kBossUpgradeChance of
 /// coming out at that tier instead -- which starts the clock again. So these
-/// are the least time between two of one biome's wild uniques (or apexes), not
+/// are the least time between two of one biome's wild eternals (or apexes), not
 /// a schedule: a ready clock waits for the biome's next super, and a biome
 /// nobody is killing anything in spawns no supers to upgrade.
 ///
@@ -401,15 +401,15 @@ struct QuietBoss {};
 ///
 /// A mob placed any other way -- a console spawn, a nest's escorts -- is not a
 /// band's super and is never upgraded. It is still HELD to the clock, though:
-/// a unique or apex that would appear in a biome while that biome's clock for
+/// an eternal or apex that would appear in a biome while that biome's clock for
 /// its tier is cooling down is refused outright, before it is an entity
 /// (SpawnSystem::bossCooldownLeft, asked in spawnMobAt). The clock's own
 /// upgrade only asks while it is ready, so the rule never stands in its way.
 /// spawnMob itself charges nothing; the operator's console, alone among the
 /// other paths, spends the clock for a boss it places (chargeBossClock), so an
-/// admin's unique counts as that biome's unique for the next cooldown.
+/// admin's eternal counts as that biome's eternal for the next cooldown.
 ///
-/// A biome holds at most ONE live unique and ONE live apex, however they got
+/// A biome holds at most ONE live eternal and ONE live apex, however they got
 /// there. A clock whose tier is already standing in its biome does not roll
 /// at all (it stays ready for when that one dies), and if two ever do stand
 /// in one biome -- an operator's spawn on top of a wild one, say -- the one
@@ -417,9 +417,9 @@ struct QuietBoss {};
 /// ANIMAL: a centipede's body segments share its tier and are not more of it,
 /// and a player's pets are not wild at all.
 ///
-/// A unique's cooldown is fixed. An apex's is drawn afresh each time its clock
+/// An eternal's cooldown is fixed. An apex's is drawn afresh each time its clock
 /// starts, uniformly between the two bounds below.
-inline constexpr double kUniqueSpawnCooldownMillis = 20.0 * 60.0 * 1000.0;
+inline constexpr double kEternalSpawnCooldownMillis = 20.0 * 60.0 * 1000.0;
 inline constexpr double kApexSpawnCooldownMinMillis = 1.5 * 60.0 * 60.0 * 1000.0;
 inline constexpr double kApexSpawnCooldownMaxMillis = 2.5 * 60.0 * 60.0 * 1000.0;
 inline constexpr double kBossUpgradeChance = 0.10;
@@ -536,7 +536,7 @@ public:
     /// itself, a nest, the arena, an operator's console -- so there is exactly
     /// one place a boss can come from as far as the rest of the server is
     /// concerned, and no way to add a spawn path that quietly appears without
-    /// a word. The reference announces supers and uniques with a per-player
+    /// a word. The reference announces supers and eternals with a per-player
     /// line whose wording depends on where that player is standing; this
     /// system has no view of the socket list, so it reports rather than
     /// broadcasts. Anything below kAnnouncedRarity -- an ultra included -- is
@@ -581,7 +581,7 @@ public:
                       CommandBuffer& commands);
 
     /// Places one mob, with its nest escorts if it has any, and returns it.
-    /// NULL_ENTITY when `mobIndex` names nothing, or when it is a unique or an
+    /// NULL_ENTITY when `mobIndex` names nothing, or when it is an eternal or an
     /// apex its biome's clock is not ready for (bossCooldownLeft).
     ///
     /// `position` is a request, not a promise: it is pushed out of the terrain
@@ -592,7 +592,7 @@ public:
     /// makes "every boss is announced" a property of the system rather than of
     /// each caller.
     ///
-    /// `clockGated` false lets a unique or apex past a cooling biome clock: a
+    /// `clockGated` false lets an eternal or apex past a cooling biome clock: a
     /// dungeon's queen (DungeonSystem::populate) is her nest's, not the biome's.
     Entity spawnMob(World& world, const Terrain& terrain, const ContentRegistry& content,
                     std::uint16_t mobIndex, Rarity rarity, Vec2 position, Realm realm,
@@ -621,7 +621,7 @@ public:
     ///
     /// False, with `mob` left as it was, for a mob that is dead or gone, a pet
     /// or a piece already, more than one body (a chain, a ring of seeds, a
-    /// nest), a fixture, a unique or an apex (a biome holds one of each, and
+    /// nest), a fixture, an eternal or an apex (a biome holds one of each, and
     /// cullExtraTopBosses would take the extras and their health with them), or
     /// when the pieces would pass mobCap.
     bool divideMob(World& world, const Terrain& terrain, const ContentRegistry& content, Entity mob,
@@ -633,9 +633,9 @@ public:
         Summoned,
         NoBand,      ///< no band covers the spot: nothing lives here to answer
         LowGround,   ///< the band cannot roll kSacrificeGroundRarity
-        Taken,       ///< a unique/apex of that tier already stands in the biome
+        Taken,       ///< an eternal/apex of that tier already stands in the biome
         NoMob,       ///< the band names nothing that can be summoned
-        Prestige,    ///< a unique/apex asked for in a prestige biome
+        Prestige,    ///< an eternal/apex asked for in a prestige biome
     };
     struct Sacrifice {
         SacrificeOutcome outcome = SacrificeOutcome::NoBand;
@@ -664,7 +664,7 @@ public:
     ///
     /// The one path past a cooling boss clock: the petal itself is the
     /// rationing, Hel handing out one at a time. It still keeps the biome to
-    /// one unique and one apex -- refused while one of that tier stands -- and
+    /// one eternal and one apex -- refused while one of that tier stands -- and
     /// it spends the clock as the console's spawn does, so the summon counts
     /// as the biome's boss for the next cooldown.
     Sacrifice summonSacrifice(World& world, const Terrain& terrain, const ContentRegistry& content,
@@ -723,15 +723,15 @@ public:
     void latentSites(Realm realm, std::vector<LatentSite>& out) const;
 
     /// One biome's two boss clocks: the earliest server time a super it spawns
-    /// may be upgraded to a unique, and to an apex. See
-    /// kUniqueSpawnCooldownMillis.
+    /// may be upgraded to an eternal, and to an apex. See
+    /// kEternalSpawnCooldownMillis.
     ///
     /// Keyed by the map's `biome`, not by realm, so two maps filed under one
     /// biome share one clock. The ready times are meaningless until
     /// `scattered`: a biome's clocks are dealt out on the first pass that sees
     /// it (scatterBossClocks), because that pass is where the time is known.
     ///
-    /// `uniqueStanding` / `apexStanding`: a whole wild animal of that tier is
+    /// `eternalStanding` / `apexStanding`: a whole wild animal of that tier is
     /// alive in the biome, or a sacrifice of that tier is still drawing its
     /// pentagram there, as of the last noteStandingBosses. What the save
     /// reads to hand a cooldown back when a restart is about to take that
@@ -742,11 +742,11 @@ public:
     /// is cooling, or an apex stands. See kApexOverdueMinMillis.
     struct BiomeBossClock {
         std::string biome;
-        double uniqueReadyMillis = 0;
+        double eternalReadyMillis = 0;
         double apexReadyMillis = 0;
         double apexDueMillis = 0;
         bool scattered = false;
-        bool uniqueStanding = false;
+        bool eternalStanding = false;
         bool apexStanding = false;
     };
     /// Every staged map's biome, in map order. Mutable so a test or an
@@ -755,24 +755,24 @@ public:
     std::vector<BiomeBossClock>& bossClocks() { return bossClocks_; }
 
     /// How long a `rarity` mob must still wait before it may appear in
-    /// `realm`'s biome: what is left on that biome's clock for a unique or an
+    /// `realm`'s biome: what is left on that biome's clock for an eternal or an
     /// apex. Zero for every other tier, for a ready clock, and for a realm no
     /// staged map claims -- the arena, the maze, a harness with no maps --
     /// which is not a biome and keeps no clock. Anything above zero is a spawn
     /// spawnMobAt refuses.
     double bossCooldownLeft(Rarity rarity, Realm realm, double nowMillis) const;
 
-    /// True when `realm` is a prestige twin, where no unique or apex may
+    /// True when `realm` is a prestige twin, where no eternal or apex may
     /// stand by any path (spawnMobAt refuses one outright).
     bool prestigeRealm(Realm realm) const;
 
     /// Starts `realm`'s biome clock for `rarity` over from `nowMillis`, exactly
     /// as the clock's own upgrade does once the boss it made is standing. For
-    /// the console: an admin's unique or apex spends the clock a wild one
+    /// the console: an admin's eternal or apex spends the clock a wild one
     /// would have. Nothing for any other tier or for a realm with no clock.
     void chargeBossClock(Rarity rarity, Realm realm, double nowMillis);
 
-    /// Sets every clock's `uniqueStanding` / `apexStanding` from the live
+    /// Sets every clock's `eternalStanding` / `apexStanding` from the live
     /// population and the sacrifice rituals still drawing their pentagram.
     /// The population pass does this every half second, and every database
     /// save again, so what reaches the disk is never half a second stale. A
@@ -790,7 +790,7 @@ public:
     /// wait. Held until the biome's slot is made if no zone has asked for it
     /// yet, so a biome no staged map names never gains a slot from here. A zero
     /// `apexDueMillis` is no window: one opens on the first pass that wants it.
-    void restoreBossClock(const std::string& biome, double uniqueReadyMillis,
+    void restoreBossClock(const std::string& biome, double eternalReadyMillis,
                           double apexReadyMillis, double apexDueMillis = 0);
 
 private:
@@ -838,6 +838,9 @@ private:
         /// than handing the slot back where it fell. See MapElement::singular:
         /// the shape is one creature's range, not a patch of ground.
         bool singular = false;
+        /// MapElement::respawnMillis: the in-view wait for a killed mob's
+        /// replacement, or negative for the usual roll.
+        double respawnMillis = -1.0;
         /// Index into bossClocks_: the biome of the map this band is drawn on.
         /// kInvalidIndex on a prestige twin, which keeps no clock.
         std::uint16_t biome = kInvalidIndex;
@@ -930,7 +933,7 @@ private:
                         const std::vector<Viewer>& viewers, Rng& rng, double nowMillis);
 
     /// The same for a band mob that went away WITHOUT dying: destroyed by an
-    /// operator's killall, or culled as a biome's second unique. Nothing marks
+    /// operator's killall, or culled as a biome's second eternal. Nothing marks
     /// such a mob on its way out, so the census notices it by its absence, and
     /// its slot goes back where it was last counted (Slot::Vanished).
     void returnVanished(World& world, const Terrain& terrain, const ContentRegistry& content,
@@ -1005,7 +1008,7 @@ private:
     /// the list, or a tier no clock owns, is left alone.
     void restartBossClock(std::uint16_t slot, Rarity rarity, double nowMillis);
 
-    /// What a band's SUPER comes out as: the same super, or a unique or an
+    /// What a band's SUPER comes out as: the same super, or an eternal or an
     /// apex when its biome's clock for that tier is ready, the biome has none
     /// of that tier standing, and the upgrade roll lands. Apex is asked first.
     /// Starts nothing -- the clock is only charged once the upgraded mob is
@@ -1022,12 +1025,12 @@ private:
     /// asked when a clock is ready and a super was just rolled.
     bool topBossTaken(World& world, Rarity rarity, Realm realm);
 
-    /// Despawns every unique or apex that is not the FIRST of its tier in its
+    /// Despawns every eternal or apex that is not the FIRST of its tier in its
     /// biome, with its body if it has one. Destroyed, not killed: no loot and
     /// no XP for a mob that should never have been there.
     void cullExtraTopBosses(World& world, CommandBuffer& commands);
 
-    /// Sets `biome`'s standing flag for `rarity` (unique or apex); nothing for
+    /// Sets `biome`'s standing flag for `rarity` (eternal or apex); nothing for
     /// a key past every clock slot or any other tier.
     void markStanding(std::uint32_t biome, Rarity rarity);
 
@@ -1103,7 +1106,7 @@ private:
     /// is drawn either way, so asking for a facing never shifts the stream
     /// every later spawn is rolled from.
     ///
-    /// `clockGated` false lets a unique or apex past a cooling biome clock:
+    /// `clockGated` false lets an eternal or apex past a cooling biome clock:
     /// summonSacrifice and a nest's queen ask.
     Entity spawnMobAt(World& world, const Terrain& terrain, const ContentRegistry& content,
                       std::uint16_t mobIndex, Rarity rarity, Vec2 position, Realm realm,
@@ -1198,7 +1201,7 @@ private:
     /// Scratch for cullExtraTopBosses, kept so the pass does not allocate.
     struct TopBoss {
         std::uint32_t biome = 0;
-        Rarity rarity = Rarity::Unique;
+        Rarity rarity = Rarity::Eternal;
         std::uint64_t order = 0;
         Entity entity = NULL_ENTITY;
     };

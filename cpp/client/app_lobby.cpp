@@ -699,7 +699,7 @@ std::string App::defaultSpawnChoice() const {
 App::LobbyLayout App::lobbyLayout(int viewWidth, int viewHeight) const {
     // The browser title screen's rhythm, measured from the centre: the name
     // field and the Ready button side by side a hundred above it, the
-    // "Spawn At:" label at fifty, then the picker's two rows -- the biome
+    // "Spawn At:" label halfway between that and the tabs, then the picker's two rows -- the biome
     // tabs at twenty-two above and the selected biome's doors at fourteen
     // below -- both of which have to clear the loadout bar at fifty below.
     const double centreX = viewWidth * 0.5;
@@ -809,12 +809,16 @@ void App::drawLobby(Canvas& canvas, double time) {
     TextStyle label;
     label.size = 18.0;
     label.align = Align::Centre;
+    // Centred in the gap between the name field and the biome tabs, so it
+    // belongs to neither.
+    const double labelY = layout.tabs.empty()
+                              ? centreY - 50.0
+                              : (layout.name.bottom() + layout.tabs.front().y) * 0.5;
     if (prestigeOn()) {
         label.fill = kPrestigeYellow;
-        text(canvas, std::string("Spawn At (") + kPrestigeLabel + "):", centreX, centreY - 50.0,
-             label);
+        text(canvas, std::string("Spawn At (") + kPrestigeLabel + "):", centreX, labelY, label);
     } else {
-        text(canvas, "Spawn At:", centreX, centreY - 50.0, label);
+        text(canvas, "Spawn At:", centreX, labelY, label);
     }
 
     // The picker: a row of biome tabs, and under it the doors of the open
@@ -1025,7 +1029,7 @@ void App::drawTrialPicker(Canvas& canvas) {
     TextStyle section = small;
     section.align = Align::Left;
     section.size = 12.0;
-    text(canvas, trialRefreshingPicker_ ? "Unique/Apex, changes every month"
+    text(canvas, trialRefreshingPicker_ ? "Eternal/Apex, changes every month"
                                         : "Common to Super, permanent",
          panel.x + 30.0, panel.y + 198.0, section);
 

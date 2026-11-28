@@ -456,7 +456,7 @@ inline constexpr double kBotSquadJoinChance = 0.5;
 /// Raid rally points. Ultra is deliberately NOT one: bots treat an ultra as a
 /// high-tier mob to fight, not as something to cross the map for.
 inline constexpr bool isBotBossTier(Rarity r) {
-    return r == Rarity::Super || r == Rarity::Unique || r == Rarity::Apex;
+    return r == Rarity::Super || r == Rarity::Eternal || r == Rarity::Apex;
 }
 inline constexpr bool isBotHighTier(Rarity r) {
     return r == Rarity::Epic || r == Rarity::Legendary || r == Rarity::Mythic ||

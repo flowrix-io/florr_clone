@@ -511,6 +511,8 @@ private:
         Vec2 position;
         double radius = 0;
         double damage = 0;
+        /// Mirror the struck mob's live body damage instead of this base.
+        bool damageFromMobBody = false;
         double hitIntervalMillis = kMobHitIntervalMillis;
         double knockback = 0;
         double poisonPerSecond = 0;
@@ -581,6 +583,12 @@ private:
         /// What this body's hit is multiplied by against a shot or a petal.
         /// A plank's 20; 1 for everything else.
         double shotDamageScale = 1.0;
+        /// A Prism Mirror sends hostile shots back instead of damaging them.
+        double reflectionSpeedMultiplier = 0.0;
+        double reflectionDamageMultiplier = 1.0;
+        /// The most one of its returned shots or copied body hits may deal.
+        /// Zero: uncapped.
+        double reflectionDamageCap = 0.0;
         /// A yin yang's: a `convertsFrom` mob it lands on becomes a
         /// `convertsInto` (MobConversion). kInvalidIndex for every other body.
         std::uint16_t convertsFrom = kInvalidIndex;
@@ -692,6 +700,11 @@ private:
         Entity victim = NULL_ENTITY;
         Vec2 offset;
         double distanceSquared = 0;
+        /// Distance flown before first touching this victim, for impact order.
+        double travel = 0;
+        double reflectionSpeedMultiplier = 0;
+        double reflectionDamageMultiplier = 1.0;
+        double reflectionDamageCap = 0;
         /// The point on the shot's path closest to the victim.
         Vec2 at;
     };
@@ -769,6 +782,11 @@ private:
                          Vec2 victimPosition, double victimRadius, double nowMillis);
     void tickProjectiles(World& world, const SpatialGrid& grid, const ContentRegistry& content,
                          double nowMillis);
+    /// Transfers the existing shot and spends the mirror's ordinary reload.
+    /// The returned shot deals at most `damageCap` (zero: uncapped).
+    bool reflectProjectile(World& world, Entity mirror, Entity shot,
+                           double speedMultiplier, double damageMultiplier, double damageCap,
+                           Vec2 at, bool swept);
 
     /// Files every projectile in the shot index, and resolves the flower each
     /// one is answerable to. Run at the top of both phases, at the same points the
@@ -803,9 +821,17 @@ private:
     ///
     /// `skip`, when given, leaves out the shots it names (see ShotSkip) a run
     /// of them at a time rather than one candidate at a time.
+    ///
+    /// `overlapping` asks the grid for only the bodies whose filed circle
+    /// overlaps the disc (SpatialGrid::queryOverlapping) instead of its whole
+    /// cells. For a caller whose victims need overlap with a disc that holds
+    /// its whole reach, and that sorts what it finds -- the projectile pass;
+    /// not a field, whose reach is not the filed radius and which spends
+    /// itself in candidate order.
     struct ShotSkip;
     void queryBodies(const SpatialGrid& grid, Realm realm, Vec2 center, double radius,
-                     std::vector<Entity>& out, const ShotSkip* skip = nullptr);
+                     std::vector<Entity>& out, const ShotSkip* skip = nullptr,
+                     bool overlapping = false);
     /// Appends every filed shot that could overlap the circle -- candidates,
     /// as a grid query returns, for the caller's exact test -- less those
     /// `skip` names. What it does append comes in the order it would without

@@ -10,7 +10,7 @@
 // What makes a twin harder is the spawn roll, and only that: every mob a band
 // grows there comes out one tier higher than the same band would grow it in the
 // ordinary biome. The top two rungs are the exception. A twin has no boss
-// clocks, so a unique or an apex never spawns in one by any path -- the band's
+// clocks, so an eternal or an apex never spawns in one by any path -- the band's
 // own roll stops at super, as it does everywhere, and the +1 stops there too.
 //
 // The PVP arena and the maze are generated rather than authored, have no map

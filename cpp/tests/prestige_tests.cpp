@@ -65,10 +65,10 @@ TEST(an_prestige_band_rolls_one_tier_up_and_stops_at_super) {
     CHECK(prestigeRarity(Rarity::Common) == Rarity::Uncommon);
     CHECK(prestigeRarity(Rarity::Mythic) == Rarity::Ultra);
     CHECK(prestigeRarity(Rarity::Ultra) == Rarity::Super);
-    // Super has nowhere to go: unique and apex never stand in a twin.
+    // Super has nowhere to go: eternal and apex never stand in a twin.
     CHECK(prestigeRarity(Rarity::Super) == Rarity::Super);
     CHECK(!barredFromPrestige(Rarity::Super));
-    CHECK(barredFromPrestige(Rarity::Unique));
+    CHECK(barredFromPrestige(Rarity::Eternal));
     CHECK(barredFromPrestige(Rarity::Apex));
 }
 
@@ -303,7 +303,7 @@ TEST(an_prestige_twin_grows_every_band_a_tier_up_and_no_boss_above_super) {
     }
 }
 
-TEST(nothing_puts_a_unique_or_apex_into_an_prestige_twin) {
+TEST(nothing_puts_an_eternal_or_apex_into_a_prestige_twin) {
     World world;
     Terrain terrain;
     SpawnSystem spawner;
@@ -320,7 +320,7 @@ TEST(nothing_puts_a_unique_or_apex_into_an_prestige_twin) {
     CHECK(bee != kInvalidIndex);
     const Vec2 at = terrain.spawnPoint(twin);
 
-    CHECK(spawner.spawnMob(world, terrain, shippedContent(), bee, Rarity::Unique, at, twin, 0.0,
+    CHECK(spawner.spawnMob(world, terrain, shippedContent(), bee, Rarity::Eternal, at, twin, 0.0,
                            rng) == NULL_ENTITY);
     CHECK(spawner.spawnMob(world, terrain, shippedContent(), bee, Rarity::Apex, at, twin, 0.0,
                            rng) == NULL_ENTITY);

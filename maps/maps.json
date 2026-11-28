@@ -15,7 +15,7 @@
     "",
     "`prestige: true` also loads the map's PRESTIGE twin, `prestige_<id>`, in",
     "a realm after every entry's own: the same place one rarity harder, with",
-    "no unique or apex, for players with the Prestige talent. Its pads lead",
+    "no eternal or apex, for players with the Prestige talent. Its pads lead",
     "to other twins. See cpp/shared/game/prestige.h."
   ],
   "maps": [

@@ -72,8 +72,10 @@ struct WornSlot {
 std::uint16_t petalIndexFromInventoryKey(const std::string& key);
 
 /// The type tag a notification row carries, as the wire enum: the four the
-/// browser build stored (super_craft, unique_craft, apex_craft, star_code) and
-/// the titan forge's universal_craft. Anything else is Generic, which is also
+/// browser build stored (super_craft, unique_craft -- eternal's craft, which
+/// keeps the old name in the database; eternal_craft is read too --
+/// apex_craft, star_code) and the titan forge's
+/// universal_craft. Anything else is Generic, which is also
 /// what an older notification with no type reads as. The one list of tags
 /// there is: the feed reads rows through it, and `/admin notification` refuses
 /// a tag it answers Generic for. Defined in notifications.cpp.
@@ -1144,7 +1146,7 @@ private:
     /// that the row shape, the id format and the history cap cannot drift apart
     /// between them.
     void addNotification(const std::string& type, const std::string& message);
-    /// The global line and the feed row a super/unique/apex craft produces,
+    /// The global line and the feed row a super/eternal/apex craft produces,
     /// and a universal forged at a titan. Silent for every tier below, which
     /// is where the reference draws the line too -- an ultra is crafted often
     /// enough to be noise.
@@ -1590,7 +1592,7 @@ private:
     /// re-deals one. restoreBossClocks hands the spawner what the table holds,
     /// once, on the first tick (the first time this run's clock is known);
     /// persistBossClocks writes back whatever moved since it last looked --
-    /// a scatter, an upgrade, a console spawn charging a clock. While a unique
+    /// a scatter, an upgrade, a console spawn charging a clock. While an eternal
     /// or apex stands in a biome its clock is written as of the moment that
     /// boss spent it, so a restart that takes the boss away unkilled hands the
     /// cooldown back and the clock comes up ready. An open apex window
@@ -1790,13 +1792,18 @@ private:
     /// rights on the corpse: the gallery ledger, and the stars a mythic-or-
     /// better kill is worth.
     void bankKills();
-    /// Broadcasts the "has been defeated by" line a super, unique or apex kill
+    /// Broadcasts the "has been defeated by" line a super, eternal or apex kill
     /// earns, credited to the top damage dealer on the corpse. `ranked` is the
     /// same damage-sorted ledger bankKills() paid the bounty out of; with no
     /// player to credit the line is just "has been defeated!". A summon (Pet)
     /// is never announced.
     void announceBossDefeat(Entity mob, const MobType&,
                             const std::vector<Bounty::Share>& ranked);
+    /// Tells everyone who landed damage on a dying super or apex, privately,
+    /// how much: "You dealt 55m damage to the Super Ladybug." Read straight
+    /// off the corpse's Bounty ledger, so it reaches every contributor --
+    /// whether or not they earned loot, whoever landed the last blow.
+    void reportBossDamage(Entity mob, const MobType&);
     /// Broadcasts "An Apex <petal> has been collected by @handle [Flower]!"
     /// for a ground pickup at apex or above, the player credited exactly as a
     /// boss kill credits them. Anything below apex is silent. The champion's
@@ -2049,22 +2056,22 @@ private:
     /// index sweep, which cannot tell a mob that spawned this tick from one
     /// that has been standing there since the server came up.
     void noteBossSighting(Entity boss, double nowMillis);
-    /// Bots call fresh super/unique/apex sightings out in chat, which (for a
-    /// super or unique) is also what rallies the population onto one. Spawn alerts are worked through first,
+    /// Bots call fresh super/eternal/apex sightings out in chat, which (for a
+    /// super or eternal) is also what rallies the population onto one. Spawn alerts are worked through first,
     /// oldest first, so what the bots shout about is what actually just
     /// happened.
     void announceNewBosses(double nowMillis);
-    /// Rallies every bot onto the best boss in the world (unique over super,
+    /// Rallies every bot onto the best boss in the world (eternal over super,
     /// then most recently seen, then closest to a human). Returns whether one
     /// was found; the chat handler answers the player either way.
     bool triggerBotRaid(double nowMillis);
     /// The rally point bots IN `realm` are currently pulled toward, if any. A
     /// rally is one boss in one biome; the bots working the others carry on.
     bool activeForcedRaidAnchor(double nowMillis, Realm realm, Vec2& out);
-    /// The nearest boss within rally range of this bot, preferring uniques.
+    /// The nearest boss within rally range of this bot, preferring eternals.
     bool botNearestBoss(const Bot&, Vec2& out, double& distOut);
     /// The one rule the three raid picks above share: among the live supers
-    /// and uniques in botBosses_ -- apex never rallies anybody -- a unique
+    /// and eternals in botBosses_ -- apex never rallies anybody -- an eternal
     /// beats every super, then the most recently seen wins, then, when
     /// `humanTieBreak`, the one closest to a human. `realm` keeps only that
     /// realm's bosses, and `within` only those inside kBotBossRallyRange of a
@@ -2499,7 +2506,7 @@ private:
     /// so an unchanged clock costs a compare rather than a table write.
     struct SavedBossClock {
         std::string biome;
-        double uniqueReadyMillis = 0;
+        double eternalReadyMillis = 0;
         double apexReadyMillis = 0;
         double apexDueMillis = 0;
     };

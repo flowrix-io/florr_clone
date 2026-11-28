@@ -582,9 +582,13 @@ struct PlayerInput {
 /// types in chat.
 struct PlayerAccount {
     std::string userId;
+    /// What the nameplate says: the flower's typed name, or the account's.
     std::string username;
     net::ConnectionId connection = 0;
     bool admin = false;
+    /// The ACCOUNT's name, which every flower wears over its head as
+    /// "@name". Empty for a body no account plays (a bot).
+    std::string handle;
 };
 
 /// The talent tree as the simulation sees it.
@@ -1049,7 +1053,7 @@ struct KeepAwake {};
 
 /// A nest's queen (MobConfig::queenIndex): out at the nest's own tier, which
 /// may be above ultra, and past the boss clock. She belongs to her nest, not
-/// to her biome, so she neither spends nor holds that biome's unique or apex
+/// to her biome, so she neither spends nor holds that biome's eternal or apex
 /// slot: noteStandingBosses and topBossTaken skip her, and the
 /// one-per-biome cull leaves her standing.
 struct NestQueen {};
@@ -1479,6 +1483,13 @@ struct Projectile {
     /// ever overlapping it. Seeded to the spawn position so the shot's first
     /// tick tests a degenerate segment rather than a line from the origin.
     Vec2 lastPosition{};
+    /// Actual velocity of the last flight step, including a wasp's sideways
+    /// weave. Server-only: a complete reflection reverses the arriving path,
+    /// not merely the launch axis stored in Motion. Zero before the first step.
+    Vec2 lastStepVelocity{};
+    /// A wall changed Motion after that step. Contact before the next move
+    /// sees the outgoing bounce; a swept hit earlier on the step does not.
+    bool lastStepBounced = false;
     /// Fired by a glitch-family mob: touching this shot leaves the flower
     /// glitched. Stamped at spawn from the shooter's config, as the reference
     /// stamps `sourceType`, so a shot still infects after its shooter is gone

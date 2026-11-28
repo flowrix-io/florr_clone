@@ -128,7 +128,8 @@ DeathCard deathCardLayout(double width, double height, double slide) {
 /// at the size a tile draws it. Equipment -- a zero-count petal, the antennae
 /// or a third eye -- is not a seat in the ring: it is worn, as on the corpse.
 void drawDeathFlower(Canvas& canvas, const WorldRenderer& renderer, const SpriteCache& sprites,
-                     const std::vector<Profile::Slot>& loadout, Vec2 centre, double time) {
+                     const std::vector<Profile::Slot>& loadout, const std::string& skinId,
+                     Vec2 centre, double time) {
     struct Seat {
         std::uint16_t petal;
         Rarity rarity;
@@ -163,7 +164,7 @@ void drawDeathFlower(Canvas& canvas, const WorldRenderer& renderer, const Sprite
     paintSeats(false);
     canvas.save();
     canvas.rotate(static_cast<float>(kDeathFlowerTilt));
-    renderer.drawDeadFlower(canvas, equipFlags, kDeathFlowerMouth, time);
+    renderer.drawDeadFlower(canvas, equipFlags, kDeathFlowerMouth, time, skinId);
     canvas.restore();
     paintSeats(true);
     canvas.restore();
@@ -753,7 +754,13 @@ void App::drawDeathCard(Canvas& canvas, double time) {
         : net_.killerName();
     text(canvas, killer, card.killer.x, card.killer.y, line);
 
-    drawDeathFlower(canvas, renderer_, sprites_, net_.profile().loadout, card.flower, time);
+    // In the skin the body died in: the corpse's own, which is the one this
+    // life wore, or the account's when the corpse is out of the stream.
+    std::string skinId = net_.equippedSkinId();
+    const auto body = net_.view().entities().find(net_.view().self().netId);
+    if (body != net_.view().entities().end()) skinId = body->second.equippedSkinId;
+    drawDeathFlower(canvas, renderer_, sprites_, net_.profile().loadout, skinId, card.flower,
+                    time);
 
     const bool pressing = window_.mouseDown(MouseButton::Left);
     const bool overContinue = hit(card.continueBox, mouse);

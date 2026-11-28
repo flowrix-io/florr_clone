@@ -370,7 +370,7 @@ inline std::string fixtureDoor(const std::string& spawnId, const std::string& la
 /// no fixture here needs one.)
 ///
 /// A number, not a rarity name -- zero is fully common and three hundred is
-/// unique with a little apex in it; see the difficulty curve in
+/// eternal with a little apex in it; see the difficulty curve in
 /// shared/game/difficulty.h. Written as a float property because that is what
 /// Tiled writes for any number an author types into one.
 inline std::string fixtureBand(double x, double y, double w, double h, const std::string& mobs,
@@ -927,6 +927,14 @@ struct GameServerPeer {
             from = server.tickPhases_[i].endedMillis;
         }
         return out;
+    }
+    /// Splits `username`'s flower now, as wearing a splitter does.
+    static bool split(GameServer& server, const std::string& username) {
+        for (auto& entry : server.sessions_) {
+            Session& session = entry.second;
+            if (session.username == username && session.playing()) return server.splitSession(session);
+        }
+        return false;
     }
     /// Carries `username`'s flower to `realm`, as a pad would. False when this
     /// server has no such flower.

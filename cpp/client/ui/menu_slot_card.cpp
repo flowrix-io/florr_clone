@@ -135,7 +135,7 @@ double listWidth(std::size_t columns) {
 /// Never a universal column: no card -- forge, oracle or trader -- takes one.
 std::size_t tierColumns(bool withApex) {
     return withApex ? static_cast<std::size_t>(kLadderRarityCount)
-                    : static_cast<std::size_t>(Rarity::Unique) + 1;
+                    : static_cast<std::size_t>(Rarity::Eternal) + 1;
 }
 
 /// Particle jitter. Not reproducible and not meant to be, exactly as the world
@@ -243,7 +243,7 @@ double slotCardWidth(bool withApex) { return slotCardColumnsWidth(tierColumns(wi
 
 double slotCardColumnsWidth(std::size_t columns) {
     // florr's list is 576 wide in its 610: 17 either side. Our ladder has a
-    // tier more than florr's, so a grid through unique is a column wider and
+    // tier more than florr's, so a grid through eternal is a column wider and
     // the window grows by it rather than squeezing the cells.
     return std::max(kWindowMinWidth, listWidth(columns) + 2.0 * (kWindowPad + 7.0));
 }
@@ -414,7 +414,7 @@ std::optional<SlotGrid::Pick> SlotGrid::render(
     const std::size_t columns = tierColumns(withApex);
 
     // A stack only a column the grid does not have would show -- an apex one
-    // on a card that stops at unique -- does not earn its type a row.
+    // on a card that stops at eternal -- does not earn its type a row.
     const std::vector<std::uint16_t> types = heldTypes(
         profile, [&](Rarity r) { return rarityIndex(r) < static_cast<int>(columns); });
 

@@ -3,13 +3,13 @@
 // What the craft key opens while the flower stands at an oracle NPC (see
 // shared/game/npc.h). The forge gambles five petals on a roll; the oracle
 // takes a fixed price -- oracleCraftCost(), a table that runs from 7 commons
-// to 1012 uniques -- and the upgrade is certain.
+// to 1012 eternals -- and the upgrade is certain.
 //
 // It is florr's oracle window (menus.h), in its slate: one slot and the
 // Craft button beside it, one line of text, and the grid, where every cell
 // carries "owned/price" and a stack that cannot yet pay its column's price
 // sits on a grey plate. florr's grid stops at super; this one keeps the
-// unique column, because unique -> apex has a price here.
+// eternal column, because eternal -> apex has a price here.
 //
 // One upgrade per craft, and one craft per half hour (kOracleCooldownMillis):
 // while the account waits, the line of text turns red and says how long, and

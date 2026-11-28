@@ -221,6 +221,8 @@ void DropTables::resolve(const ContentRegistry& content) {
         const PetalConfig& petal = content.petal(index);
         if (petal.isAdminPetal) continue;
         if (petal.id == "cutter" || petal.id == "lightning_cutter") continue;
+        // Prism is made from Glass in the crafting panel, not mob loot.
+        if (petal.id == "prism_mirror") continue;
         // Handed out by a rule of their own: the sacrifice, the crown.
         if (petalHasOwnSource(petal)) continue;
         // A magic petal is CONVERTED into, never dropped. Leaving it in the
@@ -291,7 +293,7 @@ Rarity LootSystem::finishDropRarity(Rarity baseRarity, Rarity mobRarity, Rng& rn
     // kApexEternalDropChance.
     if (mobRarity == Rarity::Apex) {
         const double roll = rng.unit();
-        if (roll < kApexEternalDropChance) return Rarity::Unique;
+        if (roll < kApexEternalDropChance) return Rarity::Eternal;
         if (roll < kApexEternalDropChance + kApexUltraDropChance) return Rarity::Ultra;
         return Rarity::Super;
     }
@@ -610,7 +612,7 @@ void LootSystem::awardDeaths(World& world, const ContentRegistry& content, Rng& 
         const Dead* dead = world.tryGet<Dead>(corpse);
         const Entity killer = dead != nullptr ? dead->killer : NULL_ENTITY;
         const Health* health = world.tryGet<Health>(corpse);
-        const double damageFloor = lootDamageFloor(health != nullptr ? health->max : 0.0);
+        const double damageFloor = lootDamageFloor(health != nullptr ? health->max : 0.0, mobRarity);
 
         // Loot slots go to the highest positive contributors, just like XP.
         ranked_.clear();

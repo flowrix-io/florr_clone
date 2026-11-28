@@ -429,7 +429,7 @@ std::vector<TipRow> description(SkillId skill, int tier) {
         case SkillId::Prestige:
             row({{"Unlocks the "}, {"Prestige", kPrestigeYellow}, {" biomes."}});
             row({{"Every mob there is +1 rarity."}});
-            row({{"No Unique or Apex mobs spawn there."}});
+            row({{"No Eternal or Apex mobs spawn there."}});
             break;
         default: break;
     }

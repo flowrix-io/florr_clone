@@ -457,7 +457,7 @@ void GameServer::sendMobDamageBoard(Session& session, net::Connection& connectio
         }
         // Eternal and Apex always; Super unless the player turned it off.
         const Rarity tier = kind->rarity;
-        const bool shownTier = tier == Rarity::Unique || tier == Rarity::Apex ||
+        const bool shownTier = tier == Rarity::Eternal || tier == Rarity::Apex ||
                                (tier == Rarity::Super && session.boardSuper);
         if (shownTier && (here == nullptr || at->realm == here->realm)) {
             const double distance = here == nullptr ? 0.0 : distanceSq(at->position, here->position);
@@ -499,7 +499,7 @@ void GameServer::sendMobDamageBoard(Session& session, net::Connection& connectio
     // rewards make, floor, slot cap and squads included.
     std::vector<Entity> recipients;
     selectLootRecipients(ranked, lootSlotsForRarity(tier), &squadIndex_, recipients,
-                         lootDamageFloor(health->max));
+                         lootDamageFloor(health->max, tier));
     const auto groupOf = [&](Entity body) -> long {
         const auto it = squadIndex_.group.find(body);
         return it == squadIndex_.group.end() ? -1 : static_cast<long>(it->second);

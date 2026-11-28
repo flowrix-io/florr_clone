@@ -1188,19 +1188,19 @@ void GameServer::restoreBossClock(const std::string& biome, double nowMillis) {
         return;
     }
     const double offset = nowMillis - static_cast<double>(database_.nowMillis());
-    const double unique = std::min(entry["uniqueReadyAt"].asDouble() + offset,
-                                   nowMillis + kUniqueSpawnCooldownMillis);
+    const double eternal = std::min(entry["uniqueReadyAt"].asDouble() + offset,
+                                   nowMillis + kEternalSpawnCooldownMillis);
     const double apex =
         std::min(entry["apexReadyAt"].asDouble() + offset, nowMillis + kApexSpawnCooldownMaxMillis);
     const double due = entry["apexDueAt"].isNumber()
                            ? std::max(1.0, std::min(entry["apexDueAt"].asDouble() + offset,
                                                     nowMillis + kApexOverdueMaxMillis))
                            : 0.0;
-    spawning_->restoreBossClock(biome, unique, apex, due);
+    spawning_->restoreBossClock(biome, eternal, apex, due);
     savedBossClocks_.erase(std::remove_if(savedBossClocks_.begin(), savedBossClocks_.end(),
                                           [&](const SavedBossClock& c) { return c.biome == biome; }),
                            savedBossClocks_.end());
-    savedBossClocks_.push_back(SavedBossClock{biome, unique, apex, due});
+    savedBossClocks_.push_back(SavedBossClock{biome, eternal, apex, due});
 }
 
 // ---------------------------------------------------------------------------
@@ -1659,7 +1659,7 @@ void GameServer::shTick(double) {
     mobs.each([&](Entity e, MobTag&, Transform& at, MobType& type) {
         cluster::ServerStats::RealmLoad& load = loads[realmIndex(at.realm)];
         ++load.mobs;
-        if (rarityIndex(type.rarity) >= rarityIndex(Rarity::Unique) && !world_.has<Pet>(e)) {
+        if (rarityIndex(type.rarity) >= rarityIndex(Rarity::Eternal) && !world_.has<Pet>(e)) {
             load.boss = true;
         }
     });
@@ -1674,7 +1674,7 @@ void GameServer::shTick(double) {
         const bool ours = std::any_of(s.hosted.begin(), s.hosted.end(),
                                       [&](const Shard::Hosted& h) { return h.biome == clock.biome; });
         if (!ours) continue;
-        stats.clocks.push_back({clock.biome, clock.uniqueReadyMillis - clockMillis_,
+        stats.clocks.push_back({clock.biome, clock.eternalReadyMillis - clockMillis_,
                                 clock.apexReadyMillis - clockMillis_});
     }
     ByteWriter w = begin(ToGateway::Stats);

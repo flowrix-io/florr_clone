@@ -269,6 +269,7 @@ bool WorldView::applySnapshot(ByteReader& reader, double arrivedMillis) {
         double shieldFraction;
         std::string equippedSkinId;
         std::string guildName;
+        std::string handle;
         std::uint32_t ownerNetId;
         std::uint8_t npcRecipe;
         std::string name;
@@ -302,6 +303,7 @@ bool WorldView::applySnapshot(ByteReader& reader, double arrivedMillis) {
             s.shieldFraction = reader.u8() / 255.0;
             s.equippedSkinId = reader.str();
             s.guildName = reader.str();
+            s.handle = reader.str();
         }
         if (s.kind == net::EntityKind::Petal) s.ownerNetId = reader.u32();
         if (s.kind == net::EntityKind::Npc) s.npcRecipe = reader.u8();
@@ -447,6 +449,7 @@ bool WorldView::applySnapshot(ByteReader& reader, double arrivedMillis) {
         e.healthBar.snap(e.healthFraction, e.shieldFraction);
         e.equippedSkinId = std::move(s.equippedSkinId);
         e.guildName = std::move(s.guildName);
+        e.handle = std::move(s.handle);
         e.ownerNetId = s.ownerNetId;
         e.npcRecipe = s.npcRecipe;
         if (s.flags & net::SpawnIsSelf) {

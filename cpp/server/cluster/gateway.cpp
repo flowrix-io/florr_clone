@@ -1088,7 +1088,7 @@ int GameServer::gwServerForCommand(Session& session, const std::vector<std::stri
              "invulnerable", "phase"})) {
         return e.slot;
     }
-    if (any({"teleport", "tp", "corrupt"})) {
+    if (any({"teleport", "tp", "corrupt", "kill", "kick"})) {
         if (words.size() < 2) return e.slot;
         const int slot = serverOf(words[1]);
         // Nobody by that name: a bot, perhaps, and only its server knows.
@@ -2614,7 +2614,7 @@ std::string GameServer::bossTimersFromServers() const {
     for (const auto& entry : gateway_->servers) {
         for (const cluster::ServerStats::BossClock& clock : entry.second.stats.clocks) {
             if (!rows.empty()) rows += "<br/>";
-            rows += escapedMarkup(biomeLabel(clock.biome)) + ": unique " + label(clock.uniqueLeft) +
+            rows += escapedMarkup(biomeLabel(clock.biome)) + ": eternal " + label(clock.eternalLeft) +
                     ", apex " + label(clock.apexLeft);
         }
     }

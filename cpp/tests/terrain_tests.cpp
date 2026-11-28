@@ -448,6 +448,95 @@ TEST(spatial_grid_query_returns_a_complete_candidate_set) {
     }
 }
 
+TEST(spatial_grid_overlapping_query_is_exactly_the_overlapping_circles) {
+    // What the projectile pass asks: every body whose filed circle reaches the
+    // disc, once each, and nothing else -- across bucket edges, sub-cell
+    // edges, bodies bigger than a bucket and discs bigger than one.
+    SpatialGrid grid(600.0);
+    Rng rng(9191);
+    std::vector<Vec2> positions;
+    std::vector<double> radii;
+    for (int i = 0; i < 600; ++i) {
+        // Packed into a few buckets, as a crowd is, with every size of body.
+        const Vec2 p{rng.range(1500, 3300), rng.range(1500, 3300)};
+        const double r = i % 50 == 0 ? rng.range(300.0, 900.0) : rng.range(0.0, 60.0);
+        positions.push_back(p);
+        radii.push_back(r);
+        grid.insert(makeEntity(static_cast<std::uint32_t>(i + 1), 1), Realm::Overworld, p, r);
+    }
+    std::vector<Entity> out;
+    for (int q = 0; q < 400; ++q) {
+        const Vec2 c{rng.range(1400, 3400), rng.range(1400, 3400)};
+        const double qr = q % 20 == 0 ? rng.range(200.0, 1000.0) : rng.range(0.0, 80.0);
+        grid.queryOverlapping(Realm::Overworld, c, qr, out);
+        std::size_t expected = 0;
+        for (std::size_t i = 0; i < positions.size(); ++i) {
+            const bool overlaps = distance(positions[i], c) <= qr + radii[i];
+            expected += overlaps ? 1 : 0;
+            CHECK_EQ(countOf(out, makeEntity(static_cast<std::uint32_t>(i + 1), 1)),
+                     overlaps ? 1 : 0);
+        }
+        CHECK_EQ(out.size(), expected);
+    }
+}
+
+TEST(spatial_grid_overlapping_query_follows_the_grid_between_and_within_ticks) {
+    SpatialGrid grid(600.0);
+    std::vector<Entity> out;
+    const Entity a = makeEntity(3, 1);
+    const Entity b = makeEntity(4, 1);
+    const Entity late = makeEntity(5, 1);
+    grid.insert(a, Realm::Overworld, Vec2{1000, 1000}, 10);
+    grid.insert(b, Realm::Overworld, Vec2{1100, 1000}, 10);
+    grid.queryOverlapping(Realm::Overworld, Vec2{1000, 1000}, 20, out);
+    CHECK(out == (std::vector<Entity>{a}));
+
+    // Filed after the bucket was split: the split is made again.
+    grid.insert(late, Realm::Overworld, Vec2{1010, 1000}, 5);
+    grid.queryOverlapping(Realm::Overworld, Vec2{1000, 1000}, 20, out);
+    CHECK_EQ(out.size(), std::size_t(2));
+    CHECK_EQ(countOf(out, late), 1);
+
+    // A new tick: last tick's split says nothing.
+    grid.clear();
+    grid.insert(b, Realm::Overworld, Vec2{1000, 1000}, 10);
+    grid.queryOverlapping(Realm::Overworld, Vec2{1000, 1000}, 20, out);
+    CHECK(out == (std::vector<Entity>{b}));
+
+    // Only realms it was filed in, and nothing for a disc that is not a place.
+    grid.queryOverlapping(Realm::Arena, Vec2{1000, 1000}, 20, out);
+    CHECK(out.empty());
+    out.push_back(a);
+    grid.queryOverlapping(Realm::Overworld, Vec2{kQuietNan, 1000}, 20, out);
+    CHECK(out.empty());
+
+    // Past the layer's edge, clamped into the border as query() files it.
+    const Entity outside = makeEntity(6, 1);
+    grid.insert(outside, Realm::Overworld, Vec2{-300, -300}, 10);
+    grid.queryOverlapping(Realm::Overworld, Vec2{-290, -300}, 5, out);
+    CHECK(out == (std::vector<Entity>{outside}));
+    grid.queryOverlapping(Realm::Overworld, Vec2{20, 20}, 5, out);
+    CHECK(out.empty());
+
+    // A radius that is not a number is filed as a point, as insert() files
+    // it, and found by any disc that reaches its sub-cell however far from
+    // its centre; a negative one is a point.
+    const Entity odd = makeEntity(7, 1);
+    const Entity negative = makeEntity(8, 1);
+    grid.insert(odd, Realm::Overworld, Vec2{5000, 5000}, kQuietNan);
+    grid.insert(negative, Realm::Overworld, Vec2{5100, 5000}, -40);
+    grid.queryOverlapping(Realm::Overworld, Vec2{5010, 5000}, 2, out);
+    CHECK(out == (std::vector<Entity>{odd}));
+    grid.queryOverlapping(Realm::Overworld, Vec2{5090, 5000}, 10, out);
+    CHECK_EQ(countOf(out, negative), 1);
+
+    // Filed twice: no circle is the entity's, and the cells' superset is the
+    // answer, each once.
+    grid.insert(b, Realm::Overworld, Vec2{1000, 1000}, 10);
+    grid.queryOverlapping(Realm::Overworld, Vec2{1000, 1000}, 20, out);
+    CHECK_EQ(countOf(out, b), 1);
+}
+
 TEST(spatial_grid_answers_a_one_cell_query_in_filing_order_and_once_each) {
     // Most queries fit inside one cell, and those are answered by copying the
     // cell rather than walking it: the answer must still be the walk's, in

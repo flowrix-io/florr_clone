@@ -502,7 +502,7 @@ TEST(the_shop_never_stocks_a_sacrifice_or_an_admin_petal) {
 }
 
 TEST(the_shop_never_offers_a_petal_below_its_floor) {
-    // A minRarity of super: it only ever lands on a super or unique card,
+    // A minRarity of super: it only ever lands on a super or eternal card,
     // never on a mythic or ultra one, and a purchase named below it is not for
     // sale.
     const test::FixtureContent fixture = shopFixture();
@@ -524,19 +524,19 @@ TEST(the_shop_never_offers_a_petal_below_its_floor) {
     CHECK(offered > 0);
 }
 
-TEST(every_rotation_is_two_mythic_two_ultra_four_super_two_unique) {
+TEST(every_rotation_is_two_mythic_two_ultra_four_super_two_eternal) {
     CHECK(ensureShippedContent());
     for (std::int64_t rotation = 0; rotation < 2000; ++rotation) {
         const std::vector<ShopOffer> offers = shopOffers(rotation);
         CHECK_EQ(offers.size(), static_cast<std::size_t>(kShopOfferCount));
-        int mythic = 0, ultra = 0, super = 0, unique = 0;
+        int mythic = 0, ultra = 0, super = 0, eternal = 0;
         for (std::size_t i = 0; i < offers.size(); ++i) {
             // Laid out cheap to dear, the same order every hour.
             CHECK(offers[i].rarity == kShopOfferTiers[i]);
             mythic += offers[i].rarity == Rarity::Mythic;
             ultra += offers[i].rarity == Rarity::Ultra;
             super += offers[i].rarity == Rarity::Super;
-            unique += offers[i].rarity == Rarity::Unique;
+            eternal += offers[i].rarity == Rarity::Eternal;
             CHECK(petalComesAt(content().petal(offers[i].petalIndex), offers[i].rarity));
             // No petal twice in one hour, whatever the tiers.
             for (std::size_t j = 0; j < i; ++j) CHECK(offers[j].petalIndex != offers[i].petalIndex);
@@ -544,7 +544,7 @@ TEST(every_rotation_is_two_mythic_two_ultra_four_super_two_unique) {
         CHECK_EQ(mythic, 2);
         CHECK_EQ(ultra, 2);
         CHECK_EQ(super, 4);
-        CHECK_EQ(unique, 2);
+        CHECK_EQ(eternal, 2);
     }
 }
 
@@ -571,14 +571,14 @@ TEST(shop_prices_climb_by_tier_and_top_tiers_are_not_for_sale) {
     CHECK_NEAR(shopPrice("a-petal-that-does-not-exist", Rarity::Common), 0.0, 1e-12);
 
     CHECK(shopSellsRarity(Rarity::Super));
-    CHECK(!shopSellsRarity(Rarity::Unique));
+    CHECK(!shopSellsRarity(Rarity::Eternal));
     CHECK(!shopSellsRarity(Rarity::Apex));
     CHECK(!shopSellsRarity(Rarity::Universal));
     CHECK(!shopSellsRarity(Rarity::Admin));
-    // A unique is only ever on a card; nothing above it is even that.
+    // An eternal is only ever on a card; nothing above it is even that.
     for (std::int64_t rotation = 0; rotation < 500; ++rotation) {
         for (const ShopOffer& offer : shopOffers(rotation)) {
-            CHECK(rarityIndex(offer.rarity) <= rarityIndex(Rarity::Unique));
+            CHECK(rarityIndex(offer.rarity) <= rarityIndex(Rarity::Eternal));
         }
     }
 }
@@ -630,7 +630,7 @@ TEST(a_watched_petal_is_found_the_first_hour_it_is_offered) {
     const ShopOffer& card = offers.front();
     const ShopWatch any{card.petalIndex, kShopWatchAnyTier, current};
     const ShopWatch exact{card.petalIndex, rarityIndex(card.rarity), current};
-    const ShopWatch wrongTier{card.petalIndex, rarityIndex(Rarity::Unique), current};
+    const ShopWatch wrongTier{card.petalIndex, rarityIndex(Rarity::Eternal), current};
     CHECK_EQ(watchedShopRotation({any}, current), current);
     CHECK_EQ(watchedShopRotation({exact}, current), current);
     CHECK_EQ(watchedShopRotation({wrongTier}, current), std::int64_t(-1));
@@ -736,7 +736,7 @@ TEST(the_store_locks_itself_on_a_watched_petal) {
              std::size_t(1));
     CHECK_EQ(ask(client, "watch", absent, 4000, true)["watches"].size(), std::size_t(1));
     // Not the tier on offer.
-    CHECK(!ask(client, "watch", card.petalIndex, rarityIndex(Rarity::Unique), true)["locked"].asBool());
+    CHECK(!ask(client, "watch", card.petalIndex, rarityIndex(Rarity::Eternal), true)["locked"].asBool());
     // On offer: locked there and then, and still locked with the watch off.
     const Json& hit = ask(client, "watch", card.petalIndex, rarityIndex(card.rarity), true);
     CHECK(hit["locked"].asBool());
@@ -808,12 +808,12 @@ TEST(an_offer_is_charged_its_discounted_price_and_a_wrong_slot_is_refused) {
     CHECK_EQ(client.profile().stars, stars);
 }
 
-TEST(a_unique_card_sells_the_unique_the_ladder_will_not) {
+TEST(an_eternal_card_sells_the_eternal_the_ladder_will_not) {
     CHECK(ensureShippedContent());
     const std::vector<ShopOffer> offers = shopOffers(shopRotation(shopClockNow()));
     std::size_t slot = offers.size();
     for (std::size_t i = 0; i < offers.size(); ++i) {
-        if (offers[i].rarity == Rarity::Unique &&
+        if (offers[i].rarity == Rarity::Eternal &&
             (slot == offers.size() || offers[i].price < offers[slot].price)) {
             slot = i;
         }
@@ -822,7 +822,7 @@ TEST(a_unique_card_sells_the_unique_the_ladder_will_not) {
     const ShopOffer& offer = offers[slot];
     const double price = offer.price;
 
-    Harness h("shop-unique", [&](const std::string& path) {
+    Harness h("shop-eternal", [&](const std::string& path) {
         seedAccount(path, "una", "password7", price + 5, 0);
     });
     if (!h.ready) { CHECK(false); return; }
@@ -836,18 +836,18 @@ TEST(a_unique_card_sells_the_unique_the_ladder_will_not) {
     }));
 
     // Named without a card, the same petal at the same tier is not for sale.
-    client.requestBuyPetal(offer.petalIndex, Rarity::Unique);
+    client.requestBuyPetal(offer.petalIndex, Rarity::Eternal);
     ShopOutcome refused;
     CHECK(awaitShopAnswer(h, client, refused));
     CHECK(!refused.ok);
-    CHECK_EQ(client.profile().stackCount(offer.petalIndex, Rarity::Unique), 0u);
+    CHECK_EQ(client.profile().stackCount(offer.petalIndex, Rarity::Eternal), 0u);
 
     // Bought from the card, it is, at the card's price.
-    client.requestBuyPetal(offer.petalIndex, Rarity::Unique, static_cast<int>(slot));
+    client.requestBuyPetal(offer.petalIndex, Rarity::Eternal, static_cast<int>(slot));
     CHECK(awaitProfile(h, client, [&](const Profile& p) {
         return p.stars == 5 + kFirstLoginStars;
     }));
-    CHECK_EQ(client.profile().stackCount(offer.petalIndex, Rarity::Unique), 1u);
+    CHECK_EQ(client.profile().stackCount(offer.petalIndex, Rarity::Eternal), 1u);
 }
 
 TEST(a_magic_petal_is_drawn_at_the_size_of_the_petal_it_is_the_form_of) {
@@ -1017,11 +1017,11 @@ TEST(a_purchase_spends_the_servers_price_not_the_clients) {
     }));
     CHECK_EQ(client.profile().stackCount(rose, Rarity::Common), before + 1);
 
-    // Unique is not for sale at any balance.
-    client.requestBuyPetal(rose, Rarity::Unique);
+    // Eternal is not for sale at any balance.
+    client.requestBuyPetal(rose, Rarity::Eternal);
     h.step(20, {&client});
     CHECK_EQ(client.profile().stars, 5 + kFirstLoginStars);
-    CHECK_EQ(client.profile().stackCount(rose, Rarity::Unique), 0u);
+    CHECK_EQ(client.profile().stackCount(rose, Rarity::Eternal), 0u);
 }
 
 TEST(a_star_code_pays_once_and_names_its_refusals) {
@@ -1500,7 +1500,7 @@ TEST(a_talent_tree_round_trips_through_the_database) {
         record.totalXp = 100000;
         record.skills.set(SkillId::Healing, rarityIndex(Rarity::Epic));
         record.skills.set(SkillId::Absorbing, rarityIndex(Rarity::Common));
-        record.skills.set(SkillId::Reload, rarityIndex(Rarity::Unique));
+        record.skills.set(SkillId::Reload, rarityIndex(Rarity::Eternal));
         record.skills.set(SkillId::PetHealth, rarityIndex(Rarity::Legendary));
         record.skills.set(SkillId::Duplicator, 1);
         db.markDirty();
@@ -1518,7 +1518,7 @@ TEST(a_talent_tree_round_trips_through_the_database) {
         if (record != nullptr) {
             CHECK_EQ(record->skills.level(SkillId::Healing), rarityIndex(Rarity::Epic));
             CHECK_EQ(record->skills.level(SkillId::Absorbing), rarityIndex(Rarity::Common));
-            CHECK_EQ(record->skills.level(SkillId::Reload), rarityIndex(Rarity::Unique));
+            CHECK_EQ(record->skills.level(SkillId::Reload), rarityIndex(Rarity::Eternal));
             CHECK_NEAR(record->skills.reloadScale(), 0.292, 1e-12);
             // The newest branch, at the tier the tree's own key table has to
             // spell correctly for a saved account to keep it.
@@ -1533,7 +1533,7 @@ TEST(a_talent_tree_round_trips_through_the_database) {
 }
 
 TEST(a_saved_tier_past_the_top_of_its_branch_loads_clamped) {
-    // Reload used to go to apex. An account saved back then keeps the unique
+    // Reload used to go to apex. An account saved back then keeps the eternal
     // tier it paid for on the way up, and gets back only the apex tier's cost,
     // rather than losing the whole branch.
     const std::string path = flix::testsupport::tempPath("skill-clamp-json");
@@ -1562,8 +1562,8 @@ TEST(a_saved_tier_past_the_top_of_its_branch_loads_clamped) {
         const PlayerRecord* record = reopened.findProgress(account->id);
         CHECK(record != nullptr);
         if (record != nullptr) {
-            CHECK_EQ(skillTierCount(SkillId::Reload), rarityIndex(Rarity::Unique) + 1);
-            CHECK_EQ(record->skills.level(SkillId::Reload), rarityIndex(Rarity::Unique));
+            CHECK_EQ(skillTierCount(SkillId::Reload), rarityIndex(Rarity::Eternal) + 1);
+            CHECK_EQ(record->skills.level(SkillId::Reload), rarityIndex(Rarity::Eternal));
             CHECK_NEAR(record->skills.reloadScale(), 0.292, 1e-12);
         }
     }

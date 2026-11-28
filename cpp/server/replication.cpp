@@ -26,6 +26,15 @@ Vec2 wirePosition(Vec2 p) {
 /// clock plus a random tail) is not a case that occurs. The alternative --
 /// keeping the id itself beside every tracked entity in every view -- costs
 /// memory on every mob on the map, for all of them.
+/// wrapAngle, without the fmod for an angle already in its range: fmod hands
+/// such an angle back unchanged, so the answer is the same bit for bit. The
+/// update pass compares every entity's facing against what the client holds,
+/// per viewer per snapshot, and the difference is almost always in range.
+inline double wrapAngleFast(double a) {
+    if (a > -kPi && a <= kPi) return a;
+    return wrapAngle(a);
+}
+
 std::uint32_t stringHash(const std::string& id) {
     std::uint32_t h = 2166136261u;
     for (const char c : id) {
@@ -69,41 +78,6 @@ double replicatedAngle(World& world, Entity e, const Transform& transform) {
         return instance->facingAngle;
     }
     return transform.angle;
-}
-
-/// Whose a record is, from the VIEWER's side: SpawnForeign when a player other
-/// than the viewer owns it, plus SpawnIsPet on a shot a pet fired. Zero for
-/// anything no player owns and for everything of the viewer's own.
-///
-/// A petal names its flower and a pet its owner. A shot names both the body
-/// that fired it and the player it credits, which differ exactly when a pet
-/// fired it -- and it can outlive either, so a shot is judged by its own
-/// side first: a wild mob's is never on the players' team.
-///
-/// The viewer is matched by connection as well as by body, because a
-/// splitter's parked half is not `viewer` and is still the viewer's own.
-std::uint8_t ownershipFlags(World& world, Entity e, Entity viewer,
-                            net::ConnectionId viewerOwner) {
-    Entity player = NULL_ENTITY;
-    std::uint8_t flags = 0;
-    if (const PetalInstance* instance = world.tryGet<PetalInstance>(e)) {
-        player = instance->owner;
-    } else if (const Pet* pet = world.tryGet<Pet>(e)) {
-        player = pet->owner;
-    } else if (const Projectile* shot = world.tryGet<Projectile>(e)) {
-        const Faction* side = world.tryGet<Faction>(e);
-        if (side == nullptr || side->team != Team::Players) return 0;
-        player = shot->creditTo;
-        if (shot->owner != shot->creditTo) flags |= net::SpawnIsPet;
-    } else {
-        return 0;
-    }
-    if (player == viewer) return flags;
-    const PlayerAccount* account = world.tryGet<PlayerAccount>(player);
-    if (account != nullptr && viewerOwner != 0 && account->connection == viewerOwner) {
-        return flags;
-    }
-    return flags | net::SpawnForeign;
 }
 
 } // namespace
@@ -249,6 +223,7 @@ void Replicator::indexWorld(World& world, double nowMillis) {
         });
     }
     facts_.assign(index_.size(), Facts{});
+    spawnFacts_.assign(index_.size(), SpawnFacts{});
     indexedAtMillis_ = nowMillis;
 }
 
@@ -280,6 +255,61 @@ const Replicator::Facts& Replicator::factsOf(World& world, std::uint32_t at) {
     facts.visuals = computePlayerVisuals(world, e, nowMillis);
     facts.skinHash = stringHash(skinIdOf(facts.visuals));
     facts.guildTagHash = stringHash(guildTagOf(facts.visuals));
+    return facts;
+}
+
+const Replicator::SpawnFacts& Replicator::spawnFactsOf(World& world, std::uint32_t at) {
+    SpawnFacts& facts = spawnFacts_[at];
+    if (facts.ready) return facts;
+    const Entity e = index_[at].entity;
+    facts.ready = true;
+    const Replicated& info = world.get<Replicated>(e);
+    facts.kind = info.kind;
+    facts.typeIndex = info.typeIndex;
+    facts.rarity = info.rarity;
+    facts.spawnFlags = info.spawnFlags;
+    // Whose a record is: a petal names its flower and a pet its owner. A shot
+    // names both the body that fired it and the player it credits, which
+    // differ exactly when a pet fired it -- and it can outlive either, so a
+    // shot is judged by its own side first: a wild mob's is never on the
+    // players' team. Nothing else is owned.
+    if (const PetalInstance* instance = world.tryGet<PetalInstance>(e)) {
+        facts.owned = true;
+        facts.ownerPlayer = instance->owner;
+    } else if (const Pet* pet = world.tryGet<Pet>(e)) {
+        facts.owned = true;
+        facts.ownerPlayer = pet->owner;
+    } else if (const Projectile* shot = world.tryGet<Projectile>(e)) {
+        const Faction* side = world.tryGet<Faction>(e);
+        if (side != nullptr && side->team == Team::Players) {
+            facts.owned = true;
+            facts.ownerPlayer = shot->creditTo;
+            if (shot->owner != shot->creditTo) facts.ownerFlags |= net::SpawnIsPet;
+        }
+    }
+    if (facts.owned) {
+        if (const PlayerAccount* account = world.tryGet<PlayerAccount>(facts.ownerPlayer)) {
+            facts.ownerHasAccount = true;
+            facts.ownerConnection = account->connection;
+        }
+    }
+    if (const PlayerAccount* account = world.tryGet<PlayerAccount>(e)) {
+        if (!account->username.empty()) facts.username = &account->username;
+        if (!account->handle.empty()) facts.handle = &account->handle;
+    }
+    if (info.kind == net::EntityKind::Petal) {
+        Entity owner = NULL_ENTITY;
+        if (const PetalInstance* instance = world.tryGet<PetalInstance>(e)) {
+            owner = instance->owner;
+        } else if (const MobRingPetal* seed = world.tryGet<MobRingPetal>(e)) {
+            owner = seed->mob;
+        }
+        if (const NetId* ownerId = world.tryGet<NetId>(owner)) facts.petalOwnerNetId = ownerId->value;
+    }
+    if (info.kind == net::EntityKind::Npc) {
+        const Npc* npc = world.tryGet<Npc>(e);
+        facts.npcRecipe = npc != nullptr ? npc->recipe : 0;
+    }
     return facts;
 }
 
@@ -378,11 +408,6 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
     for (auto it = runBegin; it != runEnd; ++it) {
         const Indexed& entry = *it;
         const Entity e = entry.entity;
-        if (entry.drop) {
-            const DropItem* drop = world.tryGet<DropItem>(e);
-            if (!drop->eligible.empty() && !claimed(drop->eligible, viewer, viewerOwner)) continue;
-            if (claimed(drop->pickedUpBy, viewer, viewerOwner)) continue;
-        }
         // The viewer's own body is always replicated, however the camera sits:
         // losing it would leave the client with no flower of its own to draw,
         // and no SpawnIsSelf record to learn which net id is its own.
@@ -394,6 +419,14 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
               std::find(frame.alwaysVisible->begin(), frame.alwaysVisible->end(), e) !=
                   frame.alwaysVisible->end())) {
             continue;
+        }
+        // A drop's claims after the box: both only ever turn an entity away,
+        // and every drop on the map is out of nearly every viewer's box, where
+        // reading its claims was a component lookup per drop per viewer.
+        if (entry.drop) {
+            const DropItem* drop = world.tryGet<DropItem>(e);
+            if (!drop->eligible.empty() && !claimed(drop->eligible, viewer, viewerOwner)) continue;
+            if (claimed(drop->pickedUpBy, viewer, viewerOwner)) continue;
         }
         candidates_.push_back({e, entry.netId, flix::distanceSq(entry.position, centre),
                                static_cast<std::uint32_t>(it - index_.begin())});
@@ -585,21 +618,31 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
             continue;
         }
 
-        const Replicated& info = world.get<Replicated>(candidate.entity);
+        const SpawnFacts& info = spawnFactsOf(world, candidate.at);
         const Facts& facts = factsOf(world, candidate.at);
         const Vec2 position = index_[candidate.at].position;
         const double radius = facts.radius;
 
         std::uint8_t flags = info.spawnFlags;
         if (candidate.entity == viewer) flags |= net::SpawnIsSelf;
-        flags |= ownershipFlags(world, candidate.entity, viewer, viewerOwner);
+        // Whose it is, from the viewer's side: nothing for an entity no player
+        // owns, and nothing more for the viewer's own -- matched by connection
+        // as well as by body, because a splitter's parked half is not
+        // `viewer` and is still the viewer's own -- and SpawnForeign for
+        // anyone else's. SpawnIsPet rides along on a shot a pet fired.
+        if (info.owned) {
+            flags |= info.ownerFlags;
+            if (info.ownerPlayer != viewer &&
+                !(info.ownerHasAccount && viewerOwner != 0 && info.ownerConnection == viewerOwner)) {
+                flags |= net::SpawnForeign;
+            }
+        }
         // Decided here rather than beside the field itself: `flags` is written
         // near the top of the record and the health fraction near the bottom,
         // and the flag is what tells the reader how many bytes the latter is.
         const bool spawnWide = facts.hasHealth && facts.healthWide;
         if (spawnWide) flags |= net::SpawnHealthWide;
-        const PlayerAccount* account = world.tryGet<PlayerAccount>(candidate.entity);
-        if (account && !account->username.empty()) flags |= net::SpawnHasName;
+        if (info.username != nullptr) flags |= net::SpawnHasName;
 
         out.varU32(candidate.netId - previousSpawnId);
         previousSpawnId = candidate.netId;
@@ -628,6 +671,7 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
             out.u8(visuals.shield);
             out.str(skinIdOf(visuals));
             out.str(guildTagOf(visuals));
+            out.str(info.handle != nullptr ? *info.handle : std::string());
         }
         if (info.kind == net::EntityKind::Petal) {
             // Petals are placed on an absolute ring around the owner's SERVER
@@ -637,22 +681,13 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
             // A flower's petal names its flower; a mob's ring seed names its
             // mob. Both anchor the same way on the client, which is the whole
             // reason a seed is replicated as a Petal at all.
-            Entity owner = NULL_ENTITY;
-            if (const PetalInstance* instance = world.tryGet<PetalInstance>(candidate.entity)) {
-                owner = instance->owner;
-            } else if (const MobRingPetal* seed = world.tryGet<MobRingPetal>(candidate.entity)) {
-                owner = seed->mob;
-            }
-            std::uint32_t ownerNetId = 0;
-            if (const NetId* ownerId = world.tryGet<NetId>(owner)) ownerNetId = ownerId->value;
-            out.u32(ownerNetId);
+            out.u32(info.petalOwnerNetId);
         }
         if (info.kind == net::EntityKind::Npc) {
             // Which of its mob's recipes an assembler makes; 0 for any other.
-            const Npc* npc = world.tryGet<Npc>(candidate.entity);
-            out.u8(npc != nullptr ? npc->recipe : 0);
+            out.u8(info.npcRecipe);
         }
-        if (flags & net::SpawnHasName) out.str(account->username);
+        if (flags & net::SpawnHasName) out.str(*info.username);
         ++spawnCount;
 
         // Seed the tracked values from what the spawn record just carried, so
@@ -717,7 +752,7 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
             mask |= net::FieldPosition;
         }
         const double angle = facts.angle;
-        if (std::fabs(wrapAngle(angle - tracked.angle)) > tolerances.angle) {
+        if (std::fabs(wrapAngleFast(angle - tracked.angle)) > tolerances.angle) {
             mask |= net::FieldAngle;
         }
         // Compared AT THE WIDTH it would be sent in, which is the only

@@ -137,7 +137,10 @@ Realm realmOf(const World& world, Entity entity) {
 bool parseRarityStrict(const std::string& text, Rarity& out) {
     const std::string key = lowerCase(text);
     for (int i = 0; i < kRarityCount; ++i) {
-        if (key == kRarityNames[static_cast<std::size_t>(i)]) {
+        // Admin commands call eternal "unique", as the database does
+        // (kRaritySaveKeys); "eternal", the name players see, works too.
+        if (key == kRarityNames[static_cast<std::size_t>(i)] ||
+            key == kRaritySaveKeys[static_cast<std::size_t>(i)]) {
             out = static_cast<Rarity>(i);
             return true;
         }
@@ -145,11 +148,15 @@ bool parseRarityStrict(const std::string& text, Rarity& out) {
     return false;
 }
 
+/// A rarity as admin commands spell it: the database's own key, so eternal
+/// reads "unique" here as it does in the save file.
+const char* adminRarityName(Rarity rarity) { return raritySaveKey(rarity); }
+
 std::string rarityList() {
     std::string out;
     for (int i = 0; i < kRarityCount; ++i) {
         if (i > 0) out += ", ";
-        out += kRarityNames[static_cast<std::size_t>(i)];
+        out += kRaritySaveKeys[static_cast<std::size_t>(i)];
     }
     return out;
 }
@@ -1034,8 +1041,8 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
             out(bossTimersFromServers());
             return true;
         }
-        // A wild unique or apex is a super its biome's clock upgraded, so
-        // "when is the next unique" is a question about these clocks.
+        // A wild eternal or apex is a super its biome's clock upgraded, so
+        // "when is the next eternal" is a question about these clocks.
         // "ready" means the next super spawned there rolls for the upgrade;
         // until then an admin's `spawn` refuses that tier there as well.
         const auto& clocks = spawning_->bossClocks();
@@ -1043,8 +1050,8 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
         for (const SpawnSystem::BiomeBossClock& clock : clocks) {
             if (!clock.scattered) continue;
             if (!lines.empty()) lines += "<br/>";
-            lines += escapedMarkup(biomeLabel(clock.biome)) + ": unique " +
-                     clockWaitLabel(clock.uniqueReadyMillis - clockMillis_) + ", apex " +
+            lines += escapedMarkup(biomeLabel(clock.biome)) + ": eternal " +
+                     clockWaitLabel(clock.eternalReadyMillis - clockMillis_) + ", apex " +
                      clockWaitLabel(clock.apexReadyMillis - clockMillis_);
         }
         if (lines.empty()) {
@@ -1084,7 +1091,7 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
         // in the browser rather than as a wall of tags.
         std::string help = "<b>Available commands:</b><br/>";
         help += "/biome - Show the most populated biome <br/>";
-        help += "/boss-timers - Show each biome's unique/apex cooldown <br/>";
+        help += "/boss-timers - Show each biome's eternal/apex cooldown <br/>";
         help += "/players-online - Show how many players are online <br/>";
         help += "/profile [username] - Show a player's level, stats, loadout and inventory <br/>";
         help += "/level-from-string &lt;name&gt; - Show what level a bot named &lt;name&gt; would "
@@ -1194,6 +1201,9 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
             command("corrupt &lt;username&gt; [on|off|toggle] - Corrupted flowers fight players "
                     "anywhere, not just in PVP");
             command("god [on|off|toggle] - Make yourself invulnerable");
+            command("kill &lt;username&gt; - Kill a player's flower (or a bot); they respawn "
+                    "as usual");
+            command("kick &lt;username&gt; - Send a player back to the title screen");
             command("phase [on|off|toggle] - Pass through walls");
             command("control &lt;username&gt; - Steer another player's flower with your own "
                     "controls");
@@ -2378,7 +2388,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             const Rarity standing = clampLadderRarity(
                 std::max(rarityIndex(rarity), rarityIndex(content().mob(mobIndex).minRarity)));
             if (barredFromPrestige(standing) && spawning_->prestigeRealm(spawnRealm)) {
-                out(std::string("Refused: no ") + rarityName(standing) +
+                out(std::string("Refused: no ") + adminRarityName(standing) +
                     " can stand in a prestige biome");
                 return;
             }
@@ -2387,7 +2397,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             if (cooling > 0.0) {
                 const std::string biome = biomeOfRealm(spawnRealm);
                 out(std::string("Refused: ") + (biome.empty() ? "this biome" : biomeLabel(biome)) +
-                    "'s " + rarityName(standing) + " clock is cooling down (ready in " +
+                    "'s " + adminRarityName(standing) + " clock is cooling down (ready in " +
                     clockWaitLabel(cooling) + "; see /boss-timers)");
                 return;
             }
@@ -2415,7 +2425,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
                     placedAny = true;
                 }
             }
-            // An admin's unique or apex spends the biome's clock just as a
+            // An admin's eternal or apex spends the biome's clock just as a
             // wild one does, so the next one there -- wild or typed -- waits a
             // full cooldown. Charged once, after the whole batch: charging on
             // the first would have spawnMob refuse the rest of `amount`, and
@@ -2498,7 +2508,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         const char* sideName = team == Team::Players  ? "players'"
                              : team == Team::Hostiles ? "hostile"
                                                       : "neutral";
-        out("Placed a " + std::string(rarityName(placed)) + " " + words[1] + " NPC (" +
+        out("Placed a " + std::string(adminRarityName(placed)) + " " + words[1] + " NPC (" +
             sideName + " side) at your location");
         return;
     }
@@ -2726,6 +2736,99 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         return;
     }
 
+    // -- kill and kick -----------------------------------------------------
+    //
+    // kill drops a flower where it stands -- the ordinary corpse, death card
+    // and respawn, as the admin cursor's removal does, with no killer
+    // credited -- and kick takes it out of the world altogether, its client
+    // sent back to the title screen the way a talent reset in a prestige
+    // biome sends one (LeftWorld). Neither reaches an admin of the caller's
+    // own tier or above, ban_admin's rule, nor a full admin from a grant,
+    // mute's: a console lent for one life cannot throw its lender out.
+
+    if (verb == "kill" || verb == "kick") {
+        const bool kicking = verb == "kick";
+        if (words.size() != 2) {
+            out(kicking ? "Usage: kick <username>  (sends them back to the title screen)"
+                        : "Usage: kill <username>  (kills their flower; they respawn as usual)");
+            return;
+        }
+        CommandTarget target;
+        if (!resolveCommandTarget(words[1], target)) {
+            out("Player \"" + words[1] + "\" not found. Use list-players to see available "
+                "players.");
+            return;
+        }
+        Session* victim = target.session;
+        if (victim == nullptr && kicking) {
+            out(target.name + " is a bot, and only a player can be kicked. Use kill instead.");
+            return;
+        }
+        if (victim != nullptr && victim != &session && effectiveAdmin(*victim)) {
+            if (!session.admin && victim->admin) {
+                out(victim->username + " is a full admin and cannot be " +
+                    (kicking ? "kicked." : "killed."));
+                return;
+            }
+            const int ownTier = adminTier(session);
+            const int theirTier = adminTier(*victim);
+            if (theirTier <= ownTier) {
+                out("You can only " + verb + " admins of a lower tier than your own (" +
+                    adminTierLabel(ownTier) + "). " + victim->username + " is " +
+                    adminTierLabel(theirTier) + ".");
+                return;
+            }
+        }
+        // Resolved, but its body is on another server: the gateway sends
+        // these to the target's server (gwServerForCommand), so this is only
+        // a flower between servers.
+        if (victim != nullptr && !victim->playing()) {
+            out(victim->username + " is not in the world right now. Try again in a moment.");
+            return;
+        }
+
+        if (kicking) {
+            leaveWorld(*victim);
+            if (net::Connection* peer = listener_.find(victim->connection)) {
+                ByteWriter w;
+                w.u8(static_cast<std::uint8_t>(net::ServerMessage::LeftWorld));
+                peer->send(w);
+                // The answer a LeaveGame gets, which the client expects next.
+                sendProfile(*victim, *peer);
+                sendNotice(*peer, net::NoticeSeverity::Warning,
+                           "An admin sent you back to the title screen.");
+            }
+            audit("kicked " + victim->username + " to the title screen");
+            out("Kicked " + victim->username + " to the title screen.");
+            return;
+        }
+
+        // Both halves of a split flower, or the player would simply carry on
+        // in the half left standing. Health straight to zero, past god mode
+        // and respawn protection alike: that is what the command is for.
+        int felled = 0;
+        const std::array<Entity, 2> bodies =
+            victim != nullptr ? bodiesOf(*victim) : std::array<Entity, 2>{target.entity, NULL_ENTITY};
+        for (const Entity body : bodies) {
+            if (!isStanding(world_, body)) continue;
+            if (Health* health = world_.tryGet<Health>(body)) health->current = 0;
+            world_.add<Dead>(body);
+            ++felled;
+        }
+        if (felled == 0) {
+            out(target.name + "'s flower is already dead.");
+            return;
+        }
+        if (victim != nullptr) {
+            if (net::Connection* peer = listener_.find(victim->connection)) {
+                sendNotice(*peer, net::NoticeSeverity::Bad, "An admin killed your flower.");
+            }
+        }
+        audit("killed " + target.name);
+        out("Killed " + target.name + ".");
+        return;
+    }
+
     if (verb == "set_skin") {
         if (words.size() != 3) {
             out("Usage: set_skin <username> <" + skinNameList("|") + "|none|bitmask>");
@@ -2904,10 +3007,10 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             // One profile for the whole batch, rather than one per petal.
             if (self) sendProfile(session, connection);
             else if (online) sendProfile(*target.session);
-            out("Gave " + std::to_string(amount) + "x every " + rarityName(rarity) +
+            out("Gave " + std::to_string(amount) + "x every " + adminRarityName(rarity) +
                 " petal" + (excludedNames.empty() ? std::string() : " except " + excludedNames) +
                 " to " + (self ? std::string("yourself") : username) + ".");
-            audit("gave " + std::to_string(amount) + "x every " + rarityName(rarity) + " petal" +
+            audit("gave " + std::to_string(amount) + "x every " + adminRarityName(rarity) + " petal" +
                   (excludedNames.empty() ? std::string() : " except " + excludedNames) + " to " +
                   (self ? session.username : database_.canonicalUsername(username)));
             return;
@@ -2972,10 +3075,10 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         database_.markDirty();
         if (online) sendProfile(*target.session);
         const std::string amountLabel = amount > 1 ? std::to_string(amount) + "x " : std::string();
-        out("Gave " + amountLabel + rarityText + " " + itemType + " petal to " +
+        out("Gave " + amountLabel + adminRarityName(rarity) + " " + itemType + " petal to " +
             (online ? target.name + " (" + std::to_string(target.session->connection) + ")"
                     : database_.canonicalUsername(words[1]) + " (offline)"));
-        audit("gave " + std::to_string(amount) + "x " + rarityText + " " + itemType + " to " +
+        audit("gave " + std::to_string(amount) + "x " + adminRarityName(rarity) + " " + itemType + " to " +
               (online ? target.name : database_.canonicalUsername(words[1]) + " (offline)"));
         return;
     }
@@ -3644,7 +3747,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             out("  Valid types: super_craft, unique_craft, apex_craft, star_code, universal_craft");
             out("  Examples:");
             out("    notification star_code Special event starting now!");
-            out("    notify unique_craft New unique petal discovered!");
+            out("    notify unique_craft New eternal petal discovered!");
             return;
         }
         // The feed's own list of tags (notificationKind), so a tag the console

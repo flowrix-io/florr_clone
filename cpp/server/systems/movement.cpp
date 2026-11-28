@@ -828,6 +828,8 @@ void MovementSystem::moveProjectiles(World& world, const Terrain& terrain, doubl
             projectile.wavePhase = wrapAngle(projectile.wavePhase + turn);
         }
         const double stepSpeed = step.length();
+        projectile.lastStepVelocity = step;
+        projectile.lastStepBounced = false;
 
         // Range is a distance budget, not a timer: the last tick is shortened
         // so a fast shot dies exactly at its stated reach rather than one whole
@@ -873,6 +875,9 @@ void MovementSystem::moveProjectiles(World& world, const Terrain& terrain, doubl
                     // same way, on the same remaining range.
                 }
             }
+            // Keep the approach for swept hits before this wall, while a
+            // contact next tick must use the outgoing bounce in Motion.
+            projectile.lastStepBounced = true;
         } else if (out.blocked) {
             // The map edge eats shots.
             projectile.remainingDistance = 0.0;

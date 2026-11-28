@@ -79,6 +79,8 @@ bool finite(const MobStats& s) {
 
 bool finite(const PetalStats& s) {
     return std::isfinite(s.damage) && std::isfinite(s.health) && std::isfinite(s.reloadMillis) &&
+           std::isfinite(s.reflectionSpeedMultiplier) &&
+           std::isfinite(s.reflectionDamageMultiplier) &&
            std::isfinite(s.poisonPerSecond) && std::isfinite(s.poisonDurationMillis) &&
            std::isfinite(s.heal) && std::isfinite(s.healChargeMillis) &&
            std::isfinite(s.passiveHealPerSecond) && std::isfinite(s.knockback) &&
@@ -491,6 +493,247 @@ TEST(petal_stats_scale_across_rarities) {
     CHECK(r.petal(healer).defendOnly);
 }
 
+TEST(petal_damage_from_mob_body_is_explicit_and_defaults_off) {
+    ContentRegistry r;
+    CHECK(loadPetals(r, R"JSON({
+      "mirror": {"damage": 0, "health": null, "damageFromMobBody": true},
+      "plain": {"damage": 12, "health": null},
+      "wrong": {"damage": 12, "health": null, "damageFromMobBody": "true"}
+    })JSON"));
+    CHECK(r.petal(r.petalIndex("mirror")).damageFromMobBody);
+    CHECK(!r.petal(r.petalIndex("plain")).damageFromMobBody);
+    CHECK(!r.petal(r.petalIndex("wrong")).damageFromMobBody);
+    CHECK(warned(r, "damageFromMobBody is a string"));
+    CHECK(!warned(r, "unknown key 'damageFromMobBody'"));
+}
+
+TEST(projectile_reflection_speed_and_reload_improve_at_every_rarity) {
+    ContentRegistry r;
+    CHECK(loadPetals(r, R"JSON({
+      "mirror": {"name": "Mirror", "health": 90, "damage": 8, "size": 1.25,
+        "cooldown": 3000, "count": 1, "projectileReflection": {
+          "speedMultiplier": 1.5, "speedMultiplierPerRarity": 0.25,
+          "damageMultiplier": 0.1, "damageMultiplierPerRarity": 0.1,
+          "reloadDivisorPerRarity": 1.35}},
+      "plain": {"name": "Plain", "health": 10, "damage": 10, "size": 1,
+        "cooldown": 2500, "count": 1}
+    })JSON"));
+    const std::uint16_t mirror = r.petalIndex("mirror");
+    const std::uint16_t plain = r.petalIndex("plain");
+    CHECK(r.petal(mirror).projectileReflection.present);
+    CHECK_NEAR(r.petal(mirror).projectileReflection.speedMultiplier, 1.5, 1e-9);
+    CHECK_NEAR(r.petal(mirror).projectileReflection.speedMultiplierPerRarity, 0.25, 1e-9);
+    CHECK_NEAR(r.petal(mirror).projectileReflection.damageMultiplier, 0.1, 1e-9);
+    CHECK_NEAR(r.petal(mirror).projectileReflection.damageMultiplierPerRarity, 0.1, 1e-9);
+    CHECK_NEAR(r.petal(mirror).projectileReflection.reloadDivisorPerRarity, 1.35, 1e-9);
+    double previousSpeed = 0.0;
+    double previousReload = 3001.0;
+    for (int tier = 0; tier < kRarityCount; ++tier) {
+        const Rarity rarity = static_cast<Rarity>(tier);
+        const PetalStats& s = r.petalStats(mirror, rarity);
+        const double adminScale = rarity == Rarity::Admin ? 0.5 : 1.0;
+        CHECK_NEAR(s.reflectionSpeedMultiplier, 1.5 + 0.25 * tier, 1e-9);
+        CHECK_NEAR(s.reflectionDamageMultiplier, 0.1 * (std::min(tier, 9) + 1), 1e-9);
+        CHECK_NEAR(s.reloadMillis, 3000.0 / std::pow(1.35, tier) * adminScale, 1e-9);
+        CHECK(s.reflectionSpeedMultiplier > previousSpeed);
+        CHECK(s.reloadMillis > 0.0 && s.reloadMillis < previousReload);
+        CHECK_NEAR(r.petalStats(plain, rarity).reflectionSpeedMultiplier, 0.0, 1e-9);
+        CHECK_NEAR(r.petalStats(plain, rarity).reflectionDamageMultiplier, 0.0, 1e-9);
+        CHECK_NEAR(r.petalStats(plain, rarity).reloadMillis, 2500.0 * adminScale, 1e-9);
+        previousSpeed = s.reflectionSpeedMultiplier;
+        previousReload = s.reloadMillis;
+    }
+    CHECK(!r.petal(plain).projectileReflection.present);
+    CHECK(!warned(r, "unknown key"));
+    CHECK(!warned(r, "projectileReflection"));
+}
+
+TEST(projectile_reflection_exact_rarity_shares_override_only_damage) {
+    ContentRegistry r;
+    CHECK(loadPetals(r, R"JSON({
+      "mirror": {"damage": 0, "damageFromMobBody": true, "health": null,
+        "cooldown": 3000, "projectileReflection": {
+          "damageMultiplierByRarity": {"super": 0.7, "eternal": 4, "apex": 400}}}
+    })JSON"));
+    const auto mirror = r.petalIndex("mirror");
+    const std::array<double, kRarityCount> expected{
+        .1, .2, .3, .4, .5, .6, .7, .7, 4.0, 400.0, 400.0, 400.0};
+    const ContentRegistry& actual = shipped().registry;
+    const auto prism = actual.petalIndex("prism_mirror");
+    CHECK(prism != kInvalidIndex);
+    if (prism == kInvalidIndex) return;
+    for (int tier = 0; tier < kRarityCount; ++tier) {
+        const Rarity rarity = static_cast<Rarity>(tier);
+        const auto& stats = r.petalStats(mirror, rarity);
+        CHECK_NEAR(stats.reflectionDamageMultiplier, expected[tier], 1e-9);
+        CHECK_NEAR(actual.petalStats(prism, rarity).reflectionDamageMultiplier,
+                   expected[tier], 1e-9);
+        CHECK_NEAR(stats.reflectionSpeedMultiplier, 1.5 + .25 * tier, 1e-9);
+        CHECK_NEAR(stats.reloadMillis,
+                   3000.0 / std::pow(1.35, tier) * (rarity == Rarity::Admin ? .5 : 1.0), 1e-9);
+    }
+    CHECK(!warned(r, "damageMultiplierByRarity"));
+}
+
+TEST(projectile_reflection_rarity_overrides_allow_amplification_and_sanitize_extremes) {
+    ContentRegistry r;
+    CHECK(loadPetals(r, R"JSON({
+      "wrong": {"damage": 1, "health": 1, "projectileReflection": {
+          "damageMultiplierByRarity": true}},
+      "bounded": {"damage": 1, "health": 1, "projectileReflection": {
+          "damageMultiplierByRarity": {"super": -1, "eternal": 2, "apex": "bad"}}},
+      "capped": {"damage": 1, "health": 1, "projectileReflection": {
+          "damageMultiplierByRarity": {"apex": 1000000}}},
+      "zero": {"damage": 1, "health": 1, "projectileReflection": {
+          "damageMultiplierByRarity": {"apex": 0}}}
+    })JSON"));
+    CHECK(warned(r, "damageMultiplierByRarity is a boolean"));
+    CHECK_NEAR(r.petalStats(r.petalIndex("wrong"), Rarity::Super).reflectionDamageMultiplier,
+               .8, 1e-9);
+    CHECK_NEAR(r.petalStats(r.petalIndex("bounded"), Rarity::Super).reflectionDamageMultiplier,
+               0.0, 1e-9);
+    CHECK_NEAR(r.petalStats(r.petalIndex("bounded"), Rarity::Eternal).reflectionDamageMultiplier,
+               2.0, 1e-9);
+    CHECK_NEAR(r.petalStats(r.petalIndex("bounded"), Rarity::Apex).reflectionDamageMultiplier,
+               1.0, 1e-9);
+    CHECK_NEAR(r.petalStats(r.petalIndex("capped"), Rarity::Apex).reflectionDamageMultiplier,
+               1000.0, 1e-9);
+    CHECK_NEAR(r.petalStats(r.petalIndex("capped"), Rarity::Admin).reflectionDamageMultiplier,
+               1000.0, 1e-9);
+    CHECK(warned(r, "apex is 1e+06"));
+    CHECK_NEAR(r.petalStats(r.petalIndex("zero"), Rarity::Apex).reflectionDamageMultiplier,
+               0.0, 1e-9);
+    CHECK_NEAR(r.petalStats(r.petalIndex("zero"), Rarity::Admin).reflectionDamageMultiplier,
+               0.0, 1e-9);
+}
+
+TEST(projectile_reflection_damage_cap_climbs_the_petal_damage_ladder) {
+    ContentRegistry r;
+    CHECK(loadPetals(r, R"JSON({
+      "capped": {"damage": 0, "health": 1, "projectileReflection": {"damageCap": 40}},
+      "uncapped": {"damage": 0, "health": 1, "projectileReflection": {}},
+      "plain": {"damage": 10, "health": 10}
+    })JSON"));
+    const ContentRegistry& actual = shipped().registry;
+    const auto prism = actual.petalIndex("prism_mirror");
+    CHECK(prism != kInvalidIndex);
+    if (prism == kInvalidIndex) return;
+    CHECK_NEAR(actual.petal(prism).projectileReflection.damageCap, 40.0, 1e-9);
+    for (int tier = 0; tier < kRarityCount; ++tier) {
+        const Rarity rarity = static_cast<Rarity>(tier);
+        // Admin's petal damage is Universal's (buildPetalStats), so is its cap.
+        const double expected = 40.0 * petalStrengthScale(
+            rarity == Rarity::Admin ? Rarity::Universal : rarity);
+        CHECK_NEAR(r.petalStats(r.petalIndex("capped"), rarity).reflectionDamageCap,
+                   expected, 1e-6);
+        CHECK_NEAR(actual.petalStats(prism, rarity).reflectionDamageCap, expected, 1e-6);
+        CHECK_NEAR(r.petalStats(r.petalIndex("uncapped"), rarity).reflectionDamageCap, 0.0, 1e-9);
+        CHECK_NEAR(r.petalStats(r.petalIndex("plain"), rarity).reflectionDamageCap, 0.0, 1e-9);
+    }
+    CHECK_NEAR(actual.petalStats(prism, Rarity::Common).reflectionDamageCap, 40.0, 1e-9);
+    CHECK_NEAR(actual.petalStats(prism, Rarity::Uncommon).reflectionDamageCap, 120.0, 1e-9);
+    CHECK_NEAR(actual.petalStats(prism, Rarity::Apex).reflectionDamageCap, 787320.0, 1e-6);
+    CHECK(!warned(r, "damageCap"));
+}
+
+TEST(projectile_reflection_prism_reload_reduces_only_super_eternal_and_apex_by_100ms) {
+    const ContentRegistry& r = shipped().registry;
+    const auto prism = r.petalIndex("prism_mirror");
+    CHECK(prism != kInvalidIndex);
+    if (prism == kInvalidIndex) return;
+    const std::array<double, kRarityCount> damageShares{
+        .1, .2, .3, .4, .5, .6, .7, .7, 4.0, 400.0, 400.0, 400.0};
+    for (int tier = 0; tier < kRarityCount; ++tier) {
+        const Rarity rarity = static_cast<Rarity>(tier);
+        const bool reduced = rarity == Rarity::Super || rarity == Rarity::Eternal ||
+                             rarity == Rarity::Apex;
+        const double adminScale = rarity == Rarity::Admin ? .5 : 1.0;
+        const double previousReload = 3000.0 / std::pow(1.35, tier) * adminScale;
+        const PetalStats& stats = r.petalStats(prism, rarity);
+        CHECK_NEAR(previousReload - stats.reloadMillis, reduced ? 100.0 : 0.0, 1e-9);
+        CHECK_NEAR(stats.reflectionSpeedMultiplier, 1.5 + .25 * tier, 1e-9);
+        CHECK_NEAR(stats.reflectionDamageMultiplier, damageShares[tier], 1e-9);
+        CHECK_NEAR(stats.damageIntervalMillis, 1000.0 * adminScale, 1e-9);
+        CHECK(finite(stats));
+    }
+    CHECK_NEAR(r.petalStats(prism, Rarity::Super).reloadMillis, 267.10041482143237, 1e-9);
+    CHECK_NEAR(r.petalStats(prism, Rarity::Eternal).reloadMillis, 171.92623320106094, 1e-9);
+    CHECK_NEAR(r.petalStats(prism, Rarity::Apex).reloadMillis, 101.42683940819330, 1e-9);
+    CHECK(!warned(r, "reloadReductionMillisByRarity"));
+}
+
+TEST(projectile_reflection_reload_reductions_are_sanitized_and_do_not_inherit) {
+    ContentRegistry r;
+    CHECK(loadPetals(r, R"JSON({
+      "wrong": {"damage": 1, "health": 1, "cooldown": 3000, "projectileReflection": {
+          "reloadReductionMillisByRarity": true}},
+      "bounded": {"damage": 1, "health": 1, "cooldown": 3000, "projectileReflection": {
+          "reloadReductionMillisByRarity": {
+            "super": -10, "eternal": "bad", "apex": 1000000, "universal": 0, "admin": 10}}}
+    })JSON"));
+    const auto wrong = r.petalIndex("wrong");
+    const auto bounded = r.petalIndex("bounded");
+    CHECK(warned(r, "reloadReductionMillisByRarity is a boolean"));
+    CHECK(warned(r, "super is -10"));
+    CHECK(warned(r, "eternal is a string"));
+    CHECK(warned(r, "above the sane maximum"));
+    CHECK_NEAR(r.petal(bounded).projectileReflection.reloadReductionMillisByRarity[
+                   rarityIndex(Rarity::Apex)], 600000.0, 1e-9);
+    CHECK_NEAR(r.petalStats(wrong, Rarity::Apex).reloadMillis,
+               3000.0 / std::pow(1.35, 9), 1e-9);
+    CHECK_NEAR(r.petalStats(bounded, Rarity::Super).reloadMillis,
+               3000.0 / std::pow(1.35, 7), 1e-9);
+    CHECK_NEAR(r.petalStats(bounded, Rarity::Eternal).reloadMillis,
+               3000.0 / std::pow(1.35, 8), 1e-9);
+    CHECK_NEAR(r.petalStats(bounded, Rarity::Apex).reloadMillis, 1.0, 1e-9);
+    CHECK_NEAR(r.petalStats(bounded, Rarity::Universal).reloadMillis,
+               3000.0 / std::pow(1.35, 10), 1e-9);
+    CHECK_NEAR(r.petalStats(bounded, Rarity::Admin).reloadMillis,
+               (3000.0 / std::pow(1.35, 11) - 10.0) * .5, 1e-9);
+}
+
+TEST(projectile_reflection_invalid_settings_are_sanitized) {
+    ContentRegistry r;
+    Synthetic files;
+    files.mobs = test::fixtureMobs(
+        R"JSON({"plain": {"name": "Plain", "health": 3, "damage": 1, "size": 1}})JSON");
+    // Keep the overflowing number verbatim: fixturePetals' JSON round trip
+    // would turn it into null before the config reader gets to sanitize it.
+    files.petals = R"JSON({
+      "wrong": {"name": "Wrong", "health": 10, "damage": 1, "size": 1,
+        "cooldown": 3000, "count": 1, "price": 10, "projectileReflection": true},
+      "extreme": {"name": "Extreme", "health": 10, "damage": 1, "size": 1,
+        "cooldown": 3000, "count": 1, "price": 10, "projectileReflection": {
+          "speedMultiplier": -5, "speedMultiplierPerRarity": 1e400,
+          "damageMultiplier": -1, "damageMultiplierPerRarity": 5,
+          "damageMultiplierByRarity": {"super": 1e400, "eternal": -1e400},
+          "reloadDivisorPerRarity": 0,
+          "reloadReductionMillisByRarity": {"super": 1e400}}}
+    })JSON";
+    std::string error;
+    CHECK(loadSyntheticRaw(r, files, error));
+    CHECK(!r.petal(r.petalIndex("wrong")).projectileReflection.present);
+    CHECK_NEAR(r.petalStats(r.petalIndex("wrong"), Rarity::Common).reflectionSpeedMultiplier,
+               0.0, 1e-9);
+    CHECK(warned(r, "projectileReflection is a boolean"));
+    CHECK(warned(r, "speedMultiplier is -5"));
+    CHECK(warned(r, "speedMultiplierPerRarity is not a finite number"));
+    CHECK(warned(r, "damageMultiplier is -1"));
+    CHECK(warned(r, "damageMultiplierPerRarity is 5"));
+    CHECK(warned(r, "reloadDivisorPerRarity is 0"));
+    CHECK(warned(r, "super is not a finite number"));
+    CHECK(warned(r, "eternal is not a finite number"));
+    CHECK_NEAR(r.petal(r.petalIndex("extreme")).projectileReflection.speedMultiplierPerRarity,
+               0.25, 1e-9);
+    for (int tier = 0; tier < kRarityCount; ++tier) {
+        const PetalStats& s = r.petalStats(r.petalIndex("extreme"), static_cast<Rarity>(tier));
+        CHECK(finite(s));
+        CHECK(s.reflectionSpeedMultiplier >= 1.0);
+        CHECK(s.reflectionDamageMultiplier >= 0.0 && s.reflectionDamageMultiplier <= 1.0);
+        CHECK(s.reloadMillis > 0.0);
+    }
+}
+
 TEST(a_universal_petal_is_an_apex_one_with_sqrt2_its_health_and_damage) {
     const ContentRegistry& r = shipped().registry;
     const double root2 = std::sqrt(2.0);
@@ -520,11 +763,26 @@ TEST(a_universal_petal_is_an_apex_one_with_sqrt2_its_health_and_damage) {
         CHECK(near(u.critDamage, a.critDamage * root2));
         CHECK(near(u.poisonPerSecond, a.poisonPerSecond * root2));
 
-        // Everything else is apex's, exactly.
+        // Ordinary utility is apex's. A mirror's curve uses its actual tier,
+        // while a reload reduction applies only to the explicitly named tier.
+        const ProjectileReflectionSpec& reflection = r.petal(i).projectileReflection;
+        double reload = a.reloadMillis;
+        if (reflection.present) {
+            reload = r.petal(i).cooldownMillis /
+                std::pow(reflection.reloadDivisorPerRarity, rarityIndex(Rarity::Universal));
+            const double reduction =
+                reflection.reloadReductionMillisByRarity[rarityIndex(Rarity::Universal)];
+            if (reduction > 0.0) reload = std::max(1.0, reload - reduction);
+        }
+        const double returnSpeed = reflection.present
+            ? a.reflectionSpeedMultiplier + reflection.speedMultiplierPerRarity
+            : a.reflectionSpeedMultiplier;
         const bool sameRest =
             near(u.armorReduction, a.armorReduction) && near(u.armorPerStack, a.armorPerStack) &&
             near(u.petalArmor, a.petalArmor) && near(u.lifesteal, a.lifesteal) &&
-            near(u.reloadMillis, a.reloadMillis) &&
+            near(u.reloadMillis, reload) &&
+            near(u.reflectionSpeedMultiplier, returnSpeed) &&
+            near(u.reflectionDamageMultiplier, a.reflectionDamageMultiplier) &&
             near(u.poisonDurationMillis, a.poisonDurationMillis) &&
             near(u.noHealDurationMillis, a.noHealDurationMillis) && near(u.heal, a.heal) &&
             near(u.passiveHealPerSecond, a.passiveHealPerSecond) && near(u.maxMana, a.maxMana) &&
@@ -591,15 +849,15 @@ TEST(player_modifiers_scale_by_kind) {
       "basic": {"name": "Basic", "health": 10, "damage": 10, "size": 1, "cooldown": 2500, "count": 1}
     })JSON"));
 
-    // Additive: clover's luck scales straight up, 1x at common to 4x at unique.
+    // Additive: clover's luck scales straight up, 1x at common to 4x at eternal.
     const std::uint16_t clover = r.petalIndex("clover");
     CHECK_NEAR(r.petalStats(clover, Rarity::Common).modifiers.luck, 0.08, 1e-12);
-    CHECK_NEAR(r.petalStats(clover, Rarity::Unique).modifiers.luck, 1.5, 1e-12);
+    CHECK_NEAR(r.petalStats(clover, Rarity::Eternal).modifiers.luck, 1.5, 1e-12);
 
     // Multiplicative: only the bonus above 1.0 scales, so +10% becomes +40%.
     const std::uint16_t cactus = r.petalIndex("cactus");
     CHECK_NEAR(r.petalStats(cactus, Rarity::Common).modifiers.maxHealth, 1.1, 1e-12);
-    CHECK_NEAR(r.petalStats(cactus, Rarity::Unique).modifiers.maxHealth, 1.4, 1e-12);
+    CHECK_NEAR(r.petalStats(cactus, Rarity::Eternal).modifiers.maxHealth, 1.4, 1e-12);
 
     // yin_yang is no multiplier at any tier: it turns the ring by how many
     // are worn, as gardn's does (petalCyclesRingSpin).
@@ -730,7 +988,7 @@ TEST(special_petal_geometry_and_timers_follow_rarity_overrides) {
     })JSON"));
     const std::uint16_t web = r.petalIndex("web");
     CHECK_NEAR(r.petalStats(web, Rarity::Common).webRadius, 90.0, 1e-12);
-    CHECK_NEAR(r.petalStats(web, Rarity::Unique).webRadius, 198.0, 1e-12);
+    CHECK_NEAR(r.petalStats(web, Rarity::Eternal).webRadius, 198.0, 1e-12);
 
     const std::uint16_t sponge = r.petalIndex("sponge");
     // +1 base per rarity step: Common holds at the base, Mythic (index 5) is 6x.
@@ -887,15 +1145,15 @@ TEST(mob_xp_comes_off_the_mob_and_apex_is_derived) {
     const ContentRegistry& r = shipped().registry;
     const MobConfig& bee = r.mob(r.mobIndex("bee"));
     CHECK_NEAR(bee.xp[static_cast<std::size_t>(Rarity::Common)], 1.0, 1e-9);
-    CHECK_NEAR(bee.xp[static_cast<std::size_t>(Rarity::Unique)], 6800000.0, 1e-6);
-    // The tables stop at unique; apex takes the same 3x step the stat tables do.
+    CHECK_NEAR(bee.xp[static_cast<std::size_t>(Rarity::Eternal)], 6800000.0, 1e-6);
+    // The tables stop at eternal; apex takes the same 3x step the stat tables do.
     CHECK_NEAR(bee.xp[static_cast<std::size_t>(Rarity::Apex)], 6800000.0 * 3.0, 1e-6);
     CHECK_NEAR(r.mobStats(r.mobIndex("bee"), Rarity::Apex).xp, 20400000.0, 1e-6);
 
     // EVERY shipped mob says what it is worth -- that is what mandatory buys,
     // and it is the thing a separate mob_xp.json could not promise: eleven
-    // mobs used to be missing from it and awarded one XP at unique.
-    constexpr std::size_t kUnique = static_cast<std::size_t>(Rarity::Unique);
+    // mobs used to be missing from it and awarded one XP at eternal.
+    constexpr std::size_t kEternal = static_cast<std::size_t>(Rarity::Eternal);
     constexpr std::size_t kApex = static_cast<std::size_t>(Rarity::Apex);
     for (std::uint16_t i = 0; i < r.mobCount(); ++i) {
         const MobConfig& m = r.mob(i);
@@ -903,7 +1161,7 @@ TEST(mob_xp_comes_off_the_mob_and_apex_is_derived) {
             const double xp = m.xp[static_cast<std::size_t>(tier)];
             CHECK(std::isfinite(xp) && xp >= 0.0);
         }
-        CHECK_NEAR(m.xp[kApex], m.xp[kUnique] * 3.0, 1e-6);
+        CHECK_NEAR(m.xp[kApex], m.xp[kEternal] * 3.0, 1e-6);
     }
 }
 
@@ -1107,7 +1365,7 @@ TEST(enums_and_colours_are_parsed_not_stored_as_text) {
     // The body-damage grant rides the petal damage ladder: 3x a tier, so an
     // authored 10 matches what a basic petal of the same rarity hits for.
     CHECK_NEAR(p.petalStats(p.petalIndex("cutter"), Rarity::Common).bodyDamage, 10.0, 1e-9);
-    CHECK_NEAR(p.petalStats(p.petalIndex("cutter"), Rarity::Unique).bodyDamage, 65610.0, 1e-9);
+    CHECK_NEAR(p.petalStats(p.petalIndex("cutter"), Rarity::Eternal).bodyDamage, 65610.0, 1e-9);
     CHECK_EQ(p.petal(p.petalIndex("third_eye")).equipFlags, std::uint16_t(EquipThirdEye));
     CHECK_EQ(p.petal(p.petalIndex("observer")).equipFlags, std::uint16_t(EquipObserver));
     CHECK_EQ(p.petal(p.petalIndex("antennae")).equipFlags, std::uint16_t(EquipAntennae));
@@ -1520,7 +1778,7 @@ TEST(a_third_eye_reaches_its_authored_range_at_its_floor_and_50_more_a_tier) {
     CHECK_NEAR(reach(Rarity::Mythic), 90.0, 1e-9);
     CHECK_NEAR(reach(Rarity::Ultra), 140.0, 1e-9);
     CHECK_NEAR(reach(Rarity::Super), 190.0, 1e-9);
-    CHECK_NEAR(reach(Rarity::Unique), 240.0, 1e-9);
+    CHECK_NEAR(reach(Rarity::Eternal), 240.0, 1e-9);
     CHECK_NEAR(reach(Rarity::Apex), 290.0, 1e-9);
     CHECK_NEAR(reach(Rarity::Universal), 290.0, 1e-9);
 }
@@ -1739,7 +1997,7 @@ TEST(synthetic_dirty_values_are_sanitised) {
         "groups": {"garden": 1, "": 2, "swamp": -1}, "spawn_weight": -1,
         "poison": -1, "poisonDuration": -5,
         "xp": {"common": 1, "uncommon": 2, "rare": 3, "epic": 4, "legendary": 5,
-               "mythic": 6, "ultra": 7, "super": 8, "unique": 9},
+               "mythic": 6, "ultra": 7, "super": 8, "eternal": 9},
         "initial_spawns": ["ghost", "wreck"],
         "spawn_waves": [["wreck"], "not a wave"],
         "projectile": {"count": 0, "distance": 1e400, "speed": -5, "petalType": "nope"},
@@ -1750,7 +2008,7 @@ TEST(synthetic_dirty_values_are_sanitised) {
         "damage": 1e400, "health": 1e400, "size": 1e400, "speed": 1e400,
         "cooldown": 1e400, "range": 1e400, "ai_type": "hostile", "groups": ["desert"],
         "xp": {"common": 1, "uncommon": 2, "rare": 3, "epic": 4, "legendary": 5,
-               "mythic": 6, "ultra": 7, "super": 8, "unique": 9},
+               "mythic": 6, "ultra": 7, "super": 8, "eternal": 9},
         "random_size": [4, 1]
       },
       "not_an_object": 7
@@ -1950,7 +2208,7 @@ Synthetic mandatoryFixture(const std::string& mobExtra, const std::string& petal
 }
 
 const char* kFullXp = R"JSON(, "xp": {"common": 1, "uncommon": 2, "rare": 3, "epic": 4,
-    "legendary": 5, "mythic": 6, "ultra": 7, "super": 8, "unique": 9})JSON";
+    "legendary": 5, "mythic": 6, "ultra": 7, "super": 8, "eternal": 9})JSON";
 
 } // namespace
 
@@ -1960,7 +2218,7 @@ TEST(a_mob_with_no_xp_table_is_refused) {
 
     // The control: the same content, with the table, loads.
     CHECK(loadSyntheticRaw(r, mandatoryFixture(kFullXp, ", \"price\": 10"), error));
-    CHECK_NEAR(r.mob(0).xp[static_cast<std::size_t>(Rarity::Unique)], 9.0, 1e-12);
+    CHECK_NEAR(r.mob(0).xp[static_cast<std::size_t>(Rarity::Eternal)], 9.0, 1e-12);
     CHECK_NEAR(r.mob(0).xp[static_cast<std::size_t>(Rarity::Apex)], 27.0, 1e-12);
     const std::size_t loaded = r.mobCount();
 
@@ -1976,18 +2234,18 @@ TEST(a_mob_with_no_xp_table_is_refused) {
         r, mandatoryFixture(R"JSON(, "xp": {"common": 1, "uncommon": 2, "rare": 3, "epic": 4,
             "legendary": 5, "mythic": 6, "ultra": 7, "super": 8})JSON", ", \"price\": 10"),
         error));
-    CHECK(error.find("unique") != std::string::npos);
+    CHECK(error.find("eternal") != std::string::npos);
 
     // A tier that is not a number, and one that is negative.
     error.clear();
     CHECK(!loadSyntheticRaw(r, mandatoryFixture(R"JSON(, "xp": {"common": "lots",
         "uncommon": 2, "rare": 3, "epic": 4, "legendary": 5, "mythic": 6, "ultra": 7,
-        "super": 8, "unique": 9})JSON", ", \"price\": 10"), error));
+        "super": 8, "eternal": 9})JSON", ", \"price\": 10"), error));
     CHECK(!error.empty());
     error.clear();
     CHECK(!loadSyntheticRaw(r, mandatoryFixture(R"JSON(, "xp": {"common": -3,
         "uncommon": 2, "rare": 3, "epic": 4, "legendary": 5, "mythic": 6, "ultra": 7,
-        "super": 8, "unique": 9})JSON", ", \"price\": 10"), error));
+        "super": 8, "eternal": 9})JSON", ", \"price\": 10"), error));
     CHECK(!error.empty());
 }
 
@@ -2264,7 +2522,9 @@ TEST(admin_petals_boost_universal_combat_and_utility_effects) {
         CHECK_NEAR(a.health, sparkle ? 0x1p64 : u.health * 25.0,
                    std::max(1.0, u.health) * 1e-9);
         CHECK_NEAR(a.heal, u.heal * 10.0, std::max(1.0, u.heal) * 1e-9);
-        CHECK_NEAR(a.reloadMillis, u.reloadMillis * 0.5, 1e-9);
+        const ProjectileReflectionSpec& reflection = r.petal(i).projectileReflection;
+        const double reloadDivisor = reflection.present ? reflection.reloadDivisorPerRarity : 1.0;
+        CHECK_NEAR(a.reloadMillis, u.reloadMillis / reloadDivisor * 0.5, 1e-9);
         CHECK_NEAR(a.healChargeMillis, u.healChargeMillis * 0.5, 1e-9);
         CHECK_NEAR(a.manaChargeMillis, u.manaChargeMillis * 0.5, 1e-9);
         CHECK(std::isfinite(a.damage));

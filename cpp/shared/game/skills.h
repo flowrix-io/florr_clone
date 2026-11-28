@@ -59,13 +59,13 @@ inline constexpr std::array<const char*, kSkillCount> kSkillLabels = {
 };
 
 /// How many tiers each branch has. Six of them stop short of the full
-/// ladder: Healing tops out at epic, Reload at unique (no apex tier to buy),
+/// ladder: Healing tops out at epic, Reload at eternal (no apex tier to buy),
 /// the three forks -- Second Chance, Duplicator, Magnetism -- after two or
 /// three tiers, and Prestige is a single node. None reaches past the ladder:
 /// universal is a petal tier, not a talent one.
 inline constexpr std::array<int, kSkillCount> kSkillTiers = {
     kLadderRarityCount, kLadderRarityCount, kLadderRarityCount, 4, kLadderRarityCount,
-    rarityIndex(Rarity::Unique) + 1, 2, kLadderRarityCount, 2, 3, 1,
+    rarityIndex(Rarity::Eternal) + 1, 2, kLadderRarityCount, 2, 3, 1,
 };
 
 /// What one tier costs in talent points. Steep at the top, so the last tiers
@@ -195,7 +195,7 @@ inline constexpr std::array<double, kLadderRarityCount> kEffectSkillScale = {
 /// Applied to the health of what the flower fields: its petals (Petal Health)
 /// and its summons (Pet Health). One table for the tooltip and the server, so
 /// the percentage a tier advertises is the percentage it grants. The effect
-/// curve's shape through unique, and 4.5x at apex.
+/// curve's shape through eternal, and 4.5x at apex.
 inline constexpr std::array<double, kLadderRarityCount> kHealthSkillScale = {
     1.05, 1.1, 1.2, 1.35, 1.6, 2.0, 2.6, 3.3, 4.0, 4.5,
 };
@@ -208,7 +208,7 @@ inline constexpr std::array<double, kLadderRarityCount> kAbsorbSkillScale = {
 /// Applied to petal COOLDOWNS, and the only table that shrinks its input: a
 /// reload is a wait, so the branch is worth having when the number goes DOWN.
 /// Geometric like the absorb curve, so every step is worth the same proportion
-/// of the last. The branch stops at unique (0.292); the apex entry is there
+/// of the last. The branch stops at eternal (0.292); the apex entry is there
 /// only because every table spans the ladder, and no tree can reach it.
 inline constexpr std::array<double, kLadderRarityCount> kReloadSkillScale = {
     0.93, 0.857, 0.735, 0.630, 0.540, 0.463, 0.397, 0.340, 0.292, 0.25,

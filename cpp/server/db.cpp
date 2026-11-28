@@ -332,7 +332,7 @@ Json playerTree(const PlayerRecord& record, bool placeholders) {
             const int tier = set.tier[static_cast<std::size_t>(i)];
             if (tier < 0) continue;
             skills[kSkillKeys[static_cast<std::size_t>(i)]] =
-                std::string(rarityName(clampRarity(tier)));
+                std::string(raritySaveKey(clampRarity(tier)));
         }
         return skills;
     };
@@ -382,12 +382,51 @@ Json playerToJson(const PlayerRecord& record) { return playerTree(record, false)
 /// The stored inventory (the bag with every worn petal added back, exactly as
 /// playerToJson builds it) written straight to `out`. Only the rarity tiers a
 /// worn petal lands in are copied; the rest are dumped where they stand.
-void writeStoredInventory(const PlayerRecord& record, std::string& out) {
+void writeStoredInventory(const PlayerRecord& record, std::string& out,
+                          PlayerRecord::RenderedParts* cache = nullptr) {
     std::vector<std::string> tiers;                     // first-touched order
     for (const std::optional<StoredItem>& slot : record.loadout) {
         if (!slot || slot->petalType.empty()) continue;
-        const std::string tier = rarityName(slot->rarity);
+        const std::string tier = raritySaveKey(slot->rarity);
         if (std::find(tiers.begin(), tiers.end(), tier) == tiers.end()) tiers.push_back(tier);
+    }
+    if (cache != nullptr && record.inventory.isObject()) {
+        // A tier at a time, each rendered once and kept until something
+        // changes it: what the tree path below writes, byte for byte -- its
+        // tiers in the bag's order, then the ones only a worn petal names.
+        const auto tierText = [&](const std::string& tier) -> const std::string& {
+            if (const std::string* kept = cache->tier(tier)) return *kept;
+            std::string text;
+            if (std::find(tiers.begin(), tiers.end(), tier) == tiers.end()) {
+                record.inventory[tier].dumpTo(text, 0, 0);
+            } else {
+                PlayerRecord stored;
+                stored.inventory = Json::object();
+                if (record.inventory.contains(tier)) stored.inventory[tier] = record.inventory[tier];
+                for (const std::optional<StoredItem>& slot : record.loadout) {
+                    if (!slot || slot->petalType.empty() || raritySaveKey(slot->rarity) != tier) continue;
+                    stored.addItem(slot->rarity, "petal_" + slot->petalType, 1);
+                }
+                std::as_const(stored.inventory)[tier].dumpTo(text, 0, 0);
+            }
+            cache->tiers.emplace_back(tier, std::move(text));
+            return cache->tiers.back().second;
+        };
+        char separator = '{';
+        const auto put = [&](const std::string& tier) {
+            out += separator;
+            separator = ',';
+            jsonEscapeTo(out, tier);
+            out += ':';
+            out += tierText(tier);
+        };
+        for (const std::string& tier : record.inventory.keys()) put(tier);
+        for (const std::string& tier : tiers) {
+            if (!record.inventory.contains(tier)) put(tier);
+        }
+        if (separator == '{') out += '{';
+        out += '}';
+        return;
     }
     if (tiers.empty()) {
         record.inventory.dumpTo(out, 0, 0);
@@ -413,7 +452,7 @@ void writeStoredInventory(const PlayerRecord& record, std::string& out) {
     }
     for (const std::optional<StoredItem>& slot : record.loadout) {
         if (!slot || slot->petalType.empty()) continue;
-        const std::string tier = rarityName(slot->rarity);
+        const std::string tier = raritySaveKey(slot->rarity);
         const std::size_t i = static_cast<std::size_t>(std::find(tiers.begin(), tiers.end(), tier) - tiers.begin());
         touched[i].addItem(slot->rarity, "petal_" + slot->petalType, 1);
     }
@@ -453,18 +492,17 @@ std::string playerToText(const PlayerRecord& record) {
         return playerToJson(record).dump(0);
     }
     const Json head = playerTree(record, true);
-    // A row that keeps its big parts rendered renders them once and splices
-    // them in after that, until something takes the row mutably.
+    // A row that keeps its big parts rendered renders each once and splices
+    // it in after that, until something changes that part (RenderedParts).
     PlayerRecord::RenderedParts& parts = record.rendered;
-    if (parts.keep && !parts.valid) {
-        writeStoredInventory(record, parts.inventory);
+    const bool spliced = parts.keep;
+    if (spliced && !parts.mobKillsValid) {
         record.mobKills.dumpTo(parts.mobKills, 0, 0);
-        parts.valid = true;
+        parts.mobKillsValid = true;
     }
-    const bool spliced = parts.keep && parts.valid;
     std::string out;
-    out.reserve(spliced ? 256 + parts.inventory.size() + parts.mobKills.size()
-                        : 256 + record.inventory.size() * 64 + record.mobKills.size() * 48);
+    out.reserve(256 + record.inventory.size() * 64 +
+                (spliced ? parts.mobKills.size() : record.mobKills.size() * 48));
     char separator = '{';
     for (const std::string& key : head.keys()) {
         out += separator;
@@ -472,8 +510,7 @@ std::string playerToText(const PlayerRecord& record) {
         jsonEscapeTo(out, key);
         out += ':';
         if (key == "inventory") {
-            if (spliced) out += parts.inventory;
-            else writeStoredInventory(record, out);
+            writeStoredInventory(record, out, spliced ? &parts : nullptr);
         } else if (key == "mobKills") {
             if (spliced) out += parts.mobKills;
             else record.mobKills.dumpTo(out, 0, 0);
@@ -651,7 +688,7 @@ StoredItem StoredItem::fromJson(const Json& value) {
 Json StoredItem::toJson() const {
     Json out = Json::object();
     out["type"] = type;
-    out["rarity"] = std::string(rarityName(rarity));
+    out["rarity"] = std::string(raritySaveKey(rarity));
     if (!petalType.empty()) out["petalType"] = petalType;
     if (hasHealth) out["health"] = health;
     if (hasMaxHealth) out["maxHealth"] = maxHealth;
@@ -672,13 +709,13 @@ int PlayerRecord::stackCount(const Json& stored) {
 }
 
 int PlayerRecord::itemCount(Rarity rarity, const std::string& itemType) const {
-    const Json& bucket = inventory[std::string(rarityName(rarity))];
+    const Json& bucket = inventory[std::string(raritySaveKey(rarity))];
     if (!bucket.isObject()) return 0;
     return stackCount(bucket[itemType]);
 }
 
 void PlayerRecord::setItemCount(Rarity rarity, const std::string& itemType, int count) {
-    const std::string tier = rarityName(rarity);
+    const std::string tier = raritySaveKey(rarity);
     if (count <= 0) {
         if (!inventory.contains(tier)) return;
         Json& bucket = inventory[tier];
@@ -704,11 +741,11 @@ void PlayerRecord::addItem(Rarity rarity, const std::string& itemType, int delta
 int PlayerRecord::killCount(const std::string& mobType, Rarity rarity) const {
     const Json& bucket = mobKills[mobType];
     if (!bucket.isObject()) return 0;
-    return bucket[std::string(rarityName(rarity))].asInt(0);
+    return bucket[std::string(raritySaveKey(rarity))].asInt(0);
 }
 
 void PlayerRecord::recordKill(const std::string& mobType, Rarity rarity) {
-    const std::string tier = rarityName(rarity);
+    const std::string tier = raritySaveKey(rarity);
     mobKills[mobType][tier] = killCount(mobType, rarity) + 1;
 }
 
@@ -1232,6 +1269,11 @@ std::string Database::serialiseWith(const std::string& journalId) const {
     return out;
 }
 
+namespace {
+void syncDescriptor(int fd);
+void syncDirectoryOf(const std::string& path, bool wait);
+} // namespace
+
 bool Database::save() {
     // Nothing of a replica's is its own to save: the link has it, or will.
     if (replica_) return true;
@@ -1256,7 +1298,8 @@ bool Database::save() {
     if (!file) return false;
     const std::size_t written = text.empty() ? 0 : std::fwrite(text.data(), 1, text.size(), file);
     const bool flushed = std::fflush(file) == 0;
-    if (flushed) ::fsync(::fileno(file));
+    // Through the real descriptor: ::fsync is a no-op on emscripten's NODEFS.
+    if (flushed) syncDescriptor(::fileno(file));
     const bool closed = std::fclose(file) == 0;
     if (written != text.size() || !flushed || !closed) {
         std::remove(tmp.c_str());
@@ -1281,6 +1324,9 @@ bool Database::save() {
         std::remove(tmp.c_str());
         return false;
     }
+    // The new name on the disk before the journal it names replaces the old
+    // one: the other order can leave the OLD snapshot beside the NEW journal.
+    syncDirectoryOf(path_, true);
     dirty_ = false;
 
     // Everything the old journal held, and every line that could not be
@@ -1316,6 +1362,41 @@ void syncDescriptor(int fd) {
     }, fd);
 #else
     ::fsync(fd);
+#endif
+}
+
+/// Makes a rename inside `path`'s directory durable: the new name is a change
+/// to the DIRECTORY, and until the directory itself is synced a power cut or
+/// a machine reset can bring back the old name -- an old snapshot beside a
+/// new, empty journal, which loses everything since the snapshot before.
+/// `wait` false starts the sync on Node's thread pool and returns at once,
+/// for a path the tick is on.
+void syncDirectoryOf(const std::string& path, bool wait) {
+    const std::size_t slash = path.find_last_of('/');
+    const std::string dir = slash == std::string::npos ? "." : (slash == 0 ? "/" : path.substr(0, slash));
+#ifdef __EMSCRIPTEN__
+    EM_ASM({
+        if (typeof require !== "function") return;
+        const fs = require("fs");
+        const dir = UTF8ToString($0);
+        if ($1) {
+            let fd = -1;
+            try { fd = fs.openSync(dir, "r"); fs.fsyncSync(fd); } catch (e) {}
+            try { if (fd >= 0) fs.closeSync(fd); } catch (e) {}
+            return;
+        }
+        fs.open(dir, "r", (openError, fd) => {
+            if (openError) return;
+            fs.fsync(fd, () => fs.close(fd, () => {}));
+        });
+    }, dir.c_str(), wait ? 1 : 0);
+#else
+    (void)wait;
+    const int fd = ::open(dir.c_str(), O_RDONLY);
+    if (fd >= 0) {
+        ::fsync(fd);
+        ::close(fd);
+    }
 #endif
 }
 
@@ -1534,6 +1615,7 @@ bool Database::startJournal(const std::string& id) {
         std::remove(tmp.c_str());
         return false;
     }
+    syncDirectoryOf(path, true);
     closeJournal();
     journalFd_ = ::open(path.c_str(), O_WRONLY | O_APPEND);
     if (journalFd_ < 0) return false;
@@ -2015,6 +2097,8 @@ Database::SaveProgress Database::finishBackgroundSave() {
         if (journalNextFd_ >= 0) ::close(journalNextFd_);
         journalBroken_ = true;
     }
+    // Both renames durable: on Node's thread pool, since this is on the tick.
+    syncDirectoryOf(path_, false);
     journalNextFd_ = -1;
     journalNextBytes_ = 0;
     save_.reset();
@@ -2117,7 +2201,7 @@ bool Database::backup(const std::string& label, BackupInfo& out, std::string& er
     }
     const std::size_t written = text.empty() ? 0 : std::fwrite(text.data(), 1, text.size(), handle);
     const bool flushed = std::fflush(handle) == 0;
-    if (flushed) ::fsync(::fileno(handle));
+    if (flushed) syncDescriptor(::fileno(handle));
     const bool closed = std::fclose(handle) == 0;
 
     struct stat info {};
@@ -2754,6 +2838,25 @@ PlayerRecord& Database::progress(const std::string& userId) {
     PlayerRecord& record = players_.insert(userId);
     if (fresh) markDirty();
     return record;
+}
+
+PlayerRecord& Database::recordKill(const std::string& userId, const std::string& mobType,
+                                   Rarity rarity) {
+    PlayerRecord* record = players_.findKeepingParts(userId);
+    if (record == nullptr) record = &progress(userId);
+    record->rendered.forgetMobKills();
+    record->recordKill(mobType, rarity);
+    markDirty();
+    return *record;
+}
+
+void Database::addItem(const std::string& userId, Rarity rarity, const std::string& itemType,
+                       int delta) {
+    PlayerRecord* record = players_.findKeepingParts(userId);
+    if (record == nullptr) record = &progress(userId);
+    record->rendered.forgetTier(raritySaveKey(rarity));
+    record->addItem(rarity, itemType, delta);
+    markDirty();
 }
 
 void Database::setLiveProgress(const std::string& userId, bool maze, double totalXp, double stars) {

@@ -331,10 +331,12 @@ double GameServer::traderWaitMillis(const std::string& userId) {
 
 void GameServer::handleAssemble(Session& session, net::Connection& connection,
                                 ByteReader& reader) {
-    const Rarity rarity = clampRarity(reader.u8());
+    const std::uint8_t rawRarity = reader.u8();
+    const Rarity rarity = rawRarity < kRarityCount
+                              ? static_cast<Rarity>(rawRarity) : Rarity::Common;
     const std::uint8_t recipeIndex = reader.u8();
     const int count = reader.u16();
-    if (!reader.ok() || !session.authenticated()) return;
+    if (!reader.ok() || reader.remaining() != 0 || !session.authenticated()) return;
 
     const auto reply = [&](int made, const std::string& reason) {
         ByteWriter w;
@@ -347,24 +349,30 @@ void GameServer::handleAssemble(Session& session, net::Connection& connection,
         connection.send(w);
     };
 
+    if (rawRarity >= kLadderRarityCount) {
+        reply(0, "The assembler cannot work at that rarity.");
+        return;
+    }
+
     // The tier only picks WHICH assembler, for a flower standing between two.
     const Entity assembler = serviceAtHand(
         session, NpcService::Assembler, "an assembler",
         [&](const std::string& reason) { reply(0, reason); }, rarity);
     if (assembler == NULL_ENTITY) return;
 
-    // It offers ONE recipe, its own (Npc::recipe): asking for another is a
-    // window that has not caught up with which assembler it is at.
+    // The station's rolled recipe and explicitly shared extras are the only
+    // offers. Location and tier are checked on the server for every request.
     const Npc& npc = world_.get<Npc>(assembler);
     const std::vector<AssemblyRecipe>& recipes = content().mob(npc.configIndex).npc.recipes;
-    if (recipeIndex >= recipes.size() || recipeIndex != npc.recipe) {
+    if (recipeIndex >= recipes.size()) {
         reply(0, "The assembler does not make that.");
         return;
     }
-    // Universal is forged at the titan and nowhere else: an assembler an
-    // operator stood at universal makes nothing.
-    if (rarityIndex(rarity) >= kLadderRarityCount) {
-        reply(0, "The assembler cannot work at that rarity.");
+    const AssemblyRecipe& recipe = recipes[recipeIndex];
+    const MapData* map = worldMaps_.forRealm(world_.get<Transform>(assembler).realm);
+    if ((recipeIndex != npc.recipe && !recipe.availableAtEveryStation) ||
+        !recipe.availableAt(npc.rarity, map != nullptr ? map->id() : std::string{})) {
+        reply(0, "The assembler does not make that here at this rarity.");
         return;
     }
     if (count <= 0 || count > kAssemblerMaxBatch) {
@@ -374,30 +382,45 @@ void GameServer::handleAssemble(Session& session, net::Connection& connection,
 
     // All or nothing: every input is counted before any is taken, so a batch
     // short of its last petal destroys none of the others.
-    const AssemblyRecipe& recipe = recipes[recipeIndex];
-    PlayerRecord& record = liveRecord(session);
+    const PlayerRecord& available = viewRecord(session);
     for (const AssemblyRecipe::Stack& input : recipe.inputs) {
         const std::int64_t need = recipe.takes(input.petal) * count;
         if (need > kMaxStackCount ||
-            record.itemCount(rarity, inventoryKey(input.petal)) < need) {
+            available.itemCount(rarity, inventoryKey(input.petal)) < need) {
             reply(0, "You don't have enough " + content().petal(input.petal).name + ".");
+            resyncProfile(session, connection);
+            return;
+        }
+    }
+    // Count the final bag, including petals the recipe both consumes and
+    // makes, before spending anything. Duplicate output rows add together.
+    for (const AssemblyRecipe::Stack& output : recipe.outputs) {
+        const std::int64_t after = available.itemCount(rarity, inventoryKey(output.petal)) +
+            (recipe.makes(output.petal) - recipe.takes(output.petal)) * count;
+        if (after > kMaxStackCount) {
+            reply(0, "Your " + content().petal(output.petal).name + " stack is full.");
             resyncProfile(session, connection);
             return;
         }
     }
     // Taken once per distinct petal, everything the recipe names of it at a
     // time; then every output, each as many times over.
-    std::vector<std::uint16_t> taken;
-    for (const AssemblyRecipe::Stack& input : recipe.inputs) {
-        if (std::find(taken.begin(), taken.end(), input.petal) != taken.end()) continue;
-        takeFromInventory(record, input.petal, rarity,
-                          static_cast<int>(recipe.takes(input.petal) * count));
-        taken.push_back(input.petal);
-    }
-    for (const AssemblyRecipe::Stack& output : recipe.outputs) {
-        giveToInventory(record, output.petal, rarity,
-                        static_cast<int>(std::min<std::int64_t>(output.count * count,
-                                                                kMaxStackCount)));
+    {
+        // Acquire a journaled mutable row only after validation, and release
+        // the reference before replies can flush the database journal.
+        PlayerRecord& record = liveRecord(session);
+        std::vector<std::uint16_t> taken;
+        for (const AssemblyRecipe::Stack& input : recipe.inputs) {
+            if (std::find(taken.begin(), taken.end(), input.petal) != taken.end()) continue;
+            takeFromInventory(record, input.petal, rarity,
+                              static_cast<int>(recipe.takes(input.petal) * count));
+            taken.push_back(input.petal);
+        }
+        for (const AssemblyRecipe::Stack& output : recipe.outputs) {
+            giveToInventory(record, output.petal, rarity,
+                            static_cast<int>(std::min<std::int64_t>(output.count * count,
+                                                                    kMaxStackCount)));
+        }
     }
     database_.markDirty();
 
@@ -736,12 +759,12 @@ void GameServer::announceRareCraft(const Session& session, std::uint16_t petalIn
     // universal is never crafted -- it is forged at a titan, one at a time --
     // and says so.
     const bool forged = made == Rarity::Universal;
-    if (made != Rarity::Super && made != Rarity::Unique && made != Rarity::Apex && !forged) return;
+    if (made != Rarity::Super && made != Rarity::Eternal && made != Rarity::Apex && !forged) return;
     if (petalIndex >= content().petalCount()) return;
 
     const std::string verb = forged ? " has been forged by " : " has been crafted by ";
     const std::string tier = rarityLabel(made);
-    // "An Apex" -- and "An Unique", because the reference tests the LABEL's
+    // "An Apex" -- and "An Eternal", because the reference tests the LABEL's
     // first letter against the five vowels and 'U' is one of them. Reproduced
     // rather than corrected: the line is the browser's, word for word. The
     // universal line is not the browser's, and says "The Universal": there is
@@ -766,7 +789,7 @@ void GameServer::announceRareCraft(const Session& session, std::uint16_t petalIn
 
     addNotification(forged                   ? "universal_craft"
                     : made == Rarity::Apex   ? "apex_craft"
-                    : made == Rarity::Unique ? "unique_craft"
+                    : made == Rarity::Eternal ? "unique_craft"
                                              : "super_craft",
                     plain);
 }

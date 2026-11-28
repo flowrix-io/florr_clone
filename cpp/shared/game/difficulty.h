@@ -28,7 +28,7 @@
 namespace flix {
 
 /// One point on the difficulty curve: at this difficulty, the ground spawns at
-/// this tier value (0 = common, 6 = ultra, 7 = super, 8 = unique, 9 = apex).
+/// this tier value (0 = common, 6 = ultra, 7 = super, 8 = eternal, 9 = apex).
 struct DifficultyAnchor {
     double difficulty = 0.0;
     double tier = 0.0;
@@ -42,7 +42,7 @@ struct DifficultyAnchor {
 ///   difficulty   0 -> t = 0.00  ->  100% common
 ///   difficulty 100 -> t = 6.02  ->   98% ultra, 2% super
 ///   difficulty 200 -> t = 7.00  ->  100% super
-///   difficulty 300 -> t = 8.05  ->   95% unique, 5% apex
+///   difficulty 300 -> t = 8.05  ->   95% eternal, 5% apex
 ///
 /// t is linear in difficulty BETWEEN anchors, so difficulty 50 is halfway
 /// between common and ultra in tier value (t = 3.01: epic, with a per-cent of
@@ -125,7 +125,7 @@ inline constexpr std::array<double, kLadderRarityCount> kNaturalRaritySpread = {
     0.02,  // mythic   (twice the reference's 1%)
     0.0,   // ultra
     0.0,   // super
-    0.0,   // unique
+    0.0,   // eternal
     0.0,   // apex
 }};
 
@@ -325,8 +325,8 @@ inline Rarity rollNaturalRarity(double luck, Rng& rng) {
 /// THE spawn roll: the rarity a mob appearing on difficulty-`difficulty` ground
 /// comes out at, for a player of this luck.
 ///
-/// The server's band fill stops this at super: a wild unique or apex comes
-/// only from a biome's boss clock upgrading a super (kUniqueSpawnCooldownMillis
+/// The server's band fill stops this at super: a wild eternal or apex comes
+/// only from a biome's boss clock upgrading a super (kEternalSpawnCooldownMillis
 /// in server/systems/spawning.h), so the curve past difficulty 200 describes
 /// the ground, not what grows on it.
 inline Rarity rollSpawnRarity(double difficulty, double luck, Rng& rng) {

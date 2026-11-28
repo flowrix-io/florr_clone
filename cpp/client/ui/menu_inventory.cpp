@@ -438,6 +438,14 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         hit.altText = hit.text;
         hit.labelColor = kStatHealth;
     }
+    if (config.damageFromMobBody) {
+        const double share = config.projectileReflection.present
+                                 ? stats.reflectionDamageMultiplier : 1.0;
+        hit.text = damageLabel + percentNumber(share) + "% of target mob's body damage";
+        hit.altText = hit.text;
+        hit.labelColor = kStatDamage;
+        hit.markup = false;
+    }
     if (!petalWardsHits(config)) {
         // A row only for a stat the petal has, as gardn's card does: an iris
         // hits with nothing but its poison and a gas has no health pool, and a
@@ -447,7 +455,7 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         // A privet's point of health is there only so that anything breaks
         // it; florr's card has no HP row for it, and neither does this one.
         if (stats.health > 0.0 && !petalSpentOnHit(config)) lines.push_back(hp);
-        if (stats.damage != 0.0) lines.push_back(hit);
+        if (stats.damage != 0.0 || config.damageFromMobBody) lines.push_back(hit);
         // The plain lightning's strike lands on this many mobs, its nearest
         // (florr's Petal/Attribute/Bounces). Its glitch form is uncapped.
         if (config.id == "lightning") {
@@ -693,6 +701,27 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         lines.push_back(dodge);
     }
 
+    if (stats.reflectionSpeedMultiplier > 0.0) {
+        char speed[32];
+        std::snprintf(speed, sizeof speed, "%g", stats.reflectionSpeedMultiplier);
+        TooltipLine reflect{"Reflected Projectile Speed: " + std::string(speed) + "x", 12.0};
+        reflect.alpha = 0.56;
+        reflect.labelColor = kStatReflection;
+        lines.push_back(reflect);
+        TooltipLine damage{"Reflected Damage: " +
+                               exactNumber(stats.reflectionDamageMultiplier * 100.0) + "%", 12.0};
+        damage.alpha = 0.56;
+        damage.labelColor = kStatReflection;
+        lines.push_back(damage);
+        if (stats.reflectionDamageCap > 0.0) {
+            TooltipLine cap{"Damage Cap: " + abbreviate(stats.reflectionDamageCap), 12.0};
+            cap.altText = "Damage Cap: " + exactNumber(stats.reflectionDamageCap);
+            cap.alpha = 0.56;
+            cap.labelColor = kStatReflection;
+            lines.push_back(cap);
+        }
+    }
+
     // Salt. What it repays depends on who bit, so the card states the one
     // fixed point -- an attacker of this card's own tier -- and the
     // description says how the rest of the ladder runs from there.
@@ -725,6 +754,17 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         summon.markup = true;
         summon.altText = label + exactNumber(stats.petManaCost) + unit;
         lines.push_back(summon);
+    }
+    if (config.hatchesPets() && config.petSummonIntervalScale != 1.0) {
+        TooltipLine every{"Spawn Time: " +
+                              exactNumber(std::round(stats.reloadMillis *
+                                                     config.petSummonIntervalScale / 100.0) /
+                                          10.0) +
+                              "s",
+                          12.0};
+        every.alpha = 0.56;
+        every.labelColor = kStatDuration;
+        lines.push_back(every);
     }
     if (config.petLifetimeMillis > 0.0) {
         TooltipLine span{"Summon Lifetime: " + exactNumber(config.petLifetimeMillis / 1000.0) + "s",
@@ -887,7 +927,7 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         if (config.id == "battery") {
             const double base = stats.damage > 0.0 ? stats.damage
                                                    : kLightningFallbackDamage * strength;
-            const double strike = std::round(base * talentDamage);
+            const double strike = std::round(base * kBatteryStrikeScale * talentDamage);
             effectLine("Lightning: " + abbreviate(strike), kStatLightning,
                        "Lightning: " + exactNumber(strike));
             effectLine("Charges: " + std::to_string(kBatteryCharges), kStatGeneric);
@@ -965,12 +1005,12 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
 
         // Summons: what comes out, how many, and how hard. A pet climbs the
         // PETAL ladder from its mob's base (PetalSystem::hatchPetBody), at the
-        // petal's tier -- an apex one is three unique pets instead.
+        // petal's tier -- an apex one is three eternal pets instead.
         const auto petLines = [&](std::uint16_t mobIndex, int count, bool scaled) {
             if (mobIndex == kInvalidIndex) return;
             const MobConfig& mob = content().mob(mobIndex);
             const bool apex = ladderRarity(rarity) == Rarity::Apex;
-            const Rarity petTier = apex ? Rarity::Unique : rarity;
+            const Rarity petTier = apex ? Rarity::Eternal : rarity;
             // A squad hatches three at apex and three times over at Admin;
             // the flower's crack is always its fixed three.
             const int multiple =
