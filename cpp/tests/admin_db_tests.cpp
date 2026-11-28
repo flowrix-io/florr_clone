@@ -1164,11 +1164,11 @@ TEST(an_account_search_reads_names_counts_and_loadout_words) {
     CHECK(q.terms[1].anyRarity);
 
     // A loadout word is at least one slot unless it says otherwise; "eternal"
-    // is the label of the unique tier.
+    // is the label of the eternal tier.
     CHECK(account_search::parse("loadout:eternal:rose level<=5 petals=0", content, q, error));
     CHECK_EQ(q.terms.size(), 3u);
     CHECK(q.terms[0].field == account_search::Field::Loadout);
-    CHECK(q.terms[0].rarity == Rarity::Unique);
+    CHECK(q.terms[0].rarity == Rarity::Eternal);
     CHECK(q.terms[0].compare == account_search::Compare::AtLeast);
     CHECK_EQ(q.terms[0].value, 1.0);
     CHECK(q.terms[1].field == account_search::Field::Level);
@@ -1194,6 +1194,33 @@ TEST(an_account_search_reads_names_counts_and_loadout_words) {
     CHECK(error.find("two petals") != std::string::npos);
     CHECK(!account_search::parse("mythic:epic>1", content, q, error));
     CHECK(error.find("two rarities") != std::string::npos);
+}
+
+TEST(eternal_items_stay_filed_under_the_old_unique_key) {
+    // Everything a person reads says eternal, but the save keeps the bucket
+    // every existing account already has its eternals in -- and an older
+    // server, after a rollback, would read an "eternal" bucket as common.
+    PlayerRecord record;
+    record.addItem(Rarity::Eternal, "petal_rose", 2);
+    CHECK(record.inventory.contains("unique"));
+    CHECK(!record.inventory.contains("eternal"));
+    CHECK_EQ(record.itemCount(Rarity::Eternal, "petal_rose"), 2);
+    StoredItem worn;
+    worn.rarity = Rarity::Eternal;
+    worn.petalType = "rose";
+    CHECK_EQ(worn.toJson()["rarity"].asString(), std::string("unique"));
+
+    CHECK_EQ(std::string(rarityName(Rarity::Eternal)), std::string("eternal"));
+    CHECK(parseRarity("eternal") == Rarity::Eternal);
+    CHECK(parseRarity("unique") == Rarity::Eternal);
+
+    // Both names find them in an account search.
+    const ContentRegistry& content = shippedContent();
+    for (const char* word : {"eternal:rose", "unique:rose"}) {
+        account_search::Query q;
+        std::string error;
+        CHECK(account_search::parse(word, content, q, error));
+    }
 }
 
 TEST(an_account_search_counts_the_inventory_and_the_loadout) {

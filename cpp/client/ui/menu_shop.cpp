@@ -197,7 +197,7 @@ constexpr std::uint32_t kClearFace = 0xBB5555u;
 /// The picker's tabs: any tier, then each tier the store sells, cheap to dear.
 constexpr std::array<int, 5> kWatchTiers = {
     kShopWatchAnyTier, rarityIndex(Rarity::Mythic), rarityIndex(Rarity::Ultra),
-    rarityIndex(Rarity::Super), rarityIndex(Rarity::Unique)};
+    rarityIndex(Rarity::Super), rarityIndex(Rarity::Eternal)};
 
 // --- this game's tabs -------------------------------------------------------
 
@@ -223,7 +223,7 @@ const std::array<StarChallenge, 5> kChallenges = {{
     {Rarity::Mythic, starsForKill(Rarity::Mythic)},
     {Rarity::Ultra, starsForKill(Rarity::Ultra)},
     {Rarity::Super, starsForKill(Rarity::Super)},
-    {Rarity::Unique, starsForKill(Rarity::Unique)},
+    {Rarity::Eternal, starsForKill(Rarity::Eternal)},
     {Rarity::Apex, starsForKill(Rarity::Apex)},
 }};
 

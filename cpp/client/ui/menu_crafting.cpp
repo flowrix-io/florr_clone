@@ -79,7 +79,7 @@ constexpr double kPulseDepth = 50.0;
 constexpr double kPulseRate = 0.01;
 /// The roll's length by the tier crafted out of (float table 0x100E16A30):
 /// common through legendary, and 5 s from there up -- florr stops at super,
-/// and unique, a tier our ladder crafts out of and florr's does not, takes
+/// and eternal, a tier our ladder crafts out of and florr's does not, takes
 /// the top figure too.
 constexpr std::array<double, 5> kRollBaseMillis = {250.0, 750.0, 1500.0, 3000.0, 5000.0};
 /// Holding this many of the next tier already cuts the roll to nothing; each
@@ -170,7 +170,7 @@ double cloverBonus(const Profile& profile, Rarity rarity) {
 } // namespace
 
 Vec2 CraftingPanel::size(const Profile& profile) {
-    // Common through unique: nothing upgrades out of apex, so there is no
+    // Common through eternal: nothing upgrades out of apex, so there is no
     // column for it -- the same reason stage() refuses one.
     return {slotCardWidth(false), slotCardHeight(SlotGrid::rows(profile, false))};
 }

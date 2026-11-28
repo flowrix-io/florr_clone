@@ -37,7 +37,7 @@ constexpr double kViewportCeilingSlack = 1.01;
 /// that flower can honestly be drawing.
 ///
 /// The ceiling is not flat, because the camera petals legitimately show more
-/// world. Unique antennae draws ten default screens' worth of width, and a flat
+/// world. Eternal antennae draws ten default screens' worth of width, and a flat
 /// 2600 clamp streamed and woke barely a quarter of it: mobs were culled in
 /// plain view, and the spawn bands stayed empty outside a box around the
 /// flower. So it is the default screen divided by the zoom the body's OWN worn
@@ -518,7 +518,8 @@ Entity GameServer::createPlayerBody(Session& session, Realm realm, Vec2 spawn) {
     // asked for; the account name stays on the session for chat and for saves.
     world_.add<PlayerAccount>(entity,
                               PlayerAccount{session.userId, session.nameplate(),
-                                            session.connection, session.admin});
+                                            session.connection, session.admin,
+                                            session.username});
 
     const PlayerRecord& record = liveRecord(session);
     applyAccountToEntity(record, entity);

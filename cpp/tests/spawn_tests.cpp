@@ -1841,3 +1841,50 @@ TEST(a_super_on_ground_thick_with_them_is_neither_announced_nor_mourned) {
     CHECK_EQ(heard(defeated), 1);
     flix::testsupport::removeDataDir(dir);
 }
+
+TEST(a_super_kill_tells_each_flower_that_hurt_it_how_much_it_dealt) {
+    // Said to each contributor alone, whoever finished it and whether or not
+    // they were paid loot: here the killing blow is nobody's (a poison with no
+    // source), and only one of the two flowers on the server hurt it.
+    Harness h("super-damage-line", {}, dataDir(), 0);
+    CHECK(h.ready);
+    if (!h.ready) return;
+    NetClient hitter, bystander;
+    CHECK(loginNew(h, hitter, "hitter", "password7"));
+    CHECK(loginNew(h, bystander, "bystander", "password7"));
+    hitter.joinGame(1280, 720, {}, "hitter");
+    bystander.joinGame(1280, 720, {}, "bystander");
+    CHECK(h.stepUntil({&hitter, &bystander}, [&] {
+        return hitter.status() == NetClient::Status::Playing &&
+               bystander.status() == NetClient::Status::Playing;
+    }));
+
+    World& world = h.server.world();
+    const Entity body = bodyNamed(world, "hitter");
+    CHECK(body != NULL_ENTITY);
+    if (body == NULL_ENTITY) return;
+    const Transform at = world.get<Transform>(body);
+    const std::uint16_t hornet = content().mobIndex("hornet");
+    SpawnSystem& spawner = flix::testsupport::GameServerPeer::spawning(h.server);
+    const Entity boss = spawner.spawnMob(world, h.server.terrain(), content(), hornet,
+                                         Rarity::Super, at.position + Vec2{600.0, 0.0},
+                                         at.realm, h.clock, h.probeRng);
+    CHECK(boss != NULL_ENTITY);
+    if (boss == NULL_ENTITY) return;
+    if (!world.has<Bounty>(boss)) world.add<Bounty>(boss, Bounty{});
+    world.get<Bounty>(boss).credit(body, 55'400'000.0);
+    if (!world.has<Afflictions>(boss)) world.add<Afflictions>(boss, Afflictions{});
+    world.get<Afflictions>(boss).poisonStacks.push_back({NULL_ENTITY, 1e12, 1e18});
+    CHECK(h.stepUntil({&hitter, &bystander}, [&] { return !world.isAlive(boss); }, 120));
+    h.step(static_cast<int>(1000.0 / net::kTickMillis), {&hitter, &bystander});
+
+    const auto heard = [](NetClient& client, const std::string& what) {
+        int lines = 0;
+        for (const auto& line : client.chat()) {
+            if (line.text.find(what) != std::string::npos) ++lines;
+        }
+        return lines;
+    };
+    CHECK_EQ(heard(hitter, "You dealt 55m damage to the Super Hornet."), 1);
+    CHECK_EQ(heard(bystander, "You dealt"), 0);
+}

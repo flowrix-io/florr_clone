@@ -93,7 +93,7 @@ inline double trialFullRewardXp(int floor) { return trialBaseRewardXp(floor) * 0
 inline Rarity trialRewardRarity(int floor) {
     // Apex petals are too valuable for a repeatable monthly reward. One Apex
     // petal is represented by twenty of the same Eternal petal instead.
-    return trialRarity(floor) == Rarity::Apex ? Rarity::Unique : trialRarity(floor);
+    return trialRarity(floor) == Rarity::Apex ? Rarity::Eternal : trialRarity(floor);
 }
 inline int trialRewardPetalMultiplier(int floor) {
     return trialRarity(floor) == Rarity::Apex ? 20 : 1;

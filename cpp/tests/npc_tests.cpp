@@ -406,9 +406,9 @@ TEST(an_npc_meets_walls_with_its_centre_not_its_body) {
 
 TEST(a_target_dummy_npc_shrinks_with_its_tier_like_a_band_fixture) {
     // The dummy a map places as an NPC is the same practice target a band
-    // plants: a common one is a common mob's size, a unique one three
-    // quarters of a wild unique. An NPC that skipped the ramp stood a third
-    // bigger than its band twin at unique.
+    // plants: a common one is a common mob's size, an eternal one three
+    // quarters of a wild eternal. An NPC that skipped the ramp stood a third
+    // bigger than its band twin at eternal.
     CHECK(ensureShippedContent());
     Terrain terrain;
     World world;
@@ -422,11 +422,11 @@ TEST(a_target_dummy_npc_shrinks_with_its_tier_like_a_band_fixture) {
     };
     CHECK_NEAR(radiusOf(dummy, Rarity::Common, 2000.0),
                content().mobStats(dummy, Rarity::Common).radius, 1e-9);
-    CHECK_NEAR(radiusOf(dummy, Rarity::Unique, 4000.0),
-               content().mobStats(dummy, Rarity::Unique).radius * 0.75, 1e-9);
+    CHECK_NEAR(radiusOf(dummy, Rarity::Eternal, 4000.0),
+               content().mobStats(dummy, Rarity::Eternal).radius * 0.75, 1e-9);
     // Only the fixture shrinks: an oracle stands at its mob's full size.
-    CHECK_NEAR(radiusOf(oracle, Rarity::Unique, 6000.0),
-               content().mobStats(oracle, Rarity::Unique).radius, 1e-9);
+    CHECK_NEAR(radiusOf(oracle, Rarity::Eternal, 6000.0),
+               content().mobStats(oracle, Rarity::Eternal).radius, 1e-9);
 }
 
 TEST(a_cruising_npc_flies_up_to_a_wall_with_its_centre) {
@@ -2136,7 +2136,7 @@ TEST(the_titan_refuses_a_short_stack_and_a_flower_not_standing_at_it) {
         seedAccount(path, "smith");
         seedStack(path, "smith", "petal_rose", Rarity::Apex, 4);
         seedStack(path, "smith", "petal_basic", Rarity::Apex, 5);
-        seedStack(path, "smith", "petal_basic", Rarity::Unique, 9);
+        seedStack(path, "smith", "petal_basic", Rarity::Eternal, 9);
     }, dir, 0);
     if (!h.ready) { CHECK(false); removeDataDir(dir); return; }
     const std::uint16_t rose = content().petalIndex("rose");
@@ -2157,7 +2157,7 @@ TEST(the_titan_refuses_a_short_stack_and_a_flower_not_standing_at_it) {
     CHECK(outcome.reason.find("too far") != std::string::npos);
 
     standAtTitan(h, {&client}, "smith");
-    // Four apex is not five, and nine unique is not apex at all.
+    // Four apex is not five, and nine eternal is not apex at all.
     client.requestTitanForge(rose);
     CHECK(awaitForge(h, {&client}, client, outcome));
     CHECK(!outcome.success);
@@ -2170,7 +2170,7 @@ TEST(the_titan_refuses_a_short_stack_and_a_flower_not_standing_at_it) {
     const Profile& profile = client.profile();
     CHECK_EQ(profile.stackCount(rose, Rarity::Apex), 4u);
     CHECK_EQ(profile.stackCount(basic, Rarity::Apex), 5u);
-    CHECK_EQ(profile.stackCount(basic, Rarity::Unique), 9u);
+    CHECK_EQ(profile.stackCount(basic, Rarity::Eternal), 9u);
     CHECK_EQ(profile.stackCount(rose, Rarity::Universal), 0u);
     CHECK_EQ(profile.stackCount(basic, Rarity::Universal), 0u);
     removeDataDir(dir);

@@ -32,12 +32,12 @@ constexpr const char* kBlockedWordNotice =
 
 /// True when a chat line names a raid tier as a bare word.
 ///
-/// The reference tests `/\b(super|unique)\b/i`, and the word boundary is the
+/// The reference tests `/\b(super|eternal)\b/i`, and the word boundary is the
 /// whole point: "supercell" is not a raid call, and neither is a name that
 /// happens to contain the letters. Ultra is deliberately absent -- bots treat
 /// an ultra as a mob to fight, not as a rally point.
 bool mentionsRaidTier(const std::string& text) {
-    static const char* const kWords[] = {"super", "unique"};
+    static const char* const kWords[] = {"super", "eternal", "unique"};
     const auto wordChar = [](unsigned char c) {
         return std::isalnum(c) != 0 || c == '_';
     };
@@ -176,7 +176,7 @@ void GameServer::sayInPublic(Session& session, net::Connection& connection,
         broadcastChat(net::ChatChannel::Global, session.username, said, speakerNetId);
     }
 
-    // Somebody saying "super" or "unique" rallies every bot onto the best boss
+    // Somebody saying "super" or "eternal" (or "unique", its old name) rallies every bot onto the best boss
     // in the world, exactly as the reference's chat handler does. Only those
     // two words: an ultra is a high-tier mob to fight, never a raid to call.
     // No-ops when no qualifying boss exists.

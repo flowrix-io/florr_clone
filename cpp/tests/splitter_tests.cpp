@@ -819,3 +819,72 @@ TEST(invert_attack_holds_the_parked_half_out_too) {
         return !parked.current.defending() && !parked.current.attacking();
     }, 30));
 }
+
+TEST(a_split_never_hops_a_half_over_a_thin_wall) {
+    // The sewers' walls are grate rails, two 14-unit rails back to back. A
+    // split puts each half one radius from where the flower stood, and only
+    // the landing spot used to be tested -- so a flower pressed against a
+    // rail that grew at the moment it split (Air going on with the splitter)
+    // put its far half clean over the rail. A thick wall holds a landing spot
+    // inside itself, so only the rails let anybody through.
+    Harness h("splitter-rail", {}, flix::testsupport::dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+    NetClient alice;
+    CHECK(loginNew(h, alice, "alice", "hunter2!"));
+    alice.joinGame(1280, 720, {}, "alice");
+    CHECK(h.stepUntil({&alice}, [&] { return alice.status() == NetClient::Status::Playing; }));
+
+    bool found = false;
+    const Realm sewers = h.server.worldMaps().realmOfId("sewers", found);
+    CHECK(found);
+    if (!found) return;
+    const Terrain& terrain = h.server.terrain();
+    const auto open = [&](Vec2 p) { return !terrain.blocked(p, sewers); };
+    const auto roomFor = [&](Vec2 c, double r) {
+        if (!open(c)) return false;
+        for (int k = 0; k < 16; ++k) {
+            const double a = k * 3.14159265358979 / 8.0;
+            if (!open({c.x + std::cos(a) * r, c.y + std::sin(a) * r})) return false;
+        }
+        return true;
+    };
+    // A vertical wall no thicker than 32 with open floor both sides: a rail.
+    constexpr double kHop = 90.0;   // the grown flower's radius, and so its hop
+    Vec2 standAt{};
+    double railWest = 0, railEast = 0;
+    bool placed = false;
+    for (int row = 0; row < 128 && !placed; ++row) {
+        const double y = row * 256.0 + 128.0;
+        for (double x = 64.0; x < 128 * 256.0 - 160.0 && !placed; x += 2.0) {
+            if (!open({x - 1.0, y}) || open({x + 1.0, y})) continue;
+            double w = 1.0;
+            while (w < 40.0 && !open({x + w, y})) w += 1.0;
+            if (w > 32.0) continue;
+            const Vec2 stand{x - 26.0, y};
+            if (!roomFor(stand, 25.0) || !open({stand.x + kHop, y})) continue;
+            railWest = x;
+            railEast = x + w;
+            standAt = stand;
+            placed = true;
+        }
+    }
+    CHECK(placed);
+    if (!placed) return;
+    CHECK(railEast - railWest < 33.0);
+    CHECK(GameServerPeer::carry(h.server, "alice", sewers, standAt));
+    World& world = h.server.world();
+    const Entity body = soleBody(world, "alice");
+    CHECK(body != NULL_ENTITY);
+    if (body == NULL_ENTITY) return;
+    // Pressed against the rail, then grown and split in the same instant.
+    world.get<Transform>(body).position = standAt;
+    world.get<Body>(body).radius = kHop;
+    CHECK(GameServerPeer::split(h.server, "alice"));
+    const std::vector<Entity> halves = bodiesNamed(world, "alice");
+    CHECK_EQ(halves.size(), std::size_t{2});
+    for (const Entity half : halves) {
+        const Transform& at = world.get<Transform>(half);
+        CHECK(at.realm == sewers);
+        CHECK(at.position.x < railWest);   // still on the near side
+    }
+}

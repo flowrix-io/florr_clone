@@ -149,18 +149,22 @@ struct PlayerRecord {
     int mazeTalentPoints() const;
 
     /// The row's two big parts as its text writes them: the stored inventory
-    /// (the bag with the worn petals added back) and the kill counts. A
-    /// veteran's are tens of kilobytes, and a playing flower's row is
-    /// rewritten for the journal on every tick its XP or stars move
-    /// (GameServer::syncLiveProgress) -- re-rendering them each time was most
-    /// of the server tick's send phase. Kept only for rows that change that
-    /// way (Database::setLiveProgress sets `keep`), and dropped by every
-    /// mutable accessor (forgetRenderedParts), which is what can change them.
+    /// (the bag with the worn petals added back), one rarity tier at a time,
+    /// and the kill counts. A veteran's are tens of kilobytes, and a playing
+    /// flower's row is rewritten for the journal on every tick its XP or
+    /// stars move (GameServer::syncLiveProgress), and on every kill and
+    /// pickup -- re-rendering all of it each time was most of the server
+    /// tick's journal phase for one player farming. Kept only for rows that
+    /// change that way (Database::setLiveProgress sets `keep`), and dropped
+    /// whole by every mutable accessor (forgetRenderedParts), which is what
+    /// can change them. Database::recordKill and Database::addItem drop only
+    /// the part they change: the kill counts, or the one tier.
     /// Never copied: a copy can be changed in ways nothing here sees.
     struct RenderedParts {
-        std::string inventory;
+        /// Rendered tiers by save key; a tier not here is rendered on use.
+        std::vector<std::pair<std::string, std::string>> tiers;
         std::string mobKills;
-        bool valid = false;
+        bool mobKillsValid = false;
         bool keep = false;
         RenderedParts() = default;
         RenderedParts(const RenderedParts&) {}
@@ -169,10 +173,30 @@ struct PlayerRecord {
             keep = false;
             return *this;
         }
+        /// Whether anything is rendered at all.
+        bool any() const { return mobKillsValid || !tiers.empty(); }
         void forget() {
-            inventory = std::string();
+            tiers = {};
+            forgetMobKills();
+        }
+        void forgetMobKills() {
             mobKills = std::string();
-            valid = false;
+            mobKillsValid = false;
+        }
+        void forgetTier(const std::string& saveKey) {
+            for (auto it = tiers.begin(); it != tiers.end(); ++it) {
+                if (it->first == saveKey) {
+                    tiers.erase(it);
+                    return;
+                }
+            }
+        }
+        /// The rendered tier, or null when it has to be rendered.
+        const std::string* tier(const std::string& saveKey) const {
+            for (const auto& [key, text] : tiers) {
+                if (key == saveKey) return &text;
+            }
+            return nullptr;
         }
     };
     mutable RenderedParts rendered;
@@ -928,6 +952,14 @@ public:
     /// rest of the row rendered (PlayerRecord::RenderedParts). It is made on
     /// every tick either moves, and the row goes into the journal each time.
     void setLiveProgress(const std::string& userId, bool maze, double totalXp, double stars);
+    /// progress(userId).recordKill(...), keeping the rendered inventory: a
+    /// farming flower's row goes into the journal on every kill, and only its
+    /// kill counts changed. Returns the row, for a change to its head (stars,
+    /// XP) only -- never to its inventory or kill counts.
+    PlayerRecord& recordKill(const std::string& userId, const std::string& mobType, Rarity rarity);
+    /// progress(userId).addItem(...), keeping every rendered tier but the one
+    /// the item is in: a pickup changes one count in one tier.
+    void addItem(const std::string& userId, Rarity rarity, const std::string& itemType, int delta);
     const PlayerRecord* findProgress(const std::string& userId) const;
 
     /// Claims today's daily-login reward for `userId`, if it is not claimed

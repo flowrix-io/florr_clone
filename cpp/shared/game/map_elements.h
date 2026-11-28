@@ -112,7 +112,7 @@ struct MapElement {
 
     /// Mob bands only: HOW DANGEROUS this band is, on the open-ended scale
     /// shared/game/difficulty.h defines. 0 is fully common, 100 is ultras,
-    /// 200 supers, 300 uniques; in between is a blend of two tiers.
+    /// 200 supers, 300 eternals; in between is a blend of two tiers.
     ///
     /// Orthogonal to `mobDistribution`, which says WHAT spawns: a band is
     /// "difficulty 60" and "half garden, half hornet" at the same time, and the
@@ -150,6 +150,12 @@ struct MapElement {
     /// district while stocking one mob, and painting the district in that
     /// mob's tier would tell a player the whole district is that dangerous.
     bool singular = false;
+
+    /// How long, in milliseconds, a band's mob killed in somebody's view
+    /// waits before its replacement may appear, instead of the usual
+    /// kInViewRespawnMin..Max roll. Negative (the default) keeps the roll.
+    /// The `respawnSeconds` property; the fire ant hell's top zones breed.
+    double respawnMillis = -1.0;
 
     /// True when this `spawn` object owns a POPULATION: a difficulty band,
     /// stocked to a density of its own.

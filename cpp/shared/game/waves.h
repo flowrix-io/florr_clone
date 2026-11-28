@@ -4,7 +4,7 @@
 //
 // A party fights on a disc that grows each wave. Each wave spends a budget of points on mobs drawn
 // from the biome's table, at a rarity that climbs with the wave number: ultras
-// until wave 200, all supers from 250, and a rare unique or apex past that. A
+// until wave 200, all supers from 250, and a rare eternal or apex past that. A
 // wave lasts 60 seconds, longer from wave 11, and its mobs come fast
 // enough to all be out by half of that. It ends at once when they are all out
 // and two or fewer are left. When the clock runs out and more than four are
@@ -108,21 +108,21 @@ inline constexpr double kWaveSpawnWindow = 0.5;
 inline constexpr int kWaveMythicEndsAfter = 75;
 inline constexpr int kWaveSuperFrom = 200;
 inline constexpr int kWaveAllSuperAt = 250;
-/// Above super, a flat chance a mob has from these waves on: a unique 1 in 100
+/// Above super, a flat chance a mob has from these waves on: an eternal 1 in 100
 /// from wave 300, an apex 1 in 1000 from wave 400.
-inline constexpr int kWaveUniqueFrom = 300;
-inline constexpr double kWaveUniqueChance = 0.01;
+inline constexpr int kWaveEternalFrom = 300;
+inline constexpr double kWaveEternalChance = 0.01;
 inline constexpr int kWaveApexFrom = 400;
 inline constexpr double kWaveApexChance = 0.001;
-/// A unique or apex on the disc stands this many times its health anywhere
+/// An eternal or apex on the disc stands this many times its health anywhere
 /// else (user, 2026-11-13). Applied where every mob's health is made
 /// (SpawnSystem::spawnMobAt), so a chain's every bead, a converted mob and an
 /// operator's spawn on the disc have it too.
-inline constexpr double kWaveUniqueHealthScale = 10.0;
+inline constexpr double kWaveEternalHealthScale = 10.0;
 inline constexpr double kWaveApexHealthScale = 50.0;
 inline constexpr double waveHealthScale(Rarity rarity) {
     return rarity == Rarity::Apex     ? kWaveApexHealthScale
-           : rarity == Rarity::Unique ? kWaveUniqueHealthScale
+           : rarity == Rarity::Eternal ? kWaveEternalHealthScale
                                       : 1.0;
 }
 /// How full the disc may get before the spawner waits and the rest of the wave
@@ -155,7 +155,7 @@ std::vector<const char*> waveMobIds(WaveBiome biome);
 /// The rarity a mob of this wave rolls: pickRandomRarity up to ultra (flooooio
 /// stops at mythic), then mobSpawnEndAfter lifting whatever has stopped
 /// spawning by this wave, mythic included from kWaveMythicEndsAfter; then
-/// supers from kWaveSuperFrom, and uniques and apexes from kWaveUniqueFrom and
+/// supers from kWaveSuperFrom, and eternals and apexes from kWaveEternalFrom and
 /// kWaveApexFrom. Draws one number below kWaveSuperFrom, as it always has.
 Rarity rollWaveRarity(int wave, Rng& rng);
 

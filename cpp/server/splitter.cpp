@@ -229,11 +229,19 @@ bool GameServer::splitSession(Session& session) {
     Vec2 right{centre.x + reach, centre.y};
     // A seam that puts either half inside a wall is not a seam: that half
     // stays where the flower was standing, and the ordinary body separation
-    // pushes the pair apart on the next tick. Tested on the CENTRE alone --
-    // the flower already fits where it is standing, and a swept test that
-    // refused every seam touching a wall would refuse most of the maze.
-    if (terrain_->blocked(left, realm)) left = centre;
-    if (terrain_->blocked(right, realm)) right = centre;
+    // pushes the pair apart on the next tick. Tested on the CENTRE -- the
+    // flower already fits where it is standing, and a swept test of the whole
+    // body that refused every seam touching a wall would refuse most of the
+    // maze -- and on the straight path to it: a half is placed, not walked,
+    // and a wall thinner than the hop (the sewers grate's 14-unit rail) would
+    // otherwise be stepped clean over. A bigger flower (Air) hops further, so
+    // that was a way through every rail on the map.
+    if (terrain_->blocked(left, realm) || terrain_->segmentBlocked(centre, left, realm)) {
+        left = centre;
+    }
+    if (terrain_->blocked(right, realm) || terrain_->segmentBlocked(centre, right, realm)) {
+        right = centre;
+    }
 
     const Entity clone = createPlayerBody(session, realm, right);
     if (clone == NULL_ENTITY) return false;

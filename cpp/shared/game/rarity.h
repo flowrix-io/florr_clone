@@ -15,7 +15,7 @@ namespace flix {
 
 enum class Rarity : std::uint8_t {
     Common = 0, Uncommon, Rare, Epic, Legendary,
-    Mythic, Ultra, Super, Unique, Apex,
+    Mythic, Ultra, Super, Eternal, Apex,
     Universal, Admin,
     Count
 };
@@ -23,6 +23,19 @@ enum class Rarity : std::uint8_t {
 inline constexpr int kRarityCount = static_cast<int>(Rarity::Count);
 
 inline constexpr std::array<const char*, kRarityCount> kRarityNames = {
+    "common", "uncommon", "rare", "epic", "legendary",
+    "mythic", "ultra", "super", "eternal", "apex",
+    "universal", "admin",
+};
+
+/// The names the account database files items, skills and kill counts under.
+/// The same as kRarityNames except one: eternal used to be called "unique",
+/// and every save already holds its eternals in a "unique" bucket. Renaming
+/// the bucket would mean an older server -- after a rollback -- read every
+/// eternal as a common (parseRarity's fallback), so the file keeps the old
+/// key. Only the database's own reads and writes use this; everything a
+/// person types or sees says eternal, and tryParseRarity takes both.
+inline constexpr std::array<const char*, kRarityCount> kRaritySaveKeys = {
     "common", "uncommon", "rare", "epic", "legendary",
     "mythic", "ultra", "super", "unique", "apex",
     "universal", "admin",
@@ -47,7 +60,7 @@ inline constexpr std::array<std::uint32_t, kRarityCount> kRarityColors = {
     0x1FDBDEu,  // mythic     cyan
     0xFF2B75u,  // ultra      pink
     0x2BFFA3u,  // super      mint
-    0xEEEEEEu,  // unique     white
+    0xEEEEEEu,  // eternal     white
     0xFF00FFu,  // apex       magenta
     0x555555u,  // universal  grey
     0xFFB020u,  // admin      gold
@@ -56,6 +69,10 @@ inline constexpr std::array<std::uint32_t, kRarityCount> kRarityColors = {
 inline constexpr int rarityIndex(Rarity r) { return static_cast<int>(r); }
 inline constexpr const char* rarityName(Rarity r) {
     return rarityIndex(r) < kRarityCount ? kRarityNames[rarityIndex(r)] : "common";
+}
+/// The key the account database files `r` under (kRaritySaveKeys).
+inline constexpr const char* raritySaveKey(Rarity r) {
+    return rarityIndex(r) < kRarityCount ? kRaritySaveKeys[rarityIndex(r)] : "common";
 }
 inline constexpr const char* rarityLabel(Rarity r) {
     return rarityIndex(r) < kRarityCount ? kRarityLabels[rarityIndex(r)] : "Common";
@@ -177,7 +194,7 @@ inline constexpr std::array<double, kLadderRarityCount> kMobArmorScale = {
 /// 20 + 10 * 1.7^tier. A smooth fit to the measured radii common through super
 /// (30, 40, 50, 60, 100, 160, 256, 420) -- within ~8% everywhere but epic,
 /// which the curve puts at 69 where the list's +10 steps turn into x1.6 ones.
-/// Unique and apex follow the curve on from super.
+/// Eternal and apex follow the curve on from super.
 inline constexpr std::array<double, kLadderRarityCount> kMobSizeScale = [] {
     std::array<double, kLadderRarityCount> scale{};
     double growth = 1.0;
@@ -190,22 +207,22 @@ inline constexpr std::array<double, kLadderRarityCount> kMobSizeScale = [] {
 
 /// Pet body size per tier: the ladder kMobSizeScale was before the wild mobs
 /// were resized (a0425bf9, 19f6b364). A pet is sized off this smaller table,
-/// not the wild one -- the pet ramp (kPetSizeScaleAtUnique) was tuned on it,
-/// and on the wild curve a unique pet came out a third larger again.
+/// not the wild one -- the pet ramp (kPetSizeScaleAtEternal) was tuned on it,
+/// and on the wild curve an eternal pet came out a third larger again.
 inline constexpr std::array<double, kLadderRarityCount> kPetSizeScale = {
     1.5, 1.65, 1.95, 2.58, 4.5, 7.5, 10.5, 16.777216, 26.8435456, 42.949673,
 };
 
 /// A pull-down on kMobSizeScale for a mob that must not grow like a wild one:
-/// 1x at common, `scaleAtUnique` at unique, linear in the rarity index, and
+/// 1x at common, `scaleAtEternal` at eternal, linear in the rarity index, and
 /// apex continues the slope. The reference's buildSizeRamp (src/mobs.ts).
 ///
 /// Linear rather than geometric on purpose: kMobSizeScale only grows ~1.23x from
 /// common to uncommon, so a geometric pull-down would make an uncommon smaller
 /// than a common. Linear keeps the effective size growing at every step.
-inline double mobSizeRamp(Rarity r, double scaleAtUnique) {
-    constexpr double kUniqueIndex = static_cast<double>(static_cast<int>(Rarity::Unique));
-    return 1.0 - (1.0 - scaleAtUnique) * (ladderIndex(r) / kUniqueIndex);
+inline double mobSizeRamp(Rarity r, double scaleAtEternal) {
+    constexpr double kEternalIndex = static_cast<double>(static_cast<int>(Rarity::Eternal));
+    return 1.0 - (1.0 - scaleAtEternal) * (ladderIndex(r) / kEternalIndex);
 }
 
 /// Petal damage and health per tier: a flat 3x ladder matching mob damage, so
@@ -290,7 +307,7 @@ inline double petalZoomScale(Rarity r) {
 }
 
 /// Antennae's effective vision-range multiplier from the requested output
-/// table. Apex keeps the unique-tier cap.
+/// table. Apex keeps the eternal-tier cap.
 inline double antennaeVisionRangeScale(Rarity r) {
     static constexpr std::array<double, kLadderRarityCount> kVisionScale = {
         1.0, 1.0, 1.25, 4.0 / 3.0, 10.0 / 7.0,
@@ -300,11 +317,11 @@ inline double antennaeVisionRangeScale(Rarity r) {
 }
 
 /// Passive player modifiers (luck, magnetism, extra max health) scale linearly
-/// from 1x at common to 4x at unique. Geometric scaling here would make a
+/// from 1x at common to 4x at eternal. Geometric scaling here would make a
 /// single high-tier utility petal worth more than a whole loadout.
 inline double petalModifierScale(Rarity r) {
-    constexpr double kUniqueIndex = static_cast<double>(static_cast<int>(Rarity::Unique));
-    return 1.0 + (ladderIndex(r) / kUniqueIndex) * 3.0;
+    constexpr double kEternalIndex = static_cast<double>(static_cast<int>(Rarity::Eternal));
+    return 1.0 + (ladderIndex(r) / kEternalIndex) * 3.0;
 }
 
 /// A mob-aggro-range multiplier at a tier: the authored common figure applied
@@ -312,14 +329,14 @@ inline double petalModifierScale(Rarity r) {
 /// range the tier below left. Poo's 0.75 is
 ///
 ///   common -25%, uncommon -43.8%, rare -57.8%, epic -68.4%, legendary -76.3%,
-///   mythic -82.2%, ultra -86.7%, super -90%, unique -92.5%, apex -94.4%
+///   mythic -82.2%, ultra -86.7%, super -90%, eternal -92.5%, apex -94.4%
 ///
 /// -- the table it was balanced to, and apex is the same curve one step on.
 /// A boost rides the same curve the other way: bulb's 1.33 is 1.33x at
 /// common, 2.35x at rare, 4.2x at legendary and 23x at apex, which on a big
 /// mob soon meets the retain radius a mob's notice is capped at.
 /// Neither of the other passive curves can produce this: petalModifierScale
-/// would take a -25% to -100% by unique -- mobs blind to the flower -- and the
+/// would take a -25% to -100% by eternal -- mobs blind to the flower -- and the
 /// zoom curve grows away from 1 rather than towards 0.
 inline double petalAggroRangeScale(double authored, Rarity r) {
     return std::pow(authored, ladderIndex(r) + 1);
@@ -334,7 +351,7 @@ inline constexpr double kAttackRangePerTier = 50.0;
 /// tier above it. Below its floor it does nothing. The user's numbers: 40 at
 /// legendary and +50 a tier, so
 ///
-///   legendary 40, mythic 90, ultra 140, super 190, unique 240, apex 290.
+///   legendary 40, mythic 90, ultra 140, super 190, eternal 240, apex 290.
 inline double petalAttackRange(double authored, Rarity r, Rarity floor) {
     if (!(authored > 0.0)) return 0.0;
     const int above = ladderIndex(r) - ladderIndex(floor);
@@ -345,9 +362,9 @@ inline double petalAttackRange(double authored, Rarity r, Rarity floor) {
 /// A dodge chance at a tier: the authored common figure added once more per
 /// tier, so talisman's 0.03 is
 ///
-///   common 3%, uncommon 6%, rare 9%, ... unique 27%, apex 30%.
+///   common 3%, uncommon 6%, rare 9%, ... eternal 27%, apex 30%.
 ///
-/// Not petalModifierScale: that curve stops at 4x by unique, and a dodge
+/// Not petalModifierScale: that curve stops at 4x by eternal, and a dodge
 /// chance is the one modifier stated as a flat step per tier. Clamped because
 /// a chance past 1 is not a stronger dodge, it is a flower nothing can touch.
 inline double petalEvasionScale(double authored, Rarity r) {
@@ -373,7 +390,7 @@ inline double dropLadderChance(Rarity tier) {
 inline double craftSuccessChance(Rarity from) {
     const int i = rarityIndex(from);
     const int ultra = rarityIndex(Rarity::Ultra);
-    if (from == Rarity::Unique) return 0.005;
+    if (from == Rarity::Eternal) return 0.005;
     if (i > ultra) return std::max(0.0, dropLadderChance(Rarity::Ultra) - 0.001 * (i - ultra));
     return dropLadderChance(from);
 }
@@ -401,8 +418,8 @@ inline constexpr std::array<int, kRarityCount> kOracleCraftCost = {
     65,    // legendary -> mythic
     128,   // mythic    -> ultra
     253,   // ultra     -> super
-    506,   // super     -> unique
-    1012,  // unique    -> apex
+    506,   // super     -> eternal
+    1012,  // eternal    -> apex
     0,     // apex: nothing above it
     0,     // universal: only ever given
     0,     // admin: give command only
@@ -450,7 +467,7 @@ inline double dropUpgradeMultiplier(Rarity mobRarity) {
         case Rarity::Mythic: return 51.0;
         case Rarity::Ultra: return 112.5;
         case Rarity::Super: return 150.0;
-        case Rarity::Unique: return 180.0;
+        case Rarity::Eternal: return 180.0;
         default: return 1.0;
     }
 }

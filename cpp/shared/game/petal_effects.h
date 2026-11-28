@@ -27,6 +27,9 @@ inline constexpr double kLightningFallbackDamage = 25.0;
 /// ordinary cooldown is what hands a full one back.
 inline constexpr std::uint8_t kBatteryCharges = 3;
 inline constexpr double kBatteryStrikeIntervalMillis = 500.0;
+/// A battery's discharge lands three times the strike a lightning petal of its
+/// tier would: it is three charges and done, so each one has to count.
+inline constexpr double kBatteryStrikeScale = 3.0;
 
 /// How far apart a worn lightning cutter's strikes are: 500 ms, so at most
 /// twice a second. The limiter is per PLAYER rather than per petal, so a second
@@ -74,7 +77,7 @@ inline constexpr double kBehaviourHealScale = 3.0;
 inline constexpr double kBloodStingerSelfDamage = 5.0;
 
 /// An apex egg does not hatch an apex pet. The reference substitutes three
-/// unique ones, which is the top of the ladder a pet can actually reach. A
+/// eternal ones, which is the top of the ladder a pet can actually reach. A
 /// universal egg hatches the same three, stronger (see summonPets).
 inline constexpr int kApexPetCount = 3;
 

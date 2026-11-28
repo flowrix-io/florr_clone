@@ -484,6 +484,18 @@ struct ChatLine {
     std::int64_t wallClockMillis = 0;
 };
 
+/// Whether a line is the server's "A Super X has spawned" or "A Super X has
+/// been defeated" announcement (GameServer::announceBosses and its defeat
+/// counterpart), which the "Show Super Spawn/Kill Messages" setting hides.
+/// Only the System channel: nobody can type a line onto it.
+inline bool isSuperBossLine(const ChatLine& line) {
+    if (line.channel != net::ChatChannel::System) return false;
+    const std::string& text = line.text;
+    if (text.find(">A Super ") == std::string::npos) return false;
+    return text.find(" has spawned") != std::string::npos ||
+           text.find(" has been defeated") != std::string::npos;
+}
+
 /// The daily-login streak, as the server computed it at authentication. The
 /// title screen's streak card is the only reader; it counts down to the two
 /// timestamps, which are Unix millis and so are comparable with the wall clock
@@ -1437,8 +1449,14 @@ private:
     bool joinPending_ = false;
 
     /// Chat is capped so a long session cannot grow without bound; the oldest
-    /// lines scroll off, which is what the panel shows anyway.
+    /// lines scroll off, which is what the panel shows anyway. Super
+    /// spawn/kill announcements are capped on their own, kMaxChatLines of
+    /// them: a busy server says them faster than anybody talks, and a player
+    /// who hides them would otherwise be left with a handful of the lines
+    /// they CAN see, the rest pushed out by ones they cannot.
     static constexpr std::size_t kMaxChatLines = 100;
+    /// Drops the oldest lines past each cap, keeping the rest in order.
+    void trimChat();
 };
 
 } // namespace flix

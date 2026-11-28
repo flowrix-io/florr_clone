@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 98;
+inline constexpr std::uint16_t kProtocolVersion = 99;
 
 /// SkinCatalog's leading byte: what the server says this account may do, so the
 /// client shows the matching chat-autocomplete rows and panels. Advisory only:
@@ -608,13 +608,13 @@ enum class ServerMessage : std::uint8_t {
 
 /// What a notification announces. The stripe down a card's left edge is the
 /// only thing that distinguishes them. The TypeScript build carried the first
-/// five as a string tag (`super_craft`, `unique_craft`, `apex_craft`,
+/// five as a string tag (`super_craft`, `eternal_craft`, `apex_craft`,
 /// `star_code`, and the generic stripe for anything else); UniversalCraft is
 /// this build's own.
 enum class NotificationKind : std::uint8_t {
     Generic = 0,
     SuperCraft,
-    UniqueCraft,
+    EternalCraft,
     ApexCraft,
     StarCode,
     UniversalCraft,     ///< a universal forged at a titan (version 47)
@@ -857,7 +857,8 @@ enum class EntityKind : std::uint8_t {
 /// u32 render flags, u16 level, u8 best-loadout rarity, u32 arena score
 /// (zero outside the PVP ring, where nothing keeps one), u8 shield in 255ths
 /// of max health, the str id of the custom skin that flower is wearing, "" for
-/// none, and the str tag of its player's guild, "" for none (version 97); a
+/// none, and the str tag of its player's guild, "" for none (version 97), then the
+/// str account name of its player, "" for none (version 99); a
 /// Petal record carries the u32 net id of the flower it orbits, which is what lets the
 /// client anchor a ring to the DRAWN owner rather than to a snapshot-old one;
 /// an Npc record carries u8 recipe, the index into its mob's `npc.recipes` of

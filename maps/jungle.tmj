@@ -5500,7 +5500,7 @@
                         {
                          "name":"rarity",
                          "type":"string",
-                         "value":"unique"
+                         "value":"eternal"
                         }],
                  "rotation":0,
                  "type":"npcs",

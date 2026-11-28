@@ -525,10 +525,10 @@ struct MobGroupMember {
 /// mobStats(); nothing here is pre-scaled.
 /// A summon's body against the wild animal's at the same tier: sized on the
 /// old, smaller mob ladder (kPetSizeScale) rather than the wild one, then on
-/// the reference's pet ramp -- the same size at common, a third of it by unique.
+/// the reference's pet ramp -- the same size at common, a third of it by eternal.
 inline double petBodyScale(Rarity rarity) {
     const std::size_t tier = static_cast<std::size_t>(ladderIndex(clampRarity(rarityIndex(rarity))));
-    return kPetSizeScale[tier] / kMobSizeScale[tier] * mobSizeRamp(rarity, kPetSizeScaleAtUnique);
+    return kPetSizeScale[tier] / kMobSizeScale[tier] * mobSizeRamp(rarity, kPetSizeScaleAtEternal);
 }
 
 struct MobConfig {
@@ -797,15 +797,15 @@ struct MobConfig {
     }
     /// How much smaller a permanent fixture is than the wild mob of its tier.
     ///
-    /// A common dummy matches a common mob exactly; by unique it is pulled
-    /// down to three quarters of a wild unique, so the practice target does
+    /// A common dummy matches a common mob exactly; by eternal it is pulled
+    /// down to three quarters of a wild eternal, so the practice target does
     /// not become an enormous wall at the top rarities (src/mobs.ts
     /// DUMMY_SIZE_SCALE_AT_UNIQUE). Applies however the dummy got there: a
     /// band's fixture and a map's NPC both read it.
     double fixtureSizeScale(Rarity rarity) const {
         if (!neverAmbient) return 1.0;
-        constexpr double kScaleAtUnique = 0.75;
-        return mobSizeRamp(rarity, kScaleAtUnique);
+        constexpr double kScaleAtEternal = 0.75;
+        return mobSizeRamp(rarity, kScaleAtEternal);
     }
     /// The largest factor rollRandomSize() can return: what anything that has
     /// to stay clear of a body it has not rolled yet must allow for.
@@ -858,7 +858,7 @@ struct MobConfig {
     double lightRadius = 0;
 
     /// XP awarded per tier, from the mob's mandatory `xp` table in mobs.json.
-    /// Common through unique are written there; apex is derived as 3x unique.
+    /// Common through eternal are written there; apex is derived as 3x eternal.
     /// One per ladder rung: no mob is universal.
     std::array<double, kLadderRarityCount> xp{};
 };
@@ -1111,6 +1111,12 @@ struct PetalConfig {
     /// as requiredMana. A summon that cannot be paid for is skipped until the
     /// next action; the petal itself still goes on the ring for free.
     double petManaCost = 0;
+    /// The summon's own timer -- its "secondary reload" -- as a share of the
+    /// petal's reload: how often a summoning petal on the ring hatches, which
+    /// is not how long the petal takes to come back once broken. 1 (the
+    /// default) keeps the two the same; the magic stick hatches four times a
+    /// reload.
+    double petSummonIntervalScale = 1.0;
     /// Whether this petal summons anything, by name or by roll.
     bool hatchesPets() const { return petMobRandom || petMobIndex != kInvalidIndex; }
     /// What a rolled petal's next summon comes to, before its tier's multiples.
@@ -1573,7 +1579,7 @@ inline bool petalLendsBasic(const PetalConfig& config) {
 
 /// What the crown lends. At the crown's own tier, by the user's rule
 /// (2026-10-13) -- florr names a Super Basic outright, but has the crown at
-/// unique alone.
+/// eternal alone.
 inline constexpr const char* kCrownLentPetalId = "basic";
 
 /// The tier a crown of `crown` lends its Basic at: its own, except that the

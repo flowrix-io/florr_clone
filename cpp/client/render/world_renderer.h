@@ -275,11 +275,13 @@ public:
     void drawFlowerBody(Canvas&, const RemoteEntity&, double timeSeconds) const;
 
     /// A corpse's body in the same art space: dead eyes, the default colour,
-    /// no skin, wearing `equipFlags`. `mouth` is the face's curve control --
-    /// 15 smiles, 5 frowns. Public for the death card's flower and the HUD
-    /// avatar of a dead flower, which are the corpse drawn somewhere else.
-    void drawDeadFlower(Canvas&, std::uint16_t equipFlags, double mouth,
-                        double timeSeconds) const;
+    /// wearing `equipFlags` -- or, when `skinId` names a skin this client
+    /// has, that skin, so a flower keeps its look when it dies. `mouth` is
+    /// the face's curve control -- 15 smiles, 5 frowns. Public for the death
+    /// card's flower and the HUD avatar of a dead flower, which are the
+    /// corpse drawn somewhere else.
+    void drawDeadFlower(Canvas&, std::uint16_t equipFlags, double mouth, double timeSeconds,
+                        const std::string& skinId = std::string()) const;
 
     /// A wild digger as the world draws it -- a grey flower carrying a cutter
     /// -- centred on the origin with a body `radius` across, upright and
@@ -648,6 +650,9 @@ private:
     /// so a grown flower paints over its own plate rather than under it.
     void drawPlayerPlate(Canvas&, const RemoteEntity&, const Camera&, Vec2 at,
                          double timeSeconds) const;
+    /// "@accountname" in green, centred just over the flower's head: every
+    /// flower's, the viewer's own included. Nothing for a bot.
+    void drawPlayerHandle(Canvas&, const RemoteEntity&, const Camera&, Vec2 at) const;
     /// A flower's health bar alone, at `opacity` of its usual strength: the
     /// plate's, and the one under the viewer's own flower.
     void drawFlowerHealthBar(Canvas&, const RemoteEntity&, const Camera&, Vec2 at,
@@ -690,8 +695,16 @@ private:
     /// The skin a flower is wearing, or null when it wears none, its id is
     /// unknown to this client, or no catalog is set.
     const CustomSkin* wornSkin(const RemoteEntity&) const;
+    /// The same by id: null for an empty or unknown one.
+    const CustomSkin* skinById(const std::string& id) const;
+    /// A skin's shapes in the radius-25 art space, through the bitmap cache.
+    void paintSkin(Canvas&, const CustomSkin&) const;
 
     const ContentRegistry* content_ = nullptr;
+    /// Which petal is the plain animated rainbow (isPlainRainbowArt), asked
+    /// once per content: its shots are drawn as one circle each.
+    mutable const ContentRegistry* rainbowCheckedFor_ = nullptr;
+    mutable std::uint16_t rainbowIndex_ = 0xFFFF;
     const std::vector<LightDisc>* lightClip_ = nullptr;
     const SpriteCache* sprites_ = nullptr;
     const std::vector<CustomSkin>* skinCatalog_ = nullptr;

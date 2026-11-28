@@ -398,7 +398,8 @@ void App::drawHudFlower(Canvas& canvas, std::uint32_t netId, double centreX, dou
         // shows it.
         canvas.rotate(static_cast<float>(found->second.angle));
         canvas.scale(static_cast<float>(radius / 25.0), static_cast<float>(radius / 25.0));
-        renderer_.drawDeadFlower(canvas, found->second.equipFlags, 5.0, time);
+        renderer_.drawDeadFlower(canvas, found->second.equipFlags, 5.0, time,
+                                 found->second.equippedSkinId);
     } else if (found != net_.view().entities().end()) {
         // The world's own painter, not a HUD-local copy of it: the avatar
         // wears the flower's colour, face, antennae and skin because it IS
@@ -603,7 +604,7 @@ NearbyNpc App::nearbyNpc(Vec2 self) const {
 }
 
 double App::drawBossBars(Canvas& canvas, bool altHeld) {
-    // Super, unique and apex only. An ultra is a big mob, not a boss: it wears
+    // Super, eternal and apex only. An ultra is a big mob, not a boss: it wears
     // the ordinary bar under its body, which is also where its name is.
     // A pet is somebody's summon and a target dummy is a permanent DPS-test
     // fixture, so neither earns the screen-top bar whatever tier it wears.
@@ -623,7 +624,7 @@ double App::drawBossBars(Canvas& canvas, bool altHeld) {
     for (const auto& entry : net_.view().entities()) {
         const RemoteEntity& entity = entry.second;
         if (entity.kind != net::EntityKind::Mob) continue;
-        if (entity.rarity != Rarity::Super && entity.rarity != Rarity::Unique &&
+        if (entity.rarity != Rarity::Super && entity.rarity != Rarity::Eternal &&
             entity.rarity != Rarity::Apex) {
             continue;
         }
@@ -646,7 +647,7 @@ double App::drawBossBars(Canvas& canvas, bool altHeld) {
     }
     if (bosses.empty()) return 0.0;
     // Rarest first, so when more bosses are on screen than there are rows the
-    // apexes and uniques keep theirs. The entity table is unordered, so the
+    // apexes and eternals keep theirs. The entity table is unordered, so the
     // netId tiebreak is what stops two bosses of one tier trading rows from
     // frame to frame.
     std::sort(bosses.begin(), bosses.end(), [](const RemoteEntity* a, const RemoteEntity* b) {

@@ -154,7 +154,7 @@ std::uint8_t chargesFor(const PetalConfig& config) {
 /// returns the instant it breaks.
 ///
 /// `scale` is the Reload talent, which only ever shortens: 29% of the petal's
-/// own reload at unique, the top of the branch. Floored at one tick, because a cooldown shorter
+/// own reload at eternal, the top of the branch. Floored at one tick, because a cooldown shorter
 /// than the tick that measures it is no cooldown at all -- the slot would be
 /// ready again on the same frame it broke.
 double reloadMillisFor(const PetalStats& stats, double scale) {
@@ -383,7 +383,9 @@ double actionIntervalMillis(const PetalConfig& config, const PetalStats& stats, 
         interval = std::max(interval, stats.healChargeMillis);
     }
     if (config.radiation.present) interval = std::max(interval, config.radiation.intervalMillis * (rarity == Rarity::Admin ? 0.5 : 1.0));
-    if (config.hatchesPets()) interval = std::max(interval, stats.reloadMillis);
+    if (config.hatchesPets()) {
+        interval = std::max(interval, stats.reloadMillis * config.petSummonIntervalScale);
+    }
     interval = std::max(interval, behaviourOf(config.id).intervalMillis * (rarity == Rarity::Admin ? 0.5 : 1.0));
     return std::max(interval, net::kTickMillis);
 }
@@ -3541,7 +3543,11 @@ void PetalSystem::strikeBatteries(World& world, const ContentRegistry& registry,
         instance->nextChargeMillis = nowMillis + kBatteryStrikeIntervalMillis;
         const bool flat = --instance->charges == 0;
 
-        strikeLightning(world, player, at, stats.damage, batteryRarity);
+        const double strike =
+            (stats.damage > 0.0 ? stats.damage
+                                : kLightningFallbackDamage * petalStrengthScale(batteryRarity)) *
+            kBatteryStrikeScale;
+        strikeLightning(world, player, at, strike, batteryRarity);
         // The last charge retires the petal. spendPetal finds no Health on it
         // and takes the by-hand path: off the ring now, back on the slot's own
         // cooldown, holding three again.
@@ -3853,7 +3859,7 @@ void PetalSystem::maintainPets(World& world, const ContentRegistry& registry, En
     // instead pinned every summon to common: mob stats scale by 3 per tier, so
     // an egg above common was worth nothing.
     const bool apex = ladderRarity(rarity) == Rarity::Apex;
-    const Rarity petRarity = apex ? Rarity::Unique : rarity;
+    const Rarity petRarity = apex ? Rarity::Eternal : rarity;
     const int multiple = (apex ? kApexPetCount : 1) * (rarity == Rarity::Admin ? 3 : 1);
 
     if (config.petMobRandom) {
@@ -3981,9 +3987,9 @@ void PetalSystem::summonTimedPets(World& world, const ContentRegistry& registry,
                                   double nowMillis) {
     const Transform* ownerTransform = world.tryGet<Transform>(player);
     if (ownerTransform == nullptr) return;
-    // The same apex rule as a squad: the unique trio, for the one payment.
+    // The same apex rule as a squad: the eternal trio, for the one payment.
     const bool apex = ladderRarity(rarity) == Rarity::Apex;
-    const Rarity petRarity = apex ? Rarity::Unique : rarity;
+    const Rarity petRarity = apex ? Rarity::Eternal : rarity;
     const int rolled = config.petMobRandom ? config.rollPetCount(rng_) : std::max(0, config.petCount);
     const int count = rolled * (apex ? kApexPetCount : 1) * (rarity == Rarity::Admin ? 3 : 1);
     // At the cap the summon would land nothing, so it is not paid for either.
@@ -4031,9 +4037,9 @@ Entity PetalSystem::hatchPetBody(World& world, const ContentRegistry& registry, 
     // Health and damage climb the PETAL ladder, not the mob one. A pet comes
     // out of an egg worn in the loadout, so a tier of egg is worth what a tier
     // of any other petal is worth: 3x. The wild health ladder is superlinear on
-    // purpose, to make each tier a wall, and a unique pet on it carried over a
+    // purpose, to make each tier a wall, and an eternal pet on it carried over a
     // thousand times what this gives it. Damage is 3x a tier on both ladders
-    // up to unique, the top a pet reaches, so taking it from here is what
+    // up to eternal, the top a pet reaches, so taking it from here is what
     // keeps the two in step rather than a change in what a pet hits for.
     const double ladder = petalStatScale(rarity);
     // The summoned-only nerf (MobConfig::petHealthScale/petDamageScale), on
@@ -4292,7 +4298,7 @@ void PetalSystem::crackFlowerPetal(World& world, const ContentRegistry& registry
     // Apex is clamped here rather than left to the summon's own apex rule,
     // which would turn the three this petal promises into nine. Universal
     // with it, its sqrt(2) carried as strength.
-    const Rarity petRarity = ladderRarity(rarity) == Rarity::Apex ? Rarity::Unique : rarity;
+    const Rarity petRarity = ladderRarity(rarity) == Rarity::Apex ? Rarity::Eternal : rarity;
     recallPetsOfType(world, *state, slot, mobIndex);
     // At the PETAL, not at the flower: the squad lands on the mob that broke
     // it, which is the whole point of the petal.
@@ -4368,10 +4374,10 @@ void PetalSystem::landShots(World& world, const ContentRegistry& registry,
         const int out = static_cast<int>(std::count_if(summons.begin(), summons.end(), ofType));
 
         if (out < spec.summonMax) {
-            // The flower petal's rule for the tier: apex is clamped to unique
+            // The flower petal's rule for the tier: apex is clamped to eternal
             // rather than left to multiply the one summon this landing buys.
             const Rarity petRarity =
-                ladderRarity(landing.rarity) == Rarity::Apex ? Rarity::Unique : landing.rarity;
+                ladderRarity(landing.rarity) == Rarity::Apex ? Rarity::Eternal : landing.rarity;
             const std::size_t before = slotState.pets.size();
             summonPets(world, registry, landing.owner, landing.slot, mobIndex, petRarity, 1,
                        landing.at, *state, strengthBoost(landing.rarity));

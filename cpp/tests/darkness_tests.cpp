@@ -114,13 +114,13 @@ TEST(a_dark_map_lights_what_florr_lights_and_how_far) {
                   "count": 1}
     })",
                                    error));
-    // florr: a dropped bulb, 200 and 100 more a rarity, 2000 from Unique up.
+    // florr: a dropped bulb, 200 and 100 more a rarity, 2000 from Eternal up.
     const auto reach = [&](net::EntityKind kind, const char* id, Rarity rarity) {
         return lightReach(petalOf(kind, petals, id, rarity, 10), &petals);
     };
     CHECK_NEAR(reach(net::EntityKind::Drop, "bulb", Rarity::Common), 210.0, 1e-9);
     CHECK_NEAR(reach(net::EntityKind::Drop, "bulb", Rarity::Ultra), 810.0, 1e-9);
-    CHECK_NEAR(reach(net::EntityKind::Drop, "bulb", Rarity::Unique), 2010.0, 1e-9);
+    CHECK_NEAR(reach(net::EntityKind::Drop, "bulb", Rarity::Eternal), 2010.0, 1e-9);
     CHECK_NEAR(reach(net::EntityKind::Drop, "basic", Rarity::Ultra), 0.0, 1e-9);
     // Ours: every emissive petal, worn too, and the emissive mobs.
     CHECK_NEAR(reach(net::EntityKind::Petal, "bulb", Rarity::Rare), 410.0, 1e-9);

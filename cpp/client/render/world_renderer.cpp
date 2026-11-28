@@ -20,8 +20,10 @@
 // and world_renderer_internal.h holds what more than one of them uses.
 
 #include "client/render/world_renderer_internal.h"
+#include "client/render/rainbow_shot.h"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -199,6 +201,7 @@ void WorldRenderer::drawEntity(Canvas& canvas, const RemoteEntity& entity, const
                 drawPlayerPlate(canvas, entity, camera, at, timeSeconds);
             }
             drawFlower(canvas, entity, camera, at, timeSeconds);
+            drawPlayerHandle(canvas, entity, camera, at);
             break;
 
         case net::EntityKind::Mob: {
@@ -276,6 +279,20 @@ void WorldRenderer::drawEntity(Canvas& canvas, const RemoteEntity& entity, const
                 // Gas is a cloud rather than a petal, and there can be hundreds
                 // of it at once.
                 ui::setFill(canvas, 0x00FF00u, 0.5);
+                canvas.fillCircle(static_cast<float>(screen.x), static_cast<float>(screen.y),
+                                  static_cast<float>(diameter * 0.5));
+                break;
+            }
+            if (content_ != nullptr && rainbowCheckedFor_ != content_) {
+                rainbowCheckedFor_ = content_;
+                rainbowIndex_ = 0xFFFF;
+                for (std::uint16_t i = 0; i < content_->petalCount(); ++i) {
+                    if (isPlainRainbowArt(content_->petal(i))) rainbowIndex_ = i;
+                }
+            }
+            if (config && entity.typeIndex == rainbowIndex_) {
+                // A circle turned is the same circle: no transform needed.
+                ui::setFill(canvas, rainbowFill(timeSeconds), 1.0);
                 canvas.fillCircle(static_cast<float>(screen.x), static_cast<float>(screen.y),
                                   static_cast<float>(diameter * 0.5));
                 break;

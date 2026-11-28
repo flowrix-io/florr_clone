@@ -43,7 +43,7 @@
 // alone finds whoever owns one. A petal is named by its id or its display
 // name with case, spaces, underscores, hyphens and apostrophes ignored --
 // "Yin Yang", yin_yang and yinyang are one petal -- and a rarity by its id or
-// its label ("eternal" is unique).
+// its label (and "unique", eternal's old name, still finds eternals).
 //
 // Counts are what the database holds: the inventory, which counts the petals
 // a player is wearing too, and the loadout as last saved.

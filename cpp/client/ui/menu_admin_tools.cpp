@@ -191,9 +191,9 @@ void renderEventSetup(MenuContext& ctx,Rect p) {
         const std::string item=slots[i]["petalType"].asString();
         text(ctx.canvas,std::to_string(i+1)+": "+(item.empty()?"-":item.substr(0,7)),x,y+14,style(10));
     }
-    double bagCount=reply["kit"]["inventory"][rarityName(Rarity(forms.kitRarity))]["petal_"+forms.kitItem.text].asDouble();
+    double bagCount=reply["kit"]["inventory"][raritySaveKey(Rarity(forms.kitRarity))]["petal_"+forms.kitItem.text].asDouble();
     if(reply["kit"]["loadoutInInventory"].asBool())for(const auto& slot:slots.items())
-        if(slot["petalType"].asString()==forms.kitItem.text && slot["rarity"].asString()==rarityName(Rarity(forms.kitRarity)))bagCount=std::max(0.0,bagCount-1);
+        if(slot["petalType"].asString()==forms.kitItem.text && slot["rarity"].asString()==raritySaveKey(Rarity(forms.kitRarity)))bagCount=std::max(0.0,bagCount-1);
     if(p.h>=430)text(ctx.canvas,"Bag: "+money(bagCount)+" x "+rarityLabel(Rarity(forms.kitRarity))+" "+forms.kitItem.text,p.x,p.bottom()-70,style(12));
     text(ctx.canvas,"Event gear and event earnings are discarded on exit. Normal gear stays saved.",p.x,p.bottom()-46,style(12));
     result(ctx,"event",{p.x,p.bottom()-28,p.w,24});

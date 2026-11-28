@@ -14,7 +14,7 @@ inline bool collectionRarityFilter(std::string filter,int& minimum,int& maximum)
     for(char& c:filter)c=char(std::tolower(static_cast<unsigned char>(c)));
     if(filter.empty()||filter=="all")return true;
     char range=0;if(filter.back()=='+'||filter.back()=='-'){range=filter.back();filter.pop_back();}
-    if(filter=="eternal")filter="unique";if(filter=="unusual")filter="uncommon";
+    if(filter=="unusual")filter="uncommon";
     Rarity rarity;if(!tryParseRarity(filter,rarity)||rarityIndex(rarity)>=kLadderRarityCount)return false;
     const int index=rarityIndex(rarity);
     if(range!='-')minimum=index;

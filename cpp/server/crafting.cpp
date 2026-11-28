@@ -759,12 +759,12 @@ void GameServer::announceRareCraft(const Session& session, std::uint16_t petalIn
     // universal is never crafted -- it is forged at a titan, one at a time --
     // and says so.
     const bool forged = made == Rarity::Universal;
-    if (made != Rarity::Super && made != Rarity::Unique && made != Rarity::Apex && !forged) return;
+    if (made != Rarity::Super && made != Rarity::Eternal && made != Rarity::Apex && !forged) return;
     if (petalIndex >= content().petalCount()) return;
 
     const std::string verb = forged ? " has been forged by " : " has been crafted by ";
     const std::string tier = rarityLabel(made);
-    // "An Apex" -- and "An Unique", because the reference tests the LABEL's
+    // "An Apex" -- and "An Eternal", because the reference tests the LABEL's
     // first letter against the five vowels and 'U' is one of them. Reproduced
     // rather than corrected: the line is the browser's, word for word. The
     // universal line is not the browser's, and says "The Universal": there is
@@ -789,7 +789,7 @@ void GameServer::announceRareCraft(const Session& session, std::uint16_t petalIn
 
     addNotification(forged                   ? "universal_craft"
                     : made == Rarity::Apex   ? "apex_craft"
-                    : made == Rarity::Unique ? "unique_craft"
+                    : made == Rarity::Eternal ? "eternal_craft"
                                              : "super_craft",
                     plain);
 }

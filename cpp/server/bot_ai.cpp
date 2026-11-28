@@ -66,7 +66,7 @@ bool excludedMobType(std::uint16_t configIndex) {
 /// Kept lower-case and inconsistently punctuated on purpose so bot chatter
 /// blends in with the usual player chat. Every template names its tier as a
 /// bare word, so a human retyping one triggers the chat handler's own raid the
-/// same way. {tier} = "super"|"unique"|"apex", {mob} = e.g. "beetle", {code} = squad
+/// same way. {tier} = "super"|"eternal"|"apex", {mob} = e.g. "beetle", {code} = squad
 /// id -- and a {code} template is only drawn from when the announcer is
 /// actually in a squad.
 constexpr const char* const kBossShoutSuper[] = {
@@ -95,7 +95,7 @@ constexpr const char* const kBossShoutSuper[] = {
     "{tier} {mob} carry code {code}",
 };
 
-constexpr const char* const kBossShoutUnique[] = {
+constexpr const char* const kBossShoutEternal[] = {
     "q{mob}",
     "how {tier} {mob}",
     "{tier} {mob} come",
@@ -118,7 +118,7 @@ constexpr const char* const kBossShoutUnique[] = {
 };
 
 /// No "s{mob}"/"q{mob}" shorthand here: those letters are the super and
-/// unique slang, and an apex has none of its own.
+/// eternal slang, and an apex has none of its own.
 constexpr const char* const kBossShoutApex[] = {
     "{tier} {mob}",
     "{tier} {mob} come",
@@ -1680,7 +1680,7 @@ double distSqToNearestHuman(const World& world,
 Entity GameServer::bestRaidBoss(std::optional<Realm> realm, std::optional<Vec2> within,
                                 bool humanTieBreak) const {
     Entity best = NULL_ENTITY;
-    bool preferUnique = false;
+    bool preferEternal = false;
     double bestSeen = 0;
     double bestHumanDistSq = 0;
 
@@ -1690,24 +1690,24 @@ Entity GameServer::bestRaidBoss(std::optional<Realm> realm, std::optional<Vec2> 
         const Transform* bossAt = world_.tryGet<Transform>(boss);
         if (type == nullptr || bossAt == nullptr) continue;
         if (realm && bossAt->realm != *realm) continue;
-        // Gated BEFORE the preference below: a unique out of reach must not
+        // Gated BEFORE the preference below: an eternal out of reach must not
         // discard the supers that are in it.
         if (within && distanceSq(bossAt->position, *within) >
                           kBotBossRallyRange * kBotBossRallyRange) {
             continue;
         }
-        // A unique outranks every super outright: the first one seen discards
+        // An eternal outranks every super outright: the first one seen discards
         // whatever supers were collected, and supers stop counting from then
         // on.
-        const bool unique = type->rarity == Rarity::Unique;
-        if (!unique && preferUnique) continue;
-        if (unique && !preferUnique) {
-            preferUnique = true;
+        const bool eternal = type->rarity == Rarity::Eternal;
+        if (!eternal && preferEternal) continue;
+        if (eternal && !preferEternal) {
+            preferEternal = true;
             best = NULL_ENTITY;
         }
         // Apex is a boss tier for the notice table and for target priority,
-        // but the raid POOL only ever admits supers and uniques.
-        if (!unique && type->rarity != Rarity::Super) continue;
+        // but the raid POOL only ever admits supers and eternals.
+        if (!eternal && type->rarity != Rarity::Super) continue;
 
         const auto seenIt = botBossFirstSeen_.find(boss);
         const double seen = seenIt == botBossFirstSeen_.end() ? 0.0 : seenIt->second;
@@ -1730,7 +1730,7 @@ Entity GameServer::bestRaidBoss(std::optional<Realm> realm, std::optional<Vec2> 
 bool GameServer::botNearestBoss(const Bot& bot, Vec2& out, double& distOut) {
     // Only bosses within rally range of THIS bot. Without the range gate every
     // bot in the world rallies on any boss anywhere, which is a map-wide
-    // stampede rather than a raid. Among those in range, uniques beat supers,
+    // stampede rather than a raid. Among those in range, eternals beat supers,
     // then most recently seen, then proximity to a human.
     const Transform* transform = world_.tryGet<Transform>(bot.entity);
     if (transform == nullptr) return false;
@@ -1748,7 +1748,7 @@ bool GameServer::botNearestBoss(const Bot& bot, Vec2& out, double& distOut) {
 }
 
 bool GameServer::triggerBotRaid(double nowMillis) {
-    // The best boss in the WORLD, ignoring distance: uniques strictly first,
+    // The best boss in the WORLD, ignoring distance: eternals strictly first,
     // then most recently seen, then whichever is closest to a human. That
     // makes bots commit to a fresh boss bothering somebody rather than to
     // whatever stale one happens to come first out of the world.
@@ -1861,10 +1861,10 @@ void GameServer::announceNewBosses(double nowMillis) {
         const char* tierWord = "super";
         const char* const* pool = kBossShoutSuper;
         std::size_t poolSize = std::size(kBossShoutSuper);
-        if (type->rarity == Rarity::Unique) {
-            tierWord = "unique";
-            pool = kBossShoutUnique;
-            poolSize = std::size(kBossShoutUnique);
+        if (type->rarity == Rarity::Eternal) {
+            tierWord = "eternal";
+            pool = kBossShoutEternal;
+            poolSize = std::size(kBossShoutEternal);
         } else if (type->rarity == Rarity::Apex) {
             tierWord = "apex";
             pool = kBossShoutApex;

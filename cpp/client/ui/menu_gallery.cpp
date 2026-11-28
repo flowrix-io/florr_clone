@@ -62,7 +62,7 @@ constexpr double kContentTop = kPad + kTitleHeight + kTitleGap;
 /// column -- so the height is literal too instead of two thirds of a viewport.
 ///
 /// The width is DERIVED, not the reference shot's literal 603: that card holds
-/// eight tiers and this game has ten (the reference has no unique or apex), so
+/// eight tiers and this game has ten (the reference has no eternal or apex), so
 /// a literal width would clip the last columns against the scrollbar. It is the
 /// row, the padding either side, the scrollbar reserve, and the same ~4.5
 /// units of slack the reference leaves at each end of a row.
@@ -147,7 +147,7 @@ constexpr double kIconInset = kCellRim * 0.5 + 2.0;
 /// sheet. Universal is above the ladder, and no mob is ever that.
 ///
 /// The drop table stops a tier short. An apex mob's graded drop is capped at
-/// unique (LootSystem::finishDropRarity), and no lesser mob grades past it,
+/// eternal (LootSystem::finishDropRarity), and no lesser mob grades past it,
 /// so an apex column there would always be empty.
 constexpr int kTierColumns = kLadderRarityCount;
 constexpr int kDropTiers = kLadderRarityCount - 1;
@@ -481,7 +481,7 @@ std::vector<DropRow> computeMobDrops(std::uint16_t mobIndex, Rarity mobRarity,
             if (column >= 0) perCopy[static_cast<std::size_t>(column)] += percent;
         };
         if (mobRarity == Rarity::Apex) {
-            place(Rarity::Unique, kApexEternalDropChance * 100.0);
+            place(Rarity::Eternal, kApexEternalDropChance * 100.0);
             place(Rarity::Ultra, kApexUltraDropChance * 100.0);
             place(Rarity::Super,
                   (1.0 - kApexEternalDropChance - kApexUltraDropChance) * 100.0);

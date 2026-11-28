@@ -24,7 +24,7 @@ struct BiomeLoad {
     double cost = 0.0;
     /// People in it. A biome with none moves without anybody noticing.
     int humans = 0;
-    /// Being handed over, or holding something a move would lose (a unique or
+    /// Being handed over, or holding something a move would lose (an eternal or
     /// an apex standing in it): left where it is.
     bool pinned = false;
     /// The server an admin has assigned it to, or -1 for wherever it is best.

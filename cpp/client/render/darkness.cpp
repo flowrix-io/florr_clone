@@ -63,7 +63,7 @@ void layDisc(std::vector<std::uint8_t>& mask, int width, int height, double cx, 
 } // namespace
 
 double bulbLight(Rarity rarity) {
-    if (rarity >= Rarity::Unique) return kBulbLightTopRarity;
+    if (rarity >= Rarity::Eternal) return kBulbLightTopRarity;
     return kBulbLight + kBulbLightPerRarity * static_cast<int>(rarity);
 }
 

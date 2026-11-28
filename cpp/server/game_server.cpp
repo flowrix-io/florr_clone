@@ -416,6 +416,11 @@ void GameServer::shutdown() {
     listener_.stop();
     if (gateway_) gateway_->door.stop();
     if (shard_) {
+        // What the stop itself banked -- every body dropped above -- into the
+        // lease journal and onto the link before the link goes: closing the
+        // journal does not write rows nobody handed it.
+        shSendRows();
+        shFlush();
         shard_->dialer.disconnect();
         if (shard_->door) shard_->door->listener.stop();
         shard_->journal.close();
@@ -503,8 +508,8 @@ void GameServer::restoreBossClocks(double nowMillis) {
     for (const std::string& biome : table.keys()) {
         const Json& entry = table[biome];
         if (!entry["uniqueReadyAt"].isNumber() || !entry["apexReadyAt"].isNumber()) continue;
-        const double unique = std::min(entry["uniqueReadyAt"].asDouble() + offset,
-                                       nowMillis + kUniqueSpawnCooldownMillis);
+        const double eternal = std::min(entry["uniqueReadyAt"].asDouble() + offset,
+                                       nowMillis + kEternalSpawnCooldownMillis);
         const double apex = std::min(entry["apexReadyAt"].asDouble() + offset,
                                      nowMillis + kApexSpawnCooldownMaxMillis);
         // Absent while no window was open, and held to one window likewise.
@@ -515,8 +520,8 @@ void GameServer::restoreBossClocks(double nowMillis) {
                                ? std::max(1.0, std::min(entry["apexDueAt"].asDouble() + offset,
                                                         nowMillis + kApexOverdueMaxMillis))
                                : 0.0;
-        spawning_->restoreBossClock(biome, unique, apex, due);
-        savedBossClocks_.push_back(SavedBossClock{biome, unique, apex, due});
+        spawning_->restoreBossClock(biome, eternal, apex, due);
+        savedBossClocks_.push_back(SavedBossClock{biome, eternal, apex, due});
     }
 }
 
@@ -530,9 +535,9 @@ void GameServer::persistBossClocks() {
         // its LONGEST cooldown, since what it drew is not kept and anything
         // less could still read as cooling. Once the boss dies the real ready
         // time goes back in.
-        const double unique = clock.uniqueStanding
-                                  ? clock.uniqueReadyMillis - kUniqueSpawnCooldownMillis
-                                  : clock.uniqueReadyMillis;
+        const double eternal = clock.eternalStanding
+                                  ? clock.eternalReadyMillis - kEternalSpawnCooldownMillis
+                                  : clock.eternalReadyMillis;
         const double apex = clock.apexStanding
                                 ? clock.apexReadyMillis - kApexSpawnCooldownMaxMillis
                                 : clock.apexReadyMillis;
@@ -540,7 +545,7 @@ void GameServer::persistBossClocks() {
         for (SavedBossClock& candidate : savedBossClocks_) {
             if (candidate.biome == clock.biome) saved = &candidate;
         }
-        if (saved != nullptr && saved->uniqueReadyMillis == unique &&
+        if (saved != nullptr && saved->eternalReadyMillis == eternal &&
             saved->apexReadyMillis == apex && saved->apexDueMillis == clock.apexDueMillis) {
             continue;
         }
@@ -548,11 +553,11 @@ void GameServer::persistBossClocks() {
             savedBossClocks_.push_back(SavedBossClock{clock.biome});
             saved = &savedBossClocks_.back();
         }
-        saved->uniqueReadyMillis = unique;
+        saved->eternalReadyMillis = eternal;
         saved->apexReadyMillis = apex;
         saved->apexDueMillis = clock.apexDueMillis;
         Json entry = Json::object();
-        entry["uniqueReadyAt"] = std::round(unique + offset);
+        entry["uniqueReadyAt"] = std::round(eternal + offset);
         entry["apexReadyAt"] = std::round(apex + offset);
         if (clock.apexDueMillis > 0) entry["apexDueAt"] = std::round(clock.apexDueMillis + offset);
         database_.rawTable("bossClocks")[clock.biome] = std::move(entry);

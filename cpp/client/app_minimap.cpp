@@ -51,7 +51,7 @@ constexpr std::array<std::uint32_t, kLadderRarityCount> kMinimapSpawnColors = {
     0x1FDBDEu,  // mythic
     0xDE1F65u,  // ultra
     0x2BFFA4u,  // super
-    0xBF00FFu,  // unique
+    0xBF00FFu,  // eternal
     0x00FFFFu,  // apex
 };
 
@@ -163,7 +163,7 @@ const Canvas* App::minimapStatic(bool rarityGlow) {
         }
 
         // Spawn bands, under the walls, only while ALT is held. Their own palette,
-        // not kRarityColors: MINIMAP_SPAWN_COLORS (minimap.ts:11-22) gives unique a
+        // not kRarityColors: MINIMAP_SPAWN_COLORS (minimap.ts:11-22) gives eternal a
         // violet and apex a cyan where the item tiers are white and magenta.
         if (bands && annotations != nullptr) {
             for (const MapElement& element : annotations->elements()) {

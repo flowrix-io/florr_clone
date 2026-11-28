@@ -601,8 +601,8 @@ TEST(a_glitch_drain_scales_with_the_realms_rarity_like_a_mobs_damage) {
     WorldMaps maps;
     CHECK(drainWorld(maps, "scaled",
                      R"({"name": "glitchDamagePerSecond", "type": "float", "value": 2})"));
-    // The 3x mob damage ladder, written out: rare is 9x, unique 6561x.
-    const std::pair<Rarity, double> cases[] = {{Rarity::Rare, 18.0}, {Rarity::Unique, 13122.0}};
+    // The 3x mob damage ladder, written out: rare is 9x, eternal 6561x.
+    const std::pair<Rarity, double> cases[] = {{Rarity::Rare, 18.0}, {Rarity::Eternal, 13122.0}};
     for (const auto& [rarity, perSecond] : cases) {
         Sim sim;
         sim.combat.worldMaps = &maps;

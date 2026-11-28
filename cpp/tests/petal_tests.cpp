@@ -739,9 +739,9 @@ TEST(a_worn_cutter_adds_body_damage_and_takes_no_ring_place) {
 
     // Rarity moves it, on the same 3x ladder a petal's damage climbs.
     CHECK(granted(Rarity::Common) < granted(Rarity::Epic));
-    CHECK(granted(Rarity::Epic) < granted(Rarity::Unique));
+    CHECK(granted(Rarity::Epic) < granted(Rarity::Eternal));
     CHECK_NEAR(granted(Rarity::Epic), 27.0 * granted(Rarity::Common), 1e-9);
-    CHECK_NEAR(granted(Rarity::Unique), 6561.0 * granted(Rarity::Common), 1e-9);
+    CHECK_NEAR(granted(Rarity::Eternal), 6561.0 * granted(Rarity::Common), 1e-9);
     // Exactly a basic petal's hit at the same tier: the anchor the authored
     // value is chosen for.
     CHECK_NEAR(granted(Rarity::Epic),
@@ -752,9 +752,9 @@ TEST(a_worn_cutter_adds_body_damage_and_takes_no_ring_place) {
     rig.equip(2, "sparkblade", Rarity::Common);
     rig.tick(5);
     CHECK_NEAR(rig.modifiers().bodyDamageBonus, granted(Rarity::Epic), 1e-12);
-    rig.equip(2, "sparkblade", Rarity::Unique);
+    rig.equip(2, "sparkblade", Rarity::Eternal);
     rig.tick(5);
-    CHECK_NEAR(rig.modifiers().bodyDamageBonus, granted(Rarity::Unique), 1e-12);
+    CHECK_NEAR(rig.modifiers().bodyDamageBonus, granted(Rarity::Eternal), 1e-12);
 
     rig.unequip(0);
     rig.unequip(2);
@@ -1767,7 +1767,7 @@ TEST(a_nazars_reload_loses_thirty_percent_a_tier_up_to_florrs_ceiling) {
     CHECK_NEAR(reload(Rarity::Epic), common * 0.343, 1e-6);
     CHECK_NEAR(reload(Rarity::Ultra), common * 0.117649, 1e-6);
     // florr's curve stops at tier 8.
-    CHECK_NEAR(reload(Rarity::Apex), reload(Rarity::Unique), 1e-6);
+    CHECK_NEAR(reload(Rarity::Apex), reload(Rarity::Eternal), 1e-6);
 }
 
 /// What the last strike left on the field. A strike's damage is not a number
@@ -1782,10 +1782,11 @@ double lastStrikeDamage(Rig& rig) {
     return damage;
 }
 
-/// PetalSystem's own kLightningFallbackDamage, which is private to it. The
-/// battery declares `damage: 0` -- it does not hit anything with its body --
-/// so this is what its shock is worth at common.
-constexpr double kFallbackStrike = 25.0;
+/// PetalSystem's own kLightningFallbackDamage, which is private to it, times
+/// the battery's kBatteryStrikeScale (3). The battery declares `damage: 0` --
+/// it does not hit anything with its body -- so this is what its shock is
+/// worth at common.
+constexpr double kFallbackStrike = 25.0 * 3.0;
 
 TEST(a_strike_is_paid_at_the_petal_damage_rate) {
     if (!contentLoaded()) return;
@@ -2047,7 +2048,7 @@ TEST(the_reload_talent_shortens_a_broken_petals_cooldown) {
     if (!contentLoaded()) return;
 
     // The same break on two flowers, one of them at the top of the Reload
-    // branch. Basic's own cooldown is 1200ms, which unique cuts to 29.2%.
+    // branch. Basic's own cooldown is 1200ms, which eternal cuts to 29.2%.
     const auto breakBasic = [](Rig& rig) {
         rig.equip(0, "basic");
         rig.settleEquips();
@@ -2061,19 +2062,19 @@ TEST(the_reload_talent_shortens_a_broken_petals_cooldown) {
     Rig plain;
     CHECK_NEAR(breakBasic(plain), 1200.0, 1e-9);
 
-    Rig unique;
-    unique.world.add<PlayerSkillTree>(unique.player);
-    unique.world.get<PlayerSkillTree>(unique.player)
-        .skills.set(SkillId::Reload, rarityIndex(Rarity::Unique));
-    CHECK_NEAR(breakBasic(unique), 350.4, 1e-9);
+    Rig eternal;
+    eternal.world.add<PlayerSkillTree>(eternal.player);
+    eternal.world.get<PlayerSkillTree>(eternal.player)
+        .skills.set(SkillId::Reload, rarityIndex(Rarity::Eternal));
+    CHECK_NEAR(breakBasic(eternal), 350.4, 1e-9);
 
     // And it is a real wait, not just a shorter number on the slot. Twelve
-    // ticks is 400ms: enough for unique to have its petal back, and far short
+    // ticks is 400ms: enough for eternal to have its petal back, and far short
     // of the full cooldown the plain flower is still serving.
     plain.tick(12);
-    unique.tick(12);
-    CHECK(!unique.slot(0).broken);
-    CHECK_EQ(unique.petals(0).size(), std::size_t(1));
+    eternal.tick(12);
+    CHECK(!eternal.slot(0).broken);
+    CHECK_EQ(eternal.petals(0).size(), std::size_t(1));
     CHECK(plain.slot(0).broken);
 }
 
@@ -2100,15 +2101,15 @@ TEST(the_reload_talent_paces_a_projectile_petals_volleys) {
     Rig plain;
     const int slow = volleys(plain, 300);
 
-    Rig unique;
-    unique.world.add<PlayerSkillTree>(unique.player);
-    unique.world.get<PlayerSkillTree>(unique.player)
-        .skills.set(SkillId::Reload, rarityIndex(Rarity::Unique));
-    const int fast = volleys(unique, 300);
+    Rig eternal;
+    eternal.world.add<PlayerSkillTree>(eternal.player);
+    eternal.world.get<PlayerSkillTree>(eternal.player)
+        .skills.set(SkillId::Reload, rarityIndex(Rarity::Eternal));
+    const int fast = volleys(eternal, 300);
 
     CHECK(slow > 0);
     // Not an exact ratio: the first volley of each run is paced by the equip
-    // reload rather than by the shot timer, so unique lands near, not exactly
+    // reload rather than by the shot timer, so eternal lands near, not exactly
     // on, 1/0.292 times the count.
     CHECK(fast >= slow * 3);
 }
@@ -2150,7 +2151,7 @@ TEST(a_golden_leaf_cuts_the_reload_of_the_rest_of_its_bar) {
     Rig both;
     both.world.add<PlayerSkillTree>(both.player);
     both.world.get<PlayerSkillTree>(both.player)
-        .skills.set(SkillId::Reload, rarityIndex(Rarity::Unique));
+        .skills.set(SkillId::Reload, rarityIndex(Rarity::Eternal));
     both.equip(0, "basic");
     both.equip(1, "golden_leaf", Rarity::Ultra);
     both.equip(2, "golden_leaf", Rarity::Common);
@@ -4859,8 +4860,8 @@ TEST(a_pet_is_smaller_than_the_wild_mob_of_its_tier) {
     const ContentRegistry& content = fixture().registry;
     const std::uint16_t critter = content.mobIndex("critter");
     // Sized on the old, smaller mob ladder (kPetSizeScale), then the pet
-    // ramp: the old size at common, a third of it by unique.
-    for (const Rarity rarity : {Rarity::Common, Rarity::Epic, Rarity::Unique}) {
+    // ramp: the old size at common, a third of it by eternal.
+    for (const Rarity rarity : {Rarity::Common, Rarity::Epic, Rarity::Eternal}) {
         Rig rig;
         rig.equip(0, "summoner", rarity);
         CHECK(rig.tickUntil([&] { return rig.petCount() == 2; }));
@@ -4882,9 +4883,9 @@ TEST(a_pet_climbs_the_petal_ladder_not_the_mob_one) {
     const std::uint16_t critter = content.mobIndex("critter");
     const MobConfig& config = content.mob(critter);
     // The egg's tier is the pet's tier, and a tier of egg is worth what a tier
-    // of any other petal is: 3x, health and damage alike. Unique is the top a
+    // of any other petal is: 3x, health and damage alike. Eternal is the top a
     // pet reaches, and where the wild ladder is furthest from it.
-    for (const Rarity rarity : {Rarity::Common, Rarity::Rare, Rarity::Unique}) {
+    for (const Rarity rarity : {Rarity::Common, Rarity::Rare, Rarity::Eternal}) {
         Rig rig;
         rig.equip(0, "summoner", rarity);
         CHECK(rig.tickUntil([&] { return rig.petCount() == 2; }));
@@ -4897,17 +4898,17 @@ TEST(a_pet_climbs_the_petal_ladder_not_the_mob_one) {
             CHECK_NEAR(rig.world.get<ContactDamage>(pet).amount, config.damage * ladder, 1e-9);
         }
     }
-    // What the pet used to inherit, and what it no longer does: a unique
+    // What the pet used to inherit, and what it no longer does: an eternal
     // critter in the wild has far more health than the petal ladder gives.
-    CHECK(content.mobStats(critter, Rarity::Unique).health >
-          config.health * petalStatScale(Rarity::Unique) * 100.0);
+    CHECK(content.mobStats(critter, Rarity::Eternal).health >
+          config.health * petalStatScale(Rarity::Eternal) * 100.0);
 }
 
 TEST(a_universal_egg_hatches_the_apex_squad_with_sqrt2_its_strength) {
     if (!contentLoaded()) return;
     const ContentRegistry& content = fixture().registry;
     const MobConfig& config = content.mob(content.mobIndex("critter"));
-    // An apex egg hatches three squads' worth at unique, the top a pet
+    // An apex egg hatches three squads' worth at eternal, the top a pet
     // reaches. A universal egg hatches exactly that squad, and its sqrt(2) on
     // health and damage is carried onto the pets -- they ARE the egg's damage.
     for (const Rarity rarity : {Rarity::Apex, Rarity::Universal}) {
@@ -4916,11 +4917,11 @@ TEST(a_universal_egg_hatches_the_apex_squad_with_sqrt2_its_strength) {
         CHECK(rig.tickUntil([&] { return rig.petCount() == 6; }));
         rig.tick(5);
         CHECK_EQ(rig.petCount(), std::size_t(6));
-        const double strength = petalStatScale(Rarity::Unique) *
+        const double strength = petalStatScale(Rarity::Eternal) *
                                 (rarity == Rarity::Universal ? std::sqrt(2.0) : 1.0);
         Query<Pet> pets{rig.world};
         for (const Entity pet : pets.collect()) {
-            CHECK(rig.world.get<MobType>(pet).rarity == Rarity::Unique);
+            CHECK(rig.world.get<MobType>(pet).rarity == Rarity::Eternal);
             const double health = rig.world.get<Health>(pet).max;
             const double damage = rig.world.get<ContactDamage>(pet).amount;
             CHECK_NEAR(health, config.health * strength, config.health * strength * 1e-12);
@@ -6640,9 +6641,9 @@ std::vector<Entity> lentTo(Rig& rig, Entity flower) {
     return out;
 }
 
-/// What a crown of `tier` lends -- a Basic of its own tier. Unique is the tier
+/// What a crown of `tier` lends -- a Basic of its own tier. Eternal is the tier
 /// florr has the crown at, and the one every test below wears.
-PetalStats lentStats(Rarity tier = Rarity::Unique) {
+PetalStats lentStats(Rarity tier = Rarity::Eternal) {
     return fixture().registry.petalStats(petalId(kCrownLentPetalId), tier);
 }
 
@@ -6652,7 +6653,7 @@ TEST(a_crown_lends_a_flower_in_reach_a_basic_of_its_tier_once_its_reload_has_run
     if (!contentLoaded()) return;
     Rig rig;
     rig.world.add<PlayerVisuals>(rig.player);
-    rig.equip(0, "champion_crown", Rarity::Unique);
+    rig.equip(0, "champion_crown", Rarity::Eternal);
     const Entity other = addFlower(rig, {1300.0, 1000.0});
     rig.tick();
     const double lentAt = rig.now;
@@ -6670,17 +6671,17 @@ TEST(a_crown_lends_a_flower_in_reach_a_basic_of_its_tier_once_its_reload_has_run
     if (lent.empty()) return;
     const PetalInstance& instance = rig.world.get<PetalInstance>(lent[0]);
     CHECK_EQ(instance.configIndex, petalId(kCrownLentPetalId));
-    CHECK(instance.rarity == Rarity::Unique);
+    CHECK(instance.rarity == Rarity::Eternal);
     CHECK(instance.creditTo == rig.player);
     CHECK_EQ(rig.world.get<Replicated>(lent[0]).typeIndex, petalId(kCrownLentPetalId));
-    CHECK(rig.world.get<Replicated>(lent[0]).rarity == Rarity::Unique);
+    CHECK(rig.world.get<Replicated>(lent[0]).rarity == Rarity::Eternal);
     CHECK_NEAR(rig.healthOf(lent[0]), lentStats().health, 1e-9);
     // And to its own wearer, on the same reload.
     const std::vector<Entity> own = lentTo(rig, rig.player);
     CHECK_EQ(own.size(), std::size_t(1));
     if (own.empty()) return;
     CHECK(rig.world.get<PetalInstance>(own[0]).creditTo == rig.player);
-    CHECK(rig.world.get<PetalInstance>(own[0]).rarity == Rarity::Unique);
+    CHECK(rig.world.get<PetalInstance>(own[0]).rarity == Rarity::Eternal);
 }
 
 TEST(a_wearer_keeps_its_own_crowns_basic_beside_a_better_crown) {
@@ -6701,7 +6702,7 @@ TEST(a_wearer_keeps_its_own_crowns_basic_beside_a_better_crown) {
 TEST(a_crown_lends_at_most_its_count_and_keeps_the_flowers_it_already_lends) {
     if (!contentLoaded()) return;
     Rig rig;
-    rig.equip(0, "champion_crown", Rarity::Unique);
+    rig.equip(0, "champion_crown", Rarity::Eternal);
     // Five more flowers than the crown has Basics for, the wearer aside, each
     // a step further out than the last.
     std::vector<Entity> flowers;
@@ -6742,9 +6743,9 @@ TEST(a_crown_lends_at_most_its_count_and_keeps_the_flowers_it_already_lends) {
 TEST(a_flower_a_full_crown_turns_away_is_lent_by_the_next_crown_in_reach) {
     if (!contentLoaded()) return;
     Rig rig;
-    rig.equip(0, "champion_crown", Rarity::Unique);
+    rig.equip(0, "champion_crown", Rarity::Eternal);
     const Entity rival = addFlower(rig, {1500.0, 1000.0});
-    equipOn(rig, rival, 0, "champion_crown", Rarity::Unique);
+    equipOn(rig, rival, 0, "champion_crown", Rarity::Eternal);
     std::vector<Entity> flowers;
     for (int i = 0; i < kCrownMaxLoans; ++i) {
         flowers.push_back(addFlower(rig, {1000.0 + 5.0 * (i + 1), 1000.0}));
@@ -6765,7 +6766,7 @@ TEST(a_flower_a_full_crown_turns_away_is_lent_by_the_next_crown_in_reach) {
 TEST(a_crowns_slot_counts_its_basics_out_on_the_field) {
     if (!contentLoaded()) return;
     Rig rig;
-    rig.equip(0, "champion_crown", Rarity::Unique);
+    rig.equip(0, "champion_crown", Rarity::Eternal);
     const Entity other = addFlower(rig, {1300.0, 1000.0});
     rig.tick();
     // A gauge: it reads 0 while the loans reload, rather than nothing.
@@ -6774,7 +6775,7 @@ TEST(a_crowns_slot_counts_its_basics_out_on_the_field) {
     rig.tick();
     CHECK_NEAR(rig.slotCounter(0), 2.0, 1e-9);
     // A mimic of it prints the same figure.
-    rig.equip(1, "mimic", Rarity::Unique);
+    rig.equip(1, "mimic", Rarity::Eternal);
     rig.tick();
     CHECK_NEAR(rig.slotCounter(1), 2.0, 1e-9);
 
@@ -6792,7 +6793,7 @@ TEST(a_crowns_slot_counts_its_basics_out_on_the_field) {
 TEST(a_lent_petal_goes_when_its_flower_leaves_reach_and_a_new_loan_reloads_again) {
     if (!contentLoaded()) return;
     Rig rig;
-    rig.equip(0, "champion_crown", Rarity::Unique);
+    rig.equip(0, "champion_crown", Rarity::Eternal);
     const Entity other = addFlower(rig, {1000.0 + kCrownLendRadius, 1000.0});
     // The edge of the reach counts.
     CHECK(rig.tickUntil([&] { return !lentTo(rig, other).empty(); }));
@@ -6814,7 +6815,7 @@ TEST(a_lent_petal_goes_when_its_flower_leaves_reach_and_a_new_loan_reloads_again
 TEST(a_broken_lent_petal_comes_back_after_its_reload) {
     if (!contentLoaded()) return;
     Rig rig;
-    rig.equip(0, "champion_crown", Rarity::Unique);
+    rig.equip(0, "champion_crown", Rarity::Eternal);
     const Entity other = addFlower(rig, {1300.0, 1000.0});
     CHECK(rig.tickUntil([&] { return !lentTo(rig, other).empty(); }));
 
@@ -6837,7 +6838,7 @@ TEST(a_broken_lent_petal_comes_back_after_its_reload) {
 TEST(a_loan_ends_with_the_crown) {
     if (!contentLoaded()) return;
     Rig rig;
-    rig.equip(0, "champion_crown", Rarity::Unique);
+    rig.equip(0, "champion_crown", Rarity::Eternal);
     const Entity other = addFlower(rig, {1300.0, 1000.0});
     CHECK(rig.tickUntil([&] { return !lentTo(rig, other).empty(); }));
     rig.unequip(0);
@@ -6845,7 +6846,7 @@ TEST(a_loan_ends_with_the_crown) {
     CHECK(lentTo(rig, other).empty());
 
     // And with its wearer going down.
-    rig.equip(0, "champion_crown", Rarity::Unique);
+    rig.equip(0, "champion_crown", Rarity::Eternal);
     CHECK(rig.tickUntil([&] { return !lentTo(rig, other).empty(); }));
     rig.world.get<Health>(rig.player).current = 0.0;
     rig.tick();
@@ -6855,7 +6856,7 @@ TEST(a_loan_ends_with_the_crown) {
 TEST(a_crown_lends_nothing_into_another_realm) {
     if (!contentLoaded()) return;
     Rig rig;
-    rig.equip(0, "champion_crown", Rarity::Unique);
+    rig.equip(0, "champion_crown", Rarity::Eternal);
     const Entity other = addFlower(rig, {1000.0, 1000.0}, Realm::Arena);
     rig.tick(static_cast<int>(lentStats().reloadMillis / net::kTickMillis) + 10);
     CHECK(lentTo(rig, other).empty());
@@ -6864,9 +6865,9 @@ TEST(a_crown_lends_nothing_into_another_realm) {
 TEST(the_nearest_crown_holds_the_loan) {
     if (!contentLoaded()) return;
     Rig rig;
-    rig.equip(0, "champion_crown", Rarity::Unique);
+    rig.equip(0, "champion_crown", Rarity::Eternal);
     const Entity rival = addFlower(rig, {1500.0, 1000.0});
-    equipOn(rig, rival, 0, "champion_crown", Rarity::Unique);
+    equipOn(rig, rival, 0, "champion_crown", Rarity::Eternal);
     const Entity other = addFlower(rig, {1400.0, 1000.0});
     CHECK(rig.tickUntil([&] { return !lentTo(rig, other).empty(); }));
     CHECK(rig.world.get<PetalInstance>(lentTo(rig, other).front()).creditTo == rival);
@@ -6882,7 +6883,7 @@ TEST(the_nearest_crown_holds_the_loan) {
 TEST(a_lent_petal_takes_the_last_place_on_its_flowers_ring) {
     if (!contentLoaded()) return;
     Rig rig;
-    rig.equip(0, "champion_crown", Rarity::Unique);
+    rig.equip(0, "champion_crown", Rarity::Eternal);
     const Entity other = addFlower(rig, {1300.0, 1000.0});
     equipOn(rig, other, 0, "basic");
     // Frozen, as Rig::freezeRing freezes the rig's own: three places, then --
@@ -6964,7 +6965,7 @@ TEST(a_wearers_best_crown_sets_the_tier_and_a_mimic_counts) {
 TEST(a_nearer_crown_of_another_tier_lends_its_own) {
     if (!contentLoaded()) return;
     Rig rig;
-    rig.equip(0, "champion_crown", Rarity::Unique);
+    rig.equip(0, "champion_crown", Rarity::Eternal);
     const Entity rival = addFlower(rig, {1500.0, 1000.0});
     equipOn(rig, rival, 0, "champion_crown", Rarity::Mythic);
     const Entity other = addFlower(rig, {1400.0, 1000.0});
@@ -6977,9 +6978,9 @@ TEST(a_nearer_crown_of_another_tier_lends_its_own) {
     rig.tick();
     CHECK(!rig.world.isAlive(mythic));
     CHECK(rig.tickUntil([&] { return !lentTo(rig, other).empty(); }));
-    const PetalInstance& unique = rig.world.get<PetalInstance>(lentTo(rig, other).front());
-    CHECK(unique.creditTo == rig.player);
-    CHECK(unique.rarity == Rarity::Unique);
+    const PetalInstance& eternal = rig.world.get<PetalInstance>(lentTo(rig, other).front());
+    CHECK(eternal.creditTo == rig.player);
+    CHECK(eternal.rarity == Rarity::Eternal);
 }
 
 TEST(admin_faster_stacked_ring_stays_outside_the_flower_and_lands_hits) {

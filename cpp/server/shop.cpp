@@ -221,7 +221,7 @@ void GameServer::handleBuyPetal(Session& session, net::Connection& connection, B
 
     // The client sends what it wants, never what it costs. A price that came
     // off the wire is a price the client chose. Off a card the ladder stops at
-    // super; on one, the card's own tier -- unique included -- is checked
+    // super; on one, the card's own tier -- eternal included -- is checked
     // against the rotation below.
     const bool offCard = offerSlot == net::kNoShopOffer;
     if (!shopSellsPetal(petalIndex) || (offCard && !shopSellsRarity(rarity)) ||

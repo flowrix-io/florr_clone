@@ -130,7 +130,7 @@ const std::vector<Group>& groupsOf(WaveBiome biome) {
 
 // relativeRarity, which florr's own wave chances are, Common through Ultra.
 // Nothing above: a super had a hundredth of an ultra's weight here, which put
-// them on the disc from wave 75 and left nothing else by 90. Supers, uniques
+// them on the disc from wave 75 and left nothing else by 90. Supers, eternals
 // and apexes now come on a schedule of their own (rollWaveRarity).
 constexpr std::array<double, 7> kRelativeRarity{28710.94, 4921.88, 656.25, 52.5, 1.0, 0.1, 0.001};
 // mobSpawnEndAfter: past this wave a rarity no longer spawns, and whatever rolled
@@ -284,13 +284,13 @@ Rarity rollWaveRarity(int wave, Rng& rng) {
                              static_cast<double>(kWaveAllSuperAt - kWaveSuperFrom);
         if (share >= 1.0 || rng.unit() < share) rarity = Rarity::Super;
     }
-    if (rarity == Rarity::Super && wave >= kWaveUniqueFrom) {
+    if (rarity == Rarity::Super && wave >= kWaveEternalFrom) {
         const double roll = rng.unit();
         const double apex = wave >= kWaveApexFrom ? kWaveApexChance : 0.0;
         if (roll < apex) {
             rarity = Rarity::Apex;
-        } else if (roll < apex + kWaveUniqueChance) {
-            rarity = Rarity::Unique;
+        } else if (roll < apex + kWaveEternalChance) {
+            rarity = Rarity::Eternal;
         }
     }
     return rarity;

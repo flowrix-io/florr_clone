@@ -766,12 +766,12 @@ inline constexpr double kSandstormPetReturnSpeedFactor = 1.5;
 /// Extra chase range per rarity tier a summon is spawned at.
 inline constexpr double kPetAggroRangePerRarity = 200.0;
 
-/// What a unique pet's size is, as a fraction of its base size on the pet
+/// What an eternal pet's size is, as a fraction of its base size on the pet
 /// ladder (kPetSizeScale) -- the endpoint of its mobSizeRamp. A common pet is
-/// exactly a common mob; a unique one is a third of the old 26.8x size,
+/// exactly a common mob; an eternal one is a third of the old 26.8x size,
 /// which would otherwise dwarf the flower that owns it -- the reference's
 /// PET_SIZE_SCALE_AT_UNIQUE (src/mobs.ts). Was two thirds until 2026-10-11.
-inline constexpr double kPetSizeScaleAtUnique = 1.0 / 3.0;
+inline constexpr double kPetSizeScaleAtEternal = 1.0 / 3.0;
 
 // ---------------------------------------------------------------------------
 // Drops

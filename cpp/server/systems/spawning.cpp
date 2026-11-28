@@ -354,7 +354,7 @@ bool zoneInView(const Rect& bounds, Realm realm,
 /// True when `e` is a whole animal rather than a piece of one: anything
 /// without a body chain, or the head a chain was built from. A centipede's
 /// segments carry its tier, and counting them as more of it would make one
-/// unique centipede a crowd of them.
+/// eternal centipede a crowd of them.
 bool isWholeAnimal(World& world, Entity e) {
     const BodySegment* link = world.tryGet<BodySegment>(e);
     return link == nullptr || link->chainHead == e;
@@ -630,7 +630,7 @@ Entity SpawnSystem::convertMob(World& world, const Terrain& terrain, const Conte
     const bool keepAwake = world.has<KeepAwake>(mob);
     const bool quiet = world.has<QuietBoss>(mob);
 
-    // Past the boss clock: a unique turned is the unique that was already
+    // Past the boss clock: an eternal turned is the eternal that was already
     // standing, not a new one asking to be let in.
     const std::size_t announced = bossSpawns.size();
     const Entity turned =
@@ -639,7 +639,7 @@ Entity SpawnSystem::convertMob(World& world, const Terrain& terrain, const Conte
     if (turned == NULL_ENTITY) return NULL_ENTITY;
     bossSpawns.resize(announced);
     // Gone in the same breath, so nothing after -- a census, the cull of a
-    // second unique -- ever sees the two side by side.
+    // second eternal -- ever sees the two side by side.
     world.destroy(mob);
     if (isWorldRealm(place.realm)) {
         --census_.mobs;
@@ -705,7 +705,7 @@ bool SpawnSystem::divideMob(World& world, const Terrain& terrain, const ContentR
         bounty == nullptr || type->configIndex >= content.mobCount()) {
         return false;
     }
-    if (type->rarity == Rarity::Unique || type->rarity == Rarity::Apex) return false;
+    if (type->rarity == Rarity::Eternal || type->rarity == Rarity::Apex) return false;
     // What a death leaves behind would be left once per piece.
     const MobConfig& config = content.mob(type->configIndex);
     if (config.neverAmbient || harmlessOnContact(config) || config.deathSpawn.present ||
@@ -829,12 +829,12 @@ SpawnSystem::Sacrifice SpawnSystem::planSacrifice(World& world, const ContentReg
 
     rarity = ladderRarity(rarity);
     // A prestige biome raises the summons a tier as it raises every mob, and
-    // refuses a unique or an apex outright.
+    // refuses an eternal or an apex outright.
     if (prestigeRealm(realm)) {
         if (barredFromPrestige(rarity)) return Sacrifice{SacrificeOutcome::Prestige};
         rarity = prestigeRarity(rarity);
     }
-    if ((rarity == Rarity::Unique || rarity == Rarity::Apex) &&
+    if ((rarity == Rarity::Eternal || rarity == Rarity::Apex) &&
         topBossTaken(world, rarity, realm)) {
         return Sacrifice{SacrificeOutcome::Taken};
     }
@@ -928,12 +928,12 @@ Entity SpawnSystem::spawnMobAt(World& world, const Terrain& terrain, const Conte
     // roll cannot disagree about it.
     rarity = clampLadderRarity(std::max(rarityIndex(rarity), rarityIndex(config.minRarity)));
 
-    // A prestige biome has no boss clocks and never fields a unique or an
+    // A prestige biome has no boss clocks and never fields an eternal or an
     // apex, whoever asks -- the console and a sacrifice included, which is why
     // this is not under `clockGated`.
     if (barredFromPrestige(rarity) && prestigeRealm(realm)) return NULL_ENTITY;
 
-    // A wild unique or apex is its biome's clock's to hand out, and nobody
+    // A wild eternal or apex is its biome's clock's to hand out, and nobody
     // else's. One asked for any other way while that clock is still cooling
     // down -- an operator's console, a band naming a mob whose floor sits
     // above super, a path nobody has written yet -- is gone before it exists:
@@ -972,7 +972,7 @@ Entity SpawnSystem::spawnMobAt(World& world, const Terrain& terrain, const Conte
     world.add<Body>(e, Body{radius, stats.mass});
     world.add<Knockback>(e);
     world.add<Faction>(e, Faction{Team::Hostiles, false});
-    // The waves disc's uniques and apexes are many times as tough as a wild one.
+    // The waves disc's eternals and apexes are many times as tough as a wild one.
     const double maxHealth =
         stats.health * (realm == kWavesRealm ? waveHealthScale(rarity) : 1.0);
     world.add<Health>(e, Health{maxHealth, maxHealth, 0.0, 0.0});
@@ -1251,7 +1251,7 @@ Entity SpawnSystem::spawnEscort(World& world, const Terrain& terrain, const Cont
     // Every such path comes through here -- a hole's opening guard, its
     // waves, a queen's soldiers and a broken tomb's mummy -- so this is where
     // a minion is held to ultra, however far above that its nest stands. The
-    // queen is not: a unique hole has a unique queen. An escort is never
+    // queen is not: an eternal hole has an eternal queen. An escort is never
     // clock-gated (depth > 0), so she is past the boss clock too.
     const Entity child =
         spawnMobAt(world, terrain, content, childIndex,
@@ -1424,7 +1424,7 @@ void SpawnSystem::takeCensus(World& world, const ContentRegistry& content,
     // Band mobs the last census counted that are gone now. A KILLED one was
     // banked and taken off the list the tick it died, and one put to sleep was
     // never put on it, so anything missing was removed some other way -- an
-    // operator's killall, the cull of a second unique -- and its band is owed
+    // operator's killall, the cull of a second eternal -- and its band is owed
     // the slot back where it stood (returnVanished).
     vanished_.clear();
     for (const CensusMob& tracked : censusMobs_) {
@@ -1927,10 +1927,10 @@ void SpawnSystem::rebuildZones(const ContentRegistry& content) {
     // filtering (by viewport, by realm, by tier), and a second level of
     // indirection would buy nothing at these counts.
     for (const MapData& map : worldMaps->maps()) {
-        // Every map's biome, banded or not: the one-unique rule has to know
+        // Every map's biome, banded or not: the one-eternal rule has to know
         // which biome an operator's spawn landed in wherever it landed.
         // Except a prestige twin's, which has no clock to keep: nothing
-        // there is ever upgraded, and a unique or apex never stands in one.
+        // there is ever upgraded, and an eternal or apex never stands in one.
         const std::uint16_t biome = map.prestige() ? kInvalidIndex : bossClockFor(map.biome());
         realmBiome_[realmIndex(map.realm())] = biome;
         for (const MapElement& element : map.elements()) {
@@ -1941,6 +1941,7 @@ void SpawnSystem::rebuildZones(const ContentRegistry& content) {
             zone.difficulty = element.difficulty;
             zone.realm = map.realm();
             zone.singular = element.singular;
+            zone.respawnMillis = element.respawnMillis;
             zone.prestige = map.prestige();
             zone.biomeName = map.biome();
 
@@ -2056,11 +2057,11 @@ std::uint16_t SpawnSystem::bossClockFor(const std::string& biome) {
     return static_cast<std::uint16_t>(bossClocks_.size() - 1);
 }
 
-void SpawnSystem::restoreBossClock(const std::string& biome, double uniqueReadyMillis,
+void SpawnSystem::restoreBossClock(const std::string& biome, double eternalReadyMillis,
                                    double apexReadyMillis, double apexDueMillis) {
     BiomeBossClock restored;
     restored.biome = biome;
-    restored.uniqueReadyMillis = uniqueReadyMillis;
+    restored.eternalReadyMillis = eternalReadyMillis;
     restored.apexReadyMillis = apexReadyMillis;
     restored.apexDueMillis = apexDueMillis;
     restored.scattered = true;
@@ -2089,7 +2090,7 @@ void SpawnSystem::scatterBossClocks(double nowMillis) {
     // Evenly spaced rather than each drawn uniformly: n independent draws
     // bunch up by chance, and the whole point is that two biomes' bosses do
     // not arrive together. A fresh order per tier, so the biome first in line
-    // for a unique is not also first in line for an apex. The phase keeps the
+    // for an eternal is not also first in line for an apex. The phase keeps the
     // first slot off zero -- nothing is ready the moment the server starts,
     // when every band is stocking cold and supers are being placed by the
     // dozen.
@@ -2103,10 +2104,10 @@ void SpawnSystem::scatterBossClocks(double nowMillis) {
             const double ready =
                 nowMillis + cooldownMillis * (static_cast<double>(slot) + phase) / slots;
             BiomeBossClock& clock = bossClocks_[fresh[slot]];
-            (apex ? clock.apexReadyMillis : clock.uniqueReadyMillis) = ready;
+            (apex ? clock.apexReadyMillis : clock.eternalReadyMillis) = ready;
         }
     };
-    deal(kUniqueSpawnCooldownMillis, false);
+    deal(kEternalSpawnCooldownMillis, false);
     // Dealt over the longest apex wait, so no fresh biome waits longer for
     // its first apex than a restarted clock could.
     deal(kApexSpawnCooldownMaxMillis, true);
@@ -2125,7 +2126,7 @@ Rarity SpawnSystem::rollBossUpgrade(World& world, const SpawnZone& zone, double 
                bossRng_.chance(kBossUpgradeChance);
     };
     if (rolls(clock.apexReadyMillis, Rarity::Apex)) return Rarity::Apex;
-    if (rolls(clock.uniqueReadyMillis, Rarity::Unique)) return Rarity::Unique;
+    if (rolls(clock.eternalReadyMillis, Rarity::Eternal)) return Rarity::Eternal;
     return Rarity::Super;
 }
 
@@ -2134,11 +2135,11 @@ bool SpawnSystem::prestigeRealm(Realm realm) const {
 }
 
 double SpawnSystem::bossCooldownLeft(Rarity rarity, Realm realm, double nowMillis) const {
-    if (rarity != Rarity::Unique && rarity != Rarity::Apex) return 0.0;
+    if (rarity != Rarity::Eternal && rarity != Rarity::Apex) return 0.0;
     const std::uint16_t slot = realmBiome_[realmIndex(realm)];
     if (slot >= bossClocks_.size()) return 0.0;
     const BiomeBossClock& clock = bossClocks_[slot];
-    const double ready = rarity == Rarity::Apex ? clock.apexReadyMillis : clock.uniqueReadyMillis;
+    const double ready = rarity == Rarity::Apex ? clock.apexReadyMillis : clock.eternalReadyMillis;
     return std::max(0.0, ready - nowMillis);
 }
 
@@ -2153,8 +2154,8 @@ void SpawnSystem::restartBossClock(std::uint16_t slot, Rarity rarity, double now
         clock.apexReadyMillis =
             nowMillis + bossRng_.range(kApexSpawnCooldownMinMillis, kApexSpawnCooldownMaxMillis);
         clock.apexDueMillis = 0;
-    } else if (rarity == Rarity::Unique) {
-        clock.uniqueReadyMillis = nowMillis + kUniqueSpawnCooldownMillis;
+    } else if (rarity == Rarity::Eternal) {
+        clock.eternalReadyMillis = nowMillis + kEternalSpawnCooldownMillis;
     }
 }
 
@@ -2238,17 +2239,17 @@ void SpawnSystem::noteStandingBosses(World& world, const CommandBuffer& commands
     bind(world);
     // Pets never appear here: a pet carries no AmbientMob, and this is the
     // spawner's own population. Nor do the arena and the maze, which are not
-    // biomes and never field a unique anyway.
+    // biomes and never field an eternal anyway.
     topBosses_.clear();
     ambient_->each([&](Entity e, MobTag&, Transform& transform, Body&, MobType& type,
                        AmbientMob& ambient) {
-        if (type.rarity != Rarity::Unique && type.rarity != Rarity::Apex) return;
+        if (type.rarity != Rarity::Eternal && type.rarity != Rarity::Apex) return;
         if (!isWorldRealm(transform.realm) || !isWholeAnimal(world, e)) return;
         // A nest's queen is her nest's, not her biome's.
         if (world.has<NestQueen>(e)) return;
         topBosses_.push_back(TopBoss{biomeKey(transform.realm), type.rarity, ambient.spawnOrder, e});
     });
-    for (BiomeBossClock& clock : bossClocks_) clock.uniqueStanding = clock.apexStanding = false;
+    for (BiomeBossClock& clock : bossClocks_) clock.eternalStanding = clock.apexStanding = false;
     // One already queued for removal -- an admin's killall, say -- is gone
     // by the end of the tick, and a save before then must not keep it alive.
     for (const TopBoss& boss : topBosses_) {
@@ -2266,7 +2267,7 @@ void SpawnSystem::markStanding(std::uint32_t biome, Rarity rarity) {
     if (biome >= bossClocks_.size()) return;
     BiomeBossClock& clock = bossClocks_[biome];
     if (rarity == Rarity::Apex) clock.apexStanding = true;
-    if (rarity == Rarity::Unique) clock.uniqueStanding = true;
+    if (rarity == Rarity::Eternal) clock.eternalStanding = true;
 }
 
 void SpawnSystem::cullExtraTopBosses(World& world, CommandBuffer& commands) {
@@ -2290,7 +2291,7 @@ void SpawnSystem::cullExtraTopBosses(World& world, CommandBuffer& commands) {
     }
     if (culled_.empty()) return;
 
-    // The body goes with its head. A boss is never recycled, so a unique
+    // The body goes with its head. A boss is never recycled, so an eternal
     // centipede's segments left behind would stand there for good -- and the
     // first of them would promote itself to a head of its own.
     Query<BodySegment> segments{world};
@@ -2563,8 +2564,8 @@ bool SpawnSystem::stockZone(World& world, const Terrain& terrain, const ContentR
     // said so, not because a separate pass decided the world was owed one.
     //
     // Stopped at super. Everything above it belongs to the biome's clocks
-    // (below): a band steep enough to roll uniques on its own would spawn them
-    // far faster than kUniqueSpawnCooldownMillis allows.
+    // (below): a band steep enough to roll eternals on its own would spawn them
+    // far faster than kEternalSpawnCooldownMillis allows.
     //
     // An overdue apex is the super its biome never rolled.
     const bool overdue = slot == Slot::OverdueApex;
@@ -2588,10 +2589,10 @@ bool SpawnSystem::stockZone(World& world, const Terrain& terrain, const ContentR
     // there instead, one spawn in 100,000 and one super in 10,000, or in its
     // own biomes a magician, one super in twenty. At the tier the band rolled,
     // and before the boss upgrade below, so a super square can come out the
-    // biome's unique like any other super.
+    // biome's eternal like any other super.
     type = rollStandIn(content, type, rarity, zone.biomeName, rng);
 
-    // A super may come out a unique or an apex instead, if its biome's clock
+    // A super may come out an eternal or an apex instead, if its biome's clock
     // for that tier has run down. After the type roll, which is safe because a
     // mob that is ambient at super is ambient at every tier above it; and never
     // for a permanent fixture, which is a DPS post rather than an event. Never
@@ -2616,9 +2617,12 @@ bool SpawnSystem::stockZone(World& world, const Terrain& terrain, const ContentR
         // does not wait to be full: the first player onto a server, or an
         // operator after a killall, sees the band full on the next pass, on
         // their own screen too.
-        const double delay = slot == Slot::Killed && seenBy(viewers, zone.realm, at, 0.0)
-                                 ? rng.range(kInViewRespawnMinMillis, kInViewRespawnMaxMillis)
-                                 : 0.0;
+        const double delay =
+            slot == Slot::Killed && seenBy(viewers, zone.realm, at, 0.0)
+                ? (zone.respawnMillis >= 0.0
+                       ? zone.respawnMillis
+                       : rng.range(kInViewRespawnMinMillis, kInViewRespawnMaxMillis))
+                : 0.0;
         zone.latent.push_back(LatentMob{at, nowMillis + delay, type, rarity});
         return true;
     }
@@ -2893,21 +2897,21 @@ void SpawnSystem::announceIfNotable(World& world, const ContentRegistry& content
     // A prestige twin's supers are its bands' everyday stock, not events: the
     // server would announce one every few seconds.
     if (prestigeRealm(realm)) return;
-    // Nor are the waves': from wave 250 every mob there is one. Their uniques
+    // Nor are the waves': from wave 250 every mob there is one. Their eternals
     // and apexes are a 1% and 0.1% chance on top of that, and are news
     // wherever they stand (user, 2026-11-13).
-    if (realm == kWavesRealm && rarityIndex(rarity) < rarityIndex(Rarity::Unique)) return;
+    if (realm == kWavesRealm && rarityIndex(rarity) < rarityIndex(Rarity::Eternal)) return;
     // A permanent fixture is not an event. A dummy reaches this through a band
-    // that names it outright, up to unique, or the console's spawn, and
+    // that names it outright, up to eternal, or the console's spawn, and
     // announcing those would put a line in chat for a post nobody has to
     // fight. (The shipped DPS row is the jungle's map NPCs, which NpcSystem
     // places and which never come through here.)
     if (mobIndex >= content.mobCount() || content.mob(mobIndex).neverAmbient) return;
     // Nor is a super on ground that grows them as more than kQuietBossChance
     // of its stock (user, 2026-11-13): there it is what the band is for, not
-    // an event. Tagged, so its defeat goes as quietly. Uniques and apexes are
+    // an event. Tagged, so its defeat goes as quietly. Eternals and apexes are
     // clock-rationed and announce wherever they stand.
-    if (rarityIndex(rarity) < rarityIndex(Rarity::Unique) &&
+    if (rarityIndex(rarity) < rarityIndex(Rarity::Eternal) &&
         bossChanceAt(realm, position, zone) > kQuietBossChance) {
         world.add<QuietBoss>(entity);
         return;
@@ -2915,7 +2919,7 @@ void SpawnSystem::announceIfNotable(World& world, const ContentRegistry& content
     // Oldest first, so a server that never drains this keeps the announcements
     // somebody might still care about instead of the ones from an hour ago --
     // but lowest tier first of all. A band restocking in bulk (after a
-    // killall, say) places dozens of supers in one pass, and the unique its
+    // killall, say) places dozens of supers in one pass, and the eternal its
     // biome's clock made out of one of them must not be pushed out by the
     // rest.
     if (bossSpawns.size() >= kMaxPendingBossSpawns) {

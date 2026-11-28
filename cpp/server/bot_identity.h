@@ -35,7 +35,7 @@ inline constexpr const char* const kBotNames[] = {
     "nah", "m29", "m56", "florr67", "get good", "super raider", "real admin",
     "not bot", "bot", "scripts", "ban dupers", "absorbed super", "Guest #1234",
     "Guest #6767", "Guest #4167", "UwU", "m27", "n28", "super petal",
-    "apex petal", "apex crafter", "uniques", "i use scripts", "m28 bad",
+    "apex petal", "apex crafter", "eternals", "i use scripts", "m28 bad",
     "guests", "leech squad", "leecher",
 };
 
@@ -106,12 +106,12 @@ inline Rarity rollBotPetalRarity(int level, BotRng& rng) {
         {{Rarity::Common, 20}, {Rarity::Uncommon, 20}, {Rarity::Rare, 20}, {Rarity::Epic, 20}, {Rarity::Legendary, 20}, {Rarity::Mythic, 11}, {Rarity::Ultra, 1}},
         {{Rarity::Common, 40}, {Rarity::Uncommon, 40}, {Rarity::Rare, 40}, {Rarity::Epic, 40}, {Rarity::Legendary, 40}, {Rarity::Mythic, 40}, {Rarity::Ultra, 21}, {Rarity::Super, 1}},
         {{Rarity::Common, 20}, {Rarity::Uncommon, 20}, {Rarity::Rare, 20}, {Rarity::Epic, 20}, {Rarity::Legendary, 20}, {Rarity::Mythic, 20}, {Rarity::Ultra, 20}, {Rarity::Super, 20}},
-        {{Rarity::Common, 20}, {Rarity::Uncommon, 20}, {Rarity::Rare, 20}, {Rarity::Epic, 20}, {Rarity::Legendary, 20}, {Rarity::Mythic, 20}, {Rarity::Ultra, 20}, {Rarity::Super, 20}, {Rarity::Unique, 1}},
+        {{Rarity::Common, 20}, {Rarity::Uncommon, 20}, {Rarity::Rare, 20}, {Rarity::Epic, 20}, {Rarity::Legendary, 20}, {Rarity::Mythic, 20}, {Rarity::Ultra, 20}, {Rarity::Super, 20}, {Rarity::Eternal, 1}},
     };
     // Level 200 and up draws from its own table, not from the top pre-apex band.
     static const std::vector<Entry> kApexBand = {
         {Rarity::Mythic, 10}, {Rarity::Ultra, 20}, {Rarity::Super, 20},
-        {Rarity::Unique, 2}, {Rarity::Apex, 30},
+        {Rarity::Eternal, 2}, {Rarity::Apex, 30},
     };
     constexpr int kApexLevelThreshold = 200;
     constexpr int kLevelBandSize = 10;

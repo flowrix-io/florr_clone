@@ -748,6 +748,17 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         summon.altText = label + exactNumber(stats.petManaCost) + unit;
         lines.push_back(summon);
     }
+    if (config.hatchesPets() && config.petSummonIntervalScale != 1.0) {
+        TooltipLine every{"Spawn Time: " +
+                              exactNumber(std::round(stats.reloadMillis *
+                                                     config.petSummonIntervalScale / 100.0) /
+                                          10.0) +
+                              "s",
+                          12.0};
+        every.alpha = 0.56;
+        every.labelColor = kStatDuration;
+        lines.push_back(every);
+    }
     if (config.petLifetimeMillis > 0.0) {
         TooltipLine span{"Summon Lifetime: " + exactNumber(config.petLifetimeMillis / 1000.0) + "s",
                          12.0};
@@ -909,7 +920,7 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         if (config.id == "battery") {
             const double base = stats.damage > 0.0 ? stats.damage
                                                    : kLightningFallbackDamage * strength;
-            const double strike = std::round(base * talentDamage);
+            const double strike = std::round(base * kBatteryStrikeScale * talentDamage);
             effectLine("Lightning: " + abbreviate(strike), kStatLightning,
                        "Lightning: " + exactNumber(strike));
             effectLine("Charges: " + std::to_string(kBatteryCharges), kStatGeneric);
@@ -987,12 +998,12 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
 
         // Summons: what comes out, how many, and how hard. A pet climbs the
         // PETAL ladder from its mob's base (PetalSystem::hatchPetBody), at the
-        // petal's tier -- an apex one is three unique pets instead.
+        // petal's tier -- an apex one is three eternal pets instead.
         const auto petLines = [&](std::uint16_t mobIndex, int count, bool scaled) {
             if (mobIndex == kInvalidIndex) return;
             const MobConfig& mob = content().mob(mobIndex);
             const bool apex = ladderRarity(rarity) == Rarity::Apex;
-            const Rarity petTier = apex ? Rarity::Unique : rarity;
+            const Rarity petTier = apex ? Rarity::Eternal : rarity;
             // A squad hatches three at apex and three times over at Admin;
             // the flower's crack is always its fixed three.
             const int multiple =

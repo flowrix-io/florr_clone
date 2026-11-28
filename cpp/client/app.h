@@ -288,7 +288,7 @@ private:
     void drawDarkness(Canvas&);
     /// How dark that vignette should be this frame, 0 to 1, before easing.
     double lowHealthTarget() const;
-    /// The screen-top health bars a super, unique or apex mob in view gets,
+    /// The screen-top health bars a super, eternal or apex mob in view gets,
     /// one under the other, name above each. Ultras are not bosses: they wear
     /// the ordinary bar under the body like every other mob. Returns the y
     /// under the last row, or 0 when there are none.
@@ -566,7 +566,7 @@ private:
     /// so the settings file keeps naming a door and never a row.
     std::string pickerTab_;
     bool trialPickerOpen_ = false;
-    /// The monthly Unique/Apex route is a second page, like Spiral Abyss's
+    /// The monthly Eternal/Apex route is a second page, like Spiral Abyss's
     /// later challenge area, rather than four cells mixed into the permanent
     /// progression grid.
     bool trialRefreshingPicker_ = false;
@@ -731,6 +731,15 @@ private:
     /// Which row of the slash-command list is highlighted, or -1 when the list
     /// is not up. Reset to 0 every time the list opens, as the reference's is.
     int chatSuggestion_ = -1;
+    /// Lines this player has sent, oldest first, for Up/Down to walk back
+    /// through (kChatHistoryLines at most, this session only).
+    std::vector<std::string> chatHistory_;
+    /// Which of chatHistory_ the line is showing, or -1 when it is the
+    /// player's own draft.
+    int chatHistoryAt_ = -1;
+    /// The draft that was in the line when Up first reached into the history,
+    /// put back when Down walks past the newest line.
+    std::string chatHistoryDraft_;
     /// How far the transcript is scrolled back, in pixels off its bottom. Zero
     /// is the resting state: newest line just above the input slot.
     double chatScroll_ = 0;
