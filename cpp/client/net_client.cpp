@@ -79,6 +79,7 @@ const char* clientMessageName(std::uint8_t id) {
         case net::ClientMessage::AdminDashboard:      return "adminDashboard";
         case net::ClientMessage::RegisterGuest:       return "registerGuest";
         case net::ClientMessage::SetUsername:         return "setUsername";
+        case net::ClientMessage::SetProfileHidden:    return "setProfileHidden";
         case net::ClientMessage::ProfileCheck:        return "profileCheck";
         case net::ClientMessage::VoteSkin:            return "voteSkin";
         case net::ClientMessage::FavoriteSkin:        return "favoriteSkin";
@@ -336,6 +337,13 @@ void NetClient::requestSetUsername(const std::string& username) {
     ByteWriter w;
     beginMessage(w, net::ClientMessage::SetUsername);
     w.str(username);
+    send(w);
+}
+
+void NetClient::requestSetProfileHidden(bool hidden) {
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::SetProfileHidden);
+    w.u8(hidden ? 1 : 0);
     send(w);
 }
 
@@ -1695,6 +1703,7 @@ void readProfileSection(ByteReader& reader, std::uint8_t section, Profile& profi
             const std::uint8_t accountFlags = reader.u8();
             profile.guest = (accountFlags & net::kAccountGuest) != 0;
             profile.hasPassword = (accountFlags & net::kAccountNoPassword) == 0;
+            profile.profileHidden = (accountFlags & net::kAccountProfileHidden) != 0;
             break;
         }
         case net::kProfileBar: {

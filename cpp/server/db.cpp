@@ -573,12 +573,13 @@ Account accountFromJson(const Json& value, const std::string& storedKey) {
     account.createdFromHash = value["createdFromHash"].asString();
     account.guest = value["guest"].asBool(false);
     account.passwordChosen = value["passwordChosen"].asBool(true);
+    account.profileHidden = value["profileHidden"].asBool(false);
 
     collectExtras(value, {"id", "username", "password", "isPlainText", "admin", "owner",
                           "adminTier", "adminBanned", "adminBannedAt", "adminBannedBy",
                           "lastActiveAt", "muted", "mutedAt", "mutedBy", "muteHistory", "chatModerator",
                           "chatModeratorBy", "createdAt", "createdFromHash", "guest",
-                          "passwordChosen"},
+                          "passwordChosen", "profileHidden"},
                   account.extra);
     return account;
 }
@@ -636,6 +637,7 @@ Json accountToJson(const Account& account) {
     // account that predates them is a registered one with a typed password.
     if (account.guest) out["guest"] = true;
     if (!account.passwordChosen) out["passwordChosen"] = false;
+    if (account.profileHidden) out["profileHidden"] = true;
     appendExtras(account.extra, out);
     return out;
 }

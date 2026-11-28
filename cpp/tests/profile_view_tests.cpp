@@ -107,3 +107,59 @@ TEST(profile_of_a_name_that_is_no_account_is_answered_in_chat) {
     CHECK(asker.playerProfileView().name.empty());
     CHECK(!asker.takePlayerProfileRequest());
 }
+
+TEST(a_hidden_profile_is_shown_only_to_its_owner_and_admins) {
+    Harness h("profile-hidden", [](const std::string& path) {
+        seedUser(path, "asker", "password7");
+        seedUser(path, "shy", "password7");
+        seedUser(path, "staff", "password7", /*admin=*/true);
+        seedUser(path, "later", "password7");
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+    NetClient asker, shy, staff;
+    CHECK(loginAs(h, asker, "asker", "password7"));
+    CHECK(loginAs(h, shy, "shy", "password7"));
+    CHECK(loginAs(h, staff, "staff", "password7"));
+    asker.joinGame(1000, 800, {}, "Asker");
+    shy.joinGame(1000, 800, {}, "Shy");
+    staff.joinGame(1000, 800, {}, "Staff");
+    CHECK(h.stepUntil({&asker, &shy, &staff}, [&] {
+        return asker.status() == NetClient::Status::Playing &&
+               shy.status() == NetClient::Status::Playing &&
+               staff.status() == NetClient::Status::Playing;
+    }));
+    CHECK(!shy.profile().profileHidden);
+
+    // The switch is answered with a Profile that says it is on.
+    shy.requestSetProfileHidden(true);
+    CHECK(h.stepUntil({&asker, &shy, &staff}, [&] { return shy.profile().profileHidden; }));
+
+    // Another player is told it is private, and given no card -- whatever
+    // capitalisation of the name they type.
+    const std::uint64_t mark = asker.chatSequence();
+    asker.sendChat("/profile SHY");
+    CHECK(h.stepUntil({&asker, &shy, &staff}, [&] {
+        return sawTextSince(asker, mark, "profile is private");
+    }));
+    CHECK(asker.playerProfileView().name.empty());
+    CHECK(!asker.takePlayerProfileRequest());
+
+    // The owner still sees their own, by name or without one.
+    shy.sendChat("/profile shy");
+    CHECK(h.stepUntil({&asker, &shy, &staff}, [&] { return shy.playerProfileView().name == "shy"; }));
+
+    // So does an admin -- by the account's flag, not its name.
+    staff.sendChat("/profile shy");
+    CHECK(h.stepUntil({&asker, &shy, &staff}, [&] { return staff.playerProfileView().name == "shy"; }));
+
+    // Off again, and the card is everyone's. A fresh asker, so the
+    // one-a-second limit on the first is not what this waits on.
+    shy.requestSetProfileHidden(false);
+    CHECK(h.stepUntil({&asker, &shy, &staff}, [&] { return !shy.profile().profileHidden; }));
+    NetClient later;
+    CHECK(loginAs(h, later, "later", "password7"));
+    later.joinGame(1000, 800, {}, "Later");
+    CHECK(h.stepUntil({&later}, [&] { return later.status() == NetClient::Status::Playing; }));
+    later.sendChat("/profile shy");
+    CHECK(h.stepUntil({&later}, [&] { return later.playerProfileView().name == "shy"; }));
+}

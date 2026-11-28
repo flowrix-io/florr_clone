@@ -302,6 +302,11 @@ struct Account {
     /// `passwordChosen: false` only while false: every account that predates
     /// the field was registered with a password somebody typed.
     bool passwordChosen = true;
+    /// The owner's choice to keep its card from other players: `/profile`
+    /// of this account answers anyone else -- an admin aside -- that it is
+    /// private (ClientMessage::SetProfileHidden). Stored as `profileHidden`
+    /// only while true.
+    bool profileHidden = false;
 
     Json extra = Json::object();
 };

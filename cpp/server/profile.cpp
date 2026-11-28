@@ -215,6 +215,7 @@ void GameServer::gatherProfile(Session& session, ProfileParts& parts) {
     if (const Account* account = std::as_const(database_).findUserById(session.userId)) {
         if (account->guest) accountFlags |= net::kAccountGuest;
         if (!account->passwordChosen) accountFlags |= net::kAccountNoPassword;
+        if (account->profileHidden) accountFlags |= net::kAccountProfileHidden;
     }
     parts.identity.str(session.username);
     parts.identity.u8(accountFlags);

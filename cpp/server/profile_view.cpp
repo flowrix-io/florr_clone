@@ -10,6 +10,10 @@
 // offline, and for an online one it is the row as last written (the progress
 // ticker keeps XP and stars close; a sharded game's gateway holds a copy that
 // can trail the server the flower is on by a few seconds).
+//
+// An account may keep its card private (the Account card's switch,
+// Account::profileHidden): then only its owner and an admin are shown it, and
+// anyone else is told so in chat.
 
 #include "server/game_server.h"
 
@@ -95,6 +99,13 @@ void GameServer::sendPlayerProfileView(Session& session, net::Connection& connec
     const Account* account = accounts.findUser(lookup);
     if (account == nullptr) {
         sendSystem(connection, "No player named <b>" + escapedMarkup(lookup) + "</b>.");
+        return;
+    }
+    // The owner's choice, held on the account: nobody but the owner and an
+    // admin reads a hidden card. Compared by account id, never by the name
+    // typed -- any capitalisation of a name finds the same account.
+    if (account->profileHidden && account->id != session.userId && !effectiveAdmin(session)) {
+        sendSystem(connection, "<b>" + escapedMarkup(account->username) + "</b>'s profile is private.");
         return;
     }
     // An account that has never played has no row: the card is then the

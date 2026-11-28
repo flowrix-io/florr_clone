@@ -208,6 +208,7 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ClientMessage::GuildInviteToSquad:
         case net::ClientMessage::StartTrialChamber:
         case net::ClientMessage::GuildSetOfficer:
+        case net::ClientMessage::SetProfileHidden:
             if (!spend(session->requestAllowance)) return;
             break;
         // PublishSkin and EditSkin are billed too, but by their handler, which
@@ -233,6 +234,9 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ClientMessage::Register:      handleRegister(*session, connection, reader); break;
         case net::ClientMessage::RegisterGuest: handleRegisterGuest(*session, connection); break;
         case net::ClientMessage::SetUsername:   handleSetUsername(*session, connection, reader); break;
+        case net::ClientMessage::SetProfileHidden:
+            handleSetProfileHidden(*session, connection, reader);
+            break;
         case net::ClientMessage::Login:         handleLogin(*session, connection, reader); break;
         case net::ClientMessage::ResumeSession: handleResume(*session, connection, reader); break;
         case net::ClientMessage::ChangePassword:

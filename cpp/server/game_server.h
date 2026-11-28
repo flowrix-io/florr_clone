@@ -689,6 +689,10 @@ private:
     void handleSetUsername(Session&, net::Connection&, ByteReader&);
     void sendSetUsernameResult(net::Connection&, bool ok, const std::string& username,
                                const std::string& reason);
+    /// The Account card's privacy switch: stores whether other players'
+    /// `/profile` may read this session's account, and answers with a
+    /// Profile, whose account flags say what was stored.
+    void handleSetProfileHidden(Session&, net::Connection&, ByteReader&);
     /// Logs the ACCOUNT out, not just this connection: every token it holds is
     /// revoked, and every other connection signed into it is signed out too.
     void handleLogout(Session&);
@@ -843,7 +847,9 @@ private:
     /// level and counters, the bar it wears and its bag -- as a PlayerProfileView,
     /// or says in chat that no account has that name. An empty `name` is the
     /// asker's own. Works for an account that is offline: it reads the saved
-    /// row, so what an online account shows is the row as last written.
+    /// row, so what an online account shows is the row as last written. An
+    /// account that hides its card (Account::profileHidden) is shown only to
+    /// itself and to an admin; anyone else is told in chat that it is private.
     /// (profile_view.cpp)
     void sendPlayerProfileView(Session&, net::Connection&, const std::string& name);
     void handleNotifications(net::Connection&, ByteReader&);

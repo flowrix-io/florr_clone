@@ -240,6 +240,8 @@ constexpr StoredField kStoredFields[] = {
     {"guest", "guest", StoredKind::Flag, [](const Account& a) { return a.guest ? 1.0 : 0.0; }, noText},
     {"passwordchosen", "passwordChosen", StoredKind::Flag,
      [](const Account& a) { return a.passwordChosen ? 1.0 : 0.0; }, noText},
+    {"profilehidden", "profileHidden", StoredKind::Flag,
+     [](const Account& a) { return a.profileHidden ? 1.0 : 0.0; }, noText},
 };
 
 const StoredField* findStoredField(const std::string& folded) {

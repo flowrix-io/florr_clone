@@ -13,6 +13,11 @@
 // password form without its "current" box for an account whose owner was never
 // told one.
 //
+// The privacy switch is the one control that is not a form: a toggle whose
+// value is the server's (Profile::profileHidden). While a click's answer is
+// out the box shows what was asked for, so it does not flick back for a
+// round trip; whatever the next Profile says is what it shows after.
+//
 // The password form and Log Out used to be the settings card's Advanced tab's
 // account block, and keep its look: captions over standard square inputs,
 // gardn buttons, one caret shared by every box.
@@ -53,6 +58,13 @@ constexpr double kSectionGap = 18.0;
 constexpr double kWheelStep = 100.0;
 /// How long a button that asks twice stays armed after the first click.
 constexpr double kArmSeconds = 4.0;
+/// The settings card's checkbox: its size, and the height of its row.
+constexpr double kToggleSize = 22.0;
+constexpr double kToggleRow = 32.0;
+/// How long the privacy switch shows the value it asked for before it goes
+/// back to what the Profile says: the server answers every request, so this
+/// is only for an answer that went missing.
+constexpr double kToggleWaitSeconds = 5.0;
 
 // --- palette ----------------------------------------------------------------
 
@@ -154,6 +166,12 @@ struct PanelState {
     /// settings card's Reset Tutorial guard.
     int armed = kNoButton;
     double armedUntil = 0;
+
+    /// The privacy switch's request, while it is out: the value asked for,
+    /// and when the box stops showing it if no Profile has said so by then.
+    bool hidePending = false;
+    bool hideWanted = false;
+    double hideUntil = 0;
 
     /// Measured by the last paint, so the scroll range is the real one.
     double contentHeight = 0;
@@ -381,6 +399,17 @@ struct Painter {
         cy += 22.0;
     }
 
+    /// One checkbox row, the whole row the target. Returns true when clicked.
+    bool toggle(const std::string& caption, bool on) {
+        const Rect row{x, cy, w, kToggleRow};
+        const Rect box{x, cy + (kToggleRow - kToggleSize) * 0.5, kToggleSize, kToggleSize};
+        ui::toggleBox(canvas(), box, on ? 1.0 : 0.0);
+        text(canvas(), caption, x + kToggleSize + 8.0, box.y + kToggleSize * 0.5,
+             bodyStyle(13.0, over(row) ? kNoteFill : kPaper));
+        cy += kToggleRow + 4.0;
+        return click(row);
+    }
+
     /// A gardn button. Painted greyed and dead while `pending`: there is
     /// nothing to press until the answer lands. Returns true when clicked.
     bool button(const std::string& caption, std::uint32_t fill, int id, bool pending) {
@@ -443,6 +472,13 @@ void readAnswers(MenuContext& ctx, PanelState& st) {
             st.password.clear();
             st.armed = kNoButton;
         }
+    }
+
+    // The privacy switch settles the moment the Profile agrees with it, or
+    // when it has waited long enough to stop believing an answer is coming.
+    if (st.hidePending && (ctx.net.profile().profileHidden == st.hideWanted ||
+                           ctx.timeSeconds >= st.hideUntil || !ctx.net.haveSession())) {
+        st.hidePending = false;
     }
 
     // A request whose answer can no longer arrive must not leave its form dead
@@ -618,6 +654,19 @@ bool AccountPanel::render(MenuContext& ctx) {
                      kChangePassword, st.password.pending)) {
             submitPassword(ctx, st);
         }
+        p.cy += kSectionGap;
+
+        // --- privacy ----------------------------------------------------------------
+        p.heading("Privacy");
+        const bool hidden = st.hidePending ? st.hideWanted : profile.profileHidden;
+        if (p.toggle("Hide my profile from other players", hidden)) {
+            ctx.net.requestSetProfileHidden(!hidden);
+            st.hidePending = true;
+            st.hideWanted = !hidden;
+            st.hideUntil = ctx.timeSeconds + kToggleWaitSeconds;
+        }
+        p.note(hidden ? "Other players who use /profile on you are told your profile is private."
+                      : "Anyone can use /profile to see your level, stats, loadout and inventory.");
         p.cy += kSectionGap;
 
         // --- another account ------------------------------------------------------

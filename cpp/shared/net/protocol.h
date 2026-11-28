@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 99;
+inline constexpr std::uint16_t kProtocolVersion = 100;
 
 /// SkinCatalog's leading byte: what the server says this account may do, so the
 /// client shows the matching chat-autocomplete rows and panels. Advisory only:
@@ -281,6 +281,12 @@ enum class ClientMessage : std::uint8_t {
                         ///< opened: carry on the session that ticket was issued
                         ///< for here, instead of signing in. Answered with
                         ///< Attached. (Version 98.)
+    SetProfileHidden,   ///< u8 hidden -- 1 keeps this account's card from other
+                        ///< players' `/profile` (an admin still sees it), 0
+                        ///< shows it again. The account is the session's, as
+                        ///< ChangePassword's is. Answered with a Profile, whose
+                        ///< kAccountProfileHidden says what was stored.
+                        ///< (Version 100.)
 };
 
 enum class ServerMessage : std::uint8_t {
@@ -640,7 +646,7 @@ enum class NotificationKind : std::uint8_t {
 };
 
 /// What the Profile says about the account itself rather than its progress:
-/// the two facts the Account panel draws itself from. (Version 59.)
+/// the facts the Account panel draws itself from. (Version 59.)
 enum AccountFlags : std::uint8_t {
     /// A guest: the server made the account and named it, and its owner may
     /// still pick a name (ClientMessage::SetUsername), once.
@@ -649,6 +655,9 @@ enum AccountFlags : std::uint8_t {
     /// server keeps to itself -- so the session token is the only way into the
     /// account, and ChangePassword does not ask for the current one.
     kAccountNoPassword = 1u << 1,
+    /// The owner keeps the account's card from other players' `/profile`
+    /// (ClientMessage::SetProfileHidden). (Version 100.)
+    kAccountProfileHidden = 1u << 2,
 };
 
 /// The small parts of a Profile, which a ProfileDelta carries only when they

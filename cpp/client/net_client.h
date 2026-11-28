@@ -42,6 +42,9 @@ struct Profile {
     /// token is the only way into the account and a password change asks for
     /// no current one (net::kAccountNoPassword).
     bool hasPassword = true;
+    /// The owner keeps this account's card from other players' `/profile`
+    /// (net::kAccountProfileHidden).
+    bool profileHidden = false;
     double totalXp = 0;
     int level = 1;
     double stars = 0;   ///< see PlayerProgress::stars
@@ -617,6 +620,9 @@ public:
     /// Picks this guest account's username, once. The answer lands in
     /// usernameOutcome(), and a success also renames profile().
     void requestSetUsername(const std::string& username);
+    /// Keeps this account's card from other players' `/profile`, or shows it
+    /// again. Answered with a Profile whose profileHidden is what was stored.
+    void requestSetProfileHidden(bool hidden);
     void requestLogin(const std::string& username, const std::string& password);
     void resumeSession(const std::string& token);
     /// Ends the session: tells the server to log the account out -- which

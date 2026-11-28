@@ -363,7 +363,7 @@ and says why above the list.
 The fields are `id`, `username`, `isPlainText`, `admin`, `owner`, `adminTier`,
 `adminBanned`, `adminBannedAt`, `adminBannedBy`, `lastActiveAt`, `muted`,
 `mutedAt`, `mutedBy`, `chatModerator`, `chatModeratorBy`, `createdAt`,
-`createdFromHash`, `guest` and `passwordChosen` -- every one the file stores
+`createdFromHash`, `guest`, `passwordChosen` and `profileHidden` -- every one the file stores
 but the password hash. An unset field reads its default (`passwordChosen`
 true, `adminTier` 1, flags false, times unset).
 

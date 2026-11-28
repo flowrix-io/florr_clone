@@ -807,6 +807,9 @@ both sides read it.
   `Database::renameUser`, which moves the session records and the guild
   roster with it); and `passwordChosen: false` — `ChangePassword` takes no
   current password, and the token's 30-day term restarts on every resume.
+  A third flag is the owner's own choice: `profileHidden`, the Account
+  card's privacy switch (`SetProfileHidden`), keeps the account's
+  `/profile` card from everyone but its owner and an admin.
   Guest creation shares Register's limits (`server/account_limits.h`), which
   size each address by its STANDING — how many accounts it made that went on
   to be played — so a school or a carrier NAT full of real players scales up

@@ -433,6 +433,27 @@ void GameServer::handleSetUsername(Session& session, net::Connection& connection
     }
 }
 
+void GameServer::handleSetProfileHidden(Session& session, net::Connection& connection,
+                                       ByteReader& reader) {
+    const bool hidden = reader.u8() != 0;
+    if (!reader.ok()) return;
+    // WHOSE card this is comes from the session, as a password change's does.
+    if (!session.authenticated() || session.userId.empty()) return;
+    const Account* stored = std::as_const(database_).findUserById(session.userId);
+    if (stored == nullptr) return;
+    // The mutable accessor marks the row for the journal, so it is taken only
+    // when the value changes: a request for what is already stored writes
+    // nothing.
+    if (stored->profileHidden != hidden) {
+        if (Account* account = database_.findUserById(session.userId)) {
+            account->profileHidden = hidden;
+        }
+    }
+    // Always answered, so a client whose request crossed another of its own
+    // on the wire settles on what is actually stored.
+    sendProfile(session, connection);
+}
+
 void GameServer::handleLogout(Session& session) {
     // An anonymous socket has no account to log out of.
     if (!session.authenticated()) return;
