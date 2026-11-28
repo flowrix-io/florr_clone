@@ -105,6 +105,27 @@ struct Profile {
     }
 };
 
+/// Another account's public card, as `/profile <name>` answers it
+/// (net::ServerMessage::PlayerProfileView). Only what the server keeps for an
+/// account: there is no time-played or best-score ledger to show.
+struct PlayerProfileView {
+    std::string name;
+    bool online = false;
+    /// How long ago the account was last on, as of this answer; 0 while it is
+    /// online or when the server never recorded one.
+    double lastSeenAgoMillis = 0;
+    std::string joined;     ///< "YYYY-MM-DD" (UTC), empty when unknown
+    double totalXp = 0;
+    int level = 1;
+    double stars = 0;
+    double mobsKilled = 0;
+    int streak = 0;
+    int mazeLevel = 0;      ///< 0 when the maze was never entered
+    std::string guild;      ///< the guild's tag, empty for none
+    std::vector<Profile::Slot> loadout;
+    std::vector<Profile::Stack> inventory;  ///< rarest first
+};
+
 /// One row of the account leaderboard.
 struct LeaderboardRow {
     std::string name;
@@ -732,6 +753,11 @@ public:
     bool takeMarketRequest(){bool r=marketRequested_;marketRequested_=false;return r;}
     bool marketOrdersRequested()const{return marketOrders_;}
     bool takePollCreatorRequest() { const bool result=pollCreatorRequested_;pollCreatorRequested_=false;return result; }
+    /// The card `/profile` last answered. Kept until the next answer replaces
+    /// it, so a panel that is closed and reopened shows the same one.
+    const PlayerProfileView& playerProfileView() const { return playerProfileView_; }
+    /// True once for each answer that arrived: the menus open the card on it.
+    bool takePlayerProfileRequest() { const bool result = playerProfileRequested_; playerProfileRequested_ = false; return result; }
     const Json& adminTools(const std::string& kind) const { return adminTools_[kind]; }
     void publishSkin(const std::string& name, const std::vector<SkinShape>& shapes);
     /// Replaces the name and shapes of a skin this account published, on the
@@ -1272,6 +1298,7 @@ private:
     void handleChangePasswordResult(ByteReader&);
     void handleSetUsernameResult(ByteReader&);
     void handleLeaderboard(ByteReader&);
+    void handlePlayerProfileView(ByteReader&);
     void handleMobDamageBoard(ByteReader&);
     void handleNotifications(ByteReader&);
     /// Schedules the next redial, lengthening the wait each time it is
@@ -1405,6 +1432,8 @@ private:
     std::unordered_map<std::string, SkinVote> skinVotes_;
     std::unordered_set<std::string> favoriteSkins_;
 
+    PlayerProfileView playerProfileView_;
+    bool playerProfileRequested_ = false;
     std::vector<LeaderboardRow> leaderboard_;
     MobDamageBoardState mobDamageBoard_;
     std::uint8_t mobDamageBoardPrefsSent_ = 3;
