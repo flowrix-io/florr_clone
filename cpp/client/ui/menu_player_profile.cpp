@@ -34,8 +34,8 @@ using namespace flix::ui;
 
 namespace {
 
-/// The card fills the window to this far from every edge.
-constexpr double kScreenMargin = 16.0;
+/// The card fills the window to this far from every edge: all of it.
+constexpr double kScreenMargin = 0.0;
 constexpr double kPad = 16.0;
 /// The title and the line under it, above the scrolling body.
 constexpr double kHeaderHeight = 82.0;
@@ -60,7 +60,7 @@ constexpr double kSlotMax = 64.0;
 /// The spare row's tiles, as a share of the active row's.
 constexpr double kSpareSlotShare = 0.74;
 /// How opaque the gray card is.
-constexpr float kCardAlpha = 0.82f;
+constexpr float kCardAlpha = 0.6f;
 constexpr double kRowGap = 12.0;
 constexpr double kKeyLabelHeight = 20.0;
 constexpr double kKeyLabelSize = 13.0;
@@ -78,8 +78,13 @@ constexpr double kStatGap = 6.0;
 constexpr double kStatPad = 8.0;
 constexpr std::uint32_t kStatsBoxFill = 0xCD5555u;
 
-constexpr double kBagSide = 48.0;
-constexpr double kBagGap = 6.0;
+constexpr double kBagSide = 40.0;
+constexpr double kBagGap = 5.0;
+/// The bag sits on its own darker plate, no wider than this, so a wide window
+/// does not stretch it into a field of tiles with the counters lost beside it.
+constexpr double kBagColumnMax = 840.0;
+constexpr double kPlatePad = 12.0;
+constexpr float kPlateAlpha = 0.7f;
 /// A tier's heading: its name between two rules, over its own tiles.
 constexpr double kSectionHeader = 30.0;
 constexpr double kSectionLabelSize = 16.0;
@@ -187,7 +192,12 @@ struct Layout {
     double statsWidth = 0;
     double statsHeight = 0;
     double statCellWidth = 0;
-    double bagX = 0;          ///< the bag's column
+    double statsX = 0;        ///< the counters' left edge
+    double plateX = 0;        ///< the bag's plate
+    double plateY = 0;
+    double plateWidth = 0;
+    double plateHeight = 0;
+    double bagX = 0;          ///< the bag's column, inside the plate
     double bagWidth = 0;
     double bagY = 0;          ///< the caption; the sections follow it
     int columns = 1;
@@ -244,14 +254,21 @@ Layout layoutOf(const PlayerProfileView& v, double bodyWidth, const std::vector<
                       static_cast<double>(l.statColumns);
     l.statsHeight = kStatPad * 2 + statRows * kStatCellHeight + (statRows - 1) * kStatGap;
 
+    // The counters and the plate are centred as one block.
     if (l.beside) {
-        l.bagX = l.statsWidth + kColumnGap;
-        l.bagY = y;
+        l.plateWidth = std::min(l.width - l.statsWidth - kColumnGap, kBagColumnMax);
+        l.statsX = (l.width - (l.statsWidth + kColumnGap + l.plateWidth)) * 0.5;
+        l.plateX = l.statsX + l.statsWidth + kColumnGap;
+        l.plateY = y;
     } else {
-        l.bagX = 0;
-        l.bagY = y + l.statsHeight + kSectionGap;
+        l.plateWidth = std::min(l.width, kBagColumnMax);
+        l.statsX = 0;
+        l.plateX = (l.width - l.plateWidth) * 0.5;
+        l.plateY = y + l.statsHeight + kSectionGap;
     }
-    l.bagWidth = l.width - l.bagX;
+    l.bagX = l.plateX + kPlatePad;
+    l.bagWidth = l.plateWidth - kPlatePad * 2.0;
+    l.bagY = l.plateY + kPlatePad;
     l.columns = std::max(1, static_cast<int>(std::floor((l.bagWidth + kBagGap) / (kBagSide + kBagGap))));
 
     l.sections = sectionsOf(v);
@@ -278,7 +295,8 @@ Layout layoutOf(const PlayerProfileView& v, double bodyWidth, const std::vector<
         lineWidth += (lineWidth > 0 ? kFooterItemGap : 0.0) + itemWidth;
     }
     l.footerHeight = lines * kFooterLine;
-    y = l.footerY + l.footerHeight + kPad;
+    l.plateHeight = l.footerY + l.footerHeight + kPlatePad - l.plateY;
+    y = l.plateY + l.plateHeight + kPad;
     // Beside the bag the counters can be the taller of the two, on a bag of one.
     if (l.beside) y = std::max(y, l.statsY + l.statsHeight + kPad);
     l.total = y;
@@ -446,7 +464,7 @@ bool PlayerProfilePanel::render(MenuContext& ctx) {
 
     // --- counters -------------------------------------------------------------
     if (visible(top + l.statsY, l.statsHeight)) {
-        const Rect box{x, top + l.statsY, l.statsWidth, l.statsHeight};
+        const Rect box{x + l.statsX, top + l.statsY, l.statsWidth, l.statsHeight};
         setFill(canvas, borderOf(kStatsBoxFill));
         roundPath(canvas, box, 8.0);
         canvas.fill();
@@ -471,6 +489,14 @@ bool PlayerProfilePanel::render(MenuContext& ctx) {
     }
 
     // --- bag ------------------------------------------------------------------
+    // Its own plate, darker than the card, behind the whole of it.
+    if (visible(top + l.plateY, l.plateHeight)) {
+        canvas.setGlobalAlpha(kPlateAlpha);
+        setFill(canvas, kProfileSkin.border);
+        roundPath(canvas, Rect{x + l.plateX, top + l.plateY, l.plateWidth, l.plateHeight}, 10.0);
+        canvas.fill();
+        canvas.setGlobalAlpha(1.0f);
+    }
     const double bagLeft = x + l.bagX;
     if (visible(top + l.bagY, kCaptionHeight)) {
         const std::string caption =
@@ -489,7 +515,7 @@ bool PlayerProfilePanel::render(MenuContext& ctx) {
             const double centre = bagLeft + l.bagWidth * 0.5;
             const double midY = labelTop + kSectionHeader * 0.5;
             const double half = measure(caption, kSectionLabelSize) * 0.5;
-            setStroke(canvas, kProfileSkin.accent);
+            setStroke(canvas, kProfileSkin.fill);
             canvas.setLineWidth(static_cast<float>(kRuleWidth));
             canvas.setLineCap("round");
             if (centre - half - kRuleGap > bagLeft) {
