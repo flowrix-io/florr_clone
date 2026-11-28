@@ -85,6 +85,7 @@ const std::array<MenuMeta, kMenuCount> kMenus = {{
     {"Assets", Key::Unknown},
     {"Account", Key::Unknown},
     {"Create Poll", Key::Unknown},
+    {"Profile", Key::Unknown},
 }};
 
 /// Every rebindable action, indexed by ControlAction, in the browser's
@@ -843,6 +844,7 @@ void MenuSystem::toggle(MenuId id) {
         case MenuId::Assets:      assets_.reset(); break;
         case MenuId::Account:     account_.reset(); break;
         case MenuId::PollCreator: pollCreator_.reset(); break;
+        case MenuId::PlayerProfile: playerProfile_.reset(); break;
         default: break;
     }
 }
@@ -1090,6 +1092,7 @@ Rect MenuSystem::panelBounds(MenuId id, int viewWidth, int viewHeight) {
         case MenuId::Assets:        return AssetsPanel::bounds(viewWidth, viewHeight);
         case MenuId::Account:       return AccountPanel::bounds(viewWidth, viewHeight);
         case MenuId::PollCreator:   return PollCreatorPanel::bounds(viewWidth, viewHeight);
+        case MenuId::PlayerProfile: return PlayerProfilePanel::bounds(viewWidth, viewHeight);
         default:                    return listPanel(380.0, viewWidth, viewHeight);
     }
 }
@@ -2943,6 +2946,7 @@ void MenuSystem::renderOpenPanel(Canvas& canvas, Window& window, NetClient& net,
         case MenuId::Assets:      keepOpen = assets_.render(ctx); break;
         case MenuId::Account:     keepOpen = account_.render(ctx); break;
         case MenuId::PollCreator: keepOpen = pollCreator_.render(ctx); break;
+        case MenuId::PlayerProfile: keepOpen = playerProfile_.render(ctx); break;
         default: break;
     }
     // Latched before the closing-card check below: the Log Out button closes
@@ -2992,6 +2996,9 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
     beginPetalHover(canvas, window.mouseX(), window.mouseY());
     pollRect_ = pollOverlayBounds(net,canvas.width(),canvas.height());
     if(net.takePollCreatorRequest() && open_!=MenuId::PollCreator)toggle(MenuId::PollCreator);
+    // `/profile` was answered: show the card, over whatever else is open. A
+    // card already up just takes the new answer, which it reads off the net.
+    if (net.takePlayerProfileRequest() && open_ != MenuId::PlayerProfile) toggle(MenuId::PlayerProfile);
     // Taken back every frame and claimed again by whatever still holds the
     // keyboard this frame: a closed editor must not keep Ctrl+S from the
     // browser. See Window::setClaimedShortcuts.

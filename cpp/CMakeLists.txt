@@ -181,6 +181,7 @@ add_library(flix_server STATIC
   server/notifications.cpp
   server/players.cpp
   server/profile.cpp
+  server/profile_view.cpp
   server/realms.cpp
   server/restart.cpp
   server/rewards.cpp
@@ -284,6 +285,7 @@ add_library(flix_client STATIC
   client/ui/menu_skins.cpp
   client/ui/skin_draft.cpp
   client/ui/menu_leaderboard.cpp
+  client/ui/menu_player_profile.cpp
   client/ui/menu_notifications.cpp
   client/ui/menu_account.cpp
   client/ui/menu_changelog.cpp

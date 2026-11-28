@@ -1004,6 +1004,12 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
         return true;
     }
 
+    if (verb == "/profile") {
+        // The asker's own card without a name; anyone's, online or not, with one.
+        sendPlayerProfileView(session, connection, argument);
+        return true;
+    }
+
     if (verb == "/players-online") {
         // People, not bodies: every signed-in connection, in a world or on the
         // title screen. A bot has no session, and a split flower is one
@@ -1082,6 +1088,7 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
         help += "/biome - Show the most populated biome <br/>";
         help += "/boss-timers - Show each biome's eternal/apex cooldown <br/>";
         help += "/players-online - Show how many players are online <br/>";
+        help += "/profile [username] - Show a player's level, stats, loadout and inventory <br/>";
         help += "/level-from-string &lt;name&gt; - Show what level a bot named &lt;name&gt; would "
                 "roll <br/>";
         help += "/loadout-from-string &lt;name&gt; - Show the loadout a bot named &lt;name&gt; "
