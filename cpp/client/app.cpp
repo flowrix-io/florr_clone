@@ -817,7 +817,9 @@ void App::frame(double dt) {
     renderer_.options = menus_.settings().render;
     // Not a setting: held, the way the HUD and the minimap read it. The copy
     // above resets it every frame, so it has to be put back after it.
-    renderer_.options.rarityGlow = window_.keyDown(Key::LeftAlt) || window_.keyDown(Key::RightAlt);
+    const bool altHeld = window_.keyDown(Key::LeftAlt) || window_.keyDown(Key::RightAlt);
+    renderer_.options.rarityGlow = altHeld;
+    renderer_.options.handles = altHeld;
     camera_.userZoom = menus_.settings().zoom;
     // The petals' share of the zoom, read off the account's own loadout. It is
     // not on the wire, as in the browser: the server works the same figure

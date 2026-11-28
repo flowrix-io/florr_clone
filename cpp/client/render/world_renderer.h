@@ -338,6 +338,9 @@ public:
         /// toggled: the App sets it each frame from ALT, not from the settings
         /// menu.
         bool rarityGlow = false;
+        /// Shows the "@accountname" over every flower. Held with ALT like
+        /// `rarityGlow`, never a setting.
+        bool handles = false;
         /// Leaves out every other player's petals and the shots they fire,
         /// and every other player's pets and theirs. The server marks what is
         /// somebody else's (net::SpawnForeign); these only decide whether to
