@@ -1077,6 +1077,66 @@ TEST(teleport_moves_the_flower_and_refuses_a_point_off_the_map) {
     CHECK(sawText(client, "Coordinates out of range"));
 }
 
+TEST(kill_drops_a_flower_and_kick_sends_it_to_the_title_screen) {
+    Harness h("cmd-kill-kick", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true, 1);
+        seedUser(path, "peer", "password7", true, 1);
+        seedUser(path, "victim", "password7");
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient boss, peer, victim;
+    CHECK(loginAs(h, boss, "boss", "password7"));
+    CHECK(loginAs(h, peer, "peer", "password7"));
+    CHECK(loginAs(h, victim, "victim", "password7"));
+    peer.joinGame(1920, 1080, {}, "Peer");
+    victim.joinGame(1920, 1080, {}, "Victim");
+    std::vector<NetClient*> all{&boss, &peer, &victim};
+    CHECK(h.stepUntil(all, [&] {
+        return peer.status() == NetClient::Status::Playing &&
+               victim.status() == NetClient::Status::Playing;
+    }, 200));
+
+    // Usage, and nobody by that name.
+    CHECK(say(h, boss, "/admin kill"));
+    CHECK(sawText(boss, "Usage: kill"));
+    CHECK(say(h, boss, "/admin kick nobody"));
+    CHECK(sawText(boss, "Player \"nobody\" not found"));
+
+    // An admin of the caller's own tier is out of reach of either.
+    CHECK(say(h, boss, "/admin kill peer"));
+    CHECK(sawText(boss, "lower tier than your own"));
+    CHECK(say(h, boss, "/admin kick peer"));
+    CHECK(peer.status() == NetClient::Status::Playing);
+
+    const auto standing = [&] {
+        bool found = false;
+        Query<PlayerTag, PlayerAccount> flowers{h.server.world()};
+        flowers.each([&](Entity, PlayerTag&, PlayerAccount& account) {
+            if (account.username == "Victim") found = true;
+        });
+        return found;
+    };
+
+    // kick: back on the title screen, signed in, the body gone from the world.
+    CHECK(say(h, boss, "/admin kick victim"));
+    CHECK(sawText(boss, "Kicked victim to the title screen."));
+    CHECK(h.stepUntil(all, [&] { return victim.status() == NetClient::Status::LoggedIn; }, 120));
+    CHECK(!standing());
+    // And off the title screen there is nothing left to kick.
+    CHECK(say(h, boss, "/admin kick victim"));
+    CHECK(sawText(boss, "Player \"victim\" not found"));
+
+    // kill: the ordinary death, death card and all, once they are back.
+    victim.joinGame(1920, 1080, {}, "Victim");
+    CHECK(h.stepUntil(all, [&] { return victim.status() == NetClient::Status::Playing; }, 200));
+    CHECK(say(h, boss, "/admin kill victim"));
+    CHECK(sawText(boss, "Killed victim."));
+    CHECK(h.stepUntil(all, [&] { return victim.dead(); }, 120));
+    CHECK(say(h, boss, "/admin kill victim"));
+    CHECK(sawText(boss, "already dead"));
+}
+
 TEST(mute_stops_chat_but_not_commands) {
     Harness h("cmd-mute", [](const std::string& path) {
         seedUser(path, "boss", "password7", true);

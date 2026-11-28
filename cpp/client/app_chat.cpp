@@ -254,6 +254,8 @@ constexpr ChatCommand kChatCommands[] = {
     {"/admin tpbots", "Teleport every bot only (shorthand)", kForAdmins},
     {"/admin corrupt", "Toggle corruption (fights players anywhere): /admin corrupt <player> [on|off|toggle]", kForAdmins},
     {"/admin god", "Make yourself invulnerable: /admin god [on|off|toggle]", kForAdmins},
+    {"/admin kill", "Kill a player's flower (or a bot): /admin kill <player>", kForAdmins},
+    {"/admin kick", "Send a player back to the title screen: /admin kick <player>", kForAdmins},
     {"/admin generate_code", "Generate a star code", kForAdmins},
     {"/admin gen_code", "Generate a star code (shorthand)", kForAdmins},
     {"/admin list_codes", "List all generated codes", kForAdmins},
