@@ -1,0 +1,37 @@
+Prism Mirror validation
+Prepared: 2026-11-26 (America/Los_Angeles)
+Base: dev b16544905d80fc3e2033581d6d7cdc3388a5a6d4
+
+Requested behavior: Super 70%, Eternal 400%, Apex 40,000%; Computer
+Assembler costs 30 / 50 / 30 same-rarity unequipped Glass for one Prism.
+
+PASS: native C++ build and matching release WASM client/server builds.
+PASS: 53 targeted gameplay/config/Assembler/journal checks.
+BASELINE FAILURE: the unchanged upstream test
+an_assembler_is_a_hornets_size_at_every_tier expects equal radii, but current
+upstream Common data gives Assembler radius 24 and Hornet radius 38.817. The test,
+relevant sizing code, and both authored sizes are unchanged by this PR.
+This run was 53 passed / 1 failed, not a passing full-suite run.
+PASS: source JSON values match staged minified data; all 152 staged content
+files match exactly between native and web builds.
+PASS: eight matching release dist artifacts; both raw-DEFLATE client pairs
+decompress to the corresponding uncompressed bundle files.
+PASS: 20 scratch-server WebSocket conformance checks; server stopped after
+testing. The original local game and its account data were untouched.
+PASS: independent source/asset review and git diff whitespace checks.
+
+Static integration checks: 147 upstream petals retained plus Prism;
+all upstream mobs retained, with three extra Prism recipes added after the
+15 original Assembler recipes. Protocol 98, rarity scaling, maps, LICENSE,
+README.md, AGENTS.md, and the cpp_canvas submodule pin remain unchanged.
+The earlier standalone ZIP used an older dev base. This pull-request version
+preserves the current upstream Apex Hornet health (48 billion), so the
+400x Apex Prism requires eight body hits, not the older local build's two.
+
+Focused checks cover ownership transfer, exact velocity reversal, swept
+collisions, bounce handling, damage/kill credit, reload lifecycle, body-hit
+cadence and defenses, exact tier multipliers, assembly stock/capacity,
+equipped Glass, batch cost, cross-tier recipe rejection, proximity,
+authentication, map restrictions, persistence, and ordinary crafting.
+Runtime inventory, admin keys, local backups, build caches and dependencies
+are excluded from the published change.
