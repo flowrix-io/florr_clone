@@ -379,7 +379,7 @@ TEST(rarity_climbs_with_the_wave_to_ultra_then_super) {
     }
 }
 
-TEST(from_wave_300_one_in_a_hundred_is_unique_and_from_400_one_in_a_thousand_apex) {
+TEST(from_wave_300_one_in_a_hundred_is_eternal_and_from_400_one_in_a_thousand_apex) {
     Rng rng(23);
     constexpr int kRolls = 200000;
     const auto count = [&rng](int wave) {
@@ -1341,7 +1341,7 @@ TEST(a_super_on_the_disc_is_stock_not_a_boss) {
     CHECK(h.stepUntil({&boss}, [&] { return defeats() > before; }, 120));
 }
 
-TEST(a_unique_or_apex_on_the_disc_is_announced_to_everyone) {
+TEST(an_eternal_or_apex_on_the_disc_is_announced_to_everyone) {
     Harness h("waves-bosses", seedWaves, dataDir(), 0);
     CHECK(h.ready);
     if (!h.ready) return;
@@ -1391,7 +1391,7 @@ TEST(a_unique_or_apex_on_the_disc_is_announced_to_everyone) {
     }, 120));
 }
 
-TEST(a_unique_on_the_disc_has_ten_times_its_health_and_an_apex_fifty) {
+TEST(an_eternal_on_the_disc_has_ten_times_its_health_and_an_apex_fifty) {
     Harness h("waves-boss-health", seedWaves, dataDir(), 0);
     CHECK(h.ready);
     if (!h.ready) return;

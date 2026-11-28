@@ -303,7 +303,7 @@ TEST(an_prestige_twin_grows_every_band_a_tier_up_and_no_boss_above_super) {
     }
 }
 
-TEST(nothing_puts_a_unique_or_apex_into_an_prestige_twin) {
+TEST(nothing_puts_an_eternal_or_apex_into_a_prestige_twin) {
     World world;
     Terrain terrain;
     SpawnSystem spawner;

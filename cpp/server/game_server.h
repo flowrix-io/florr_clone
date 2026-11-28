@@ -72,8 +72,9 @@ struct WornSlot {
 std::uint16_t petalIndexFromInventoryKey(const std::string& key);
 
 /// The type tag a notification row carries, as the wire enum: the four the
-/// browser build stored (super_craft, unique_craft -- now eternal_craft, the
-/// old tag still read -- apex_craft, star_code) and the titan forge's
+/// browser build stored (super_craft, unique_craft -- eternal's craft, which
+/// keeps the old name in the database; eternal_craft is read too --
+/// apex_craft, star_code) and the titan forge's
 /// universal_craft. Anything else is Generic, which is also
 /// what an older notification with no type reads as. The one list of tags
 /// there is: the feed reads rows through it, and `/admin notification` refuses

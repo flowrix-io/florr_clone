@@ -25,7 +25,7 @@ const char* const kPetalsJson = R"JSON({
   "magic_orb": {"name":"Orb","damage":1,"health":5,"size":1,"cooldown":3500,"count":1,"burstMana":10,"burstManaChargeMs":1000,"color":"#42E3F5"},
   "sparkle": {"name":"Sparkle","damage":9999999999,"health":99999,"size":1,"cooldown":500,"count":1,"color":"#FFD700"},
   "basic":    {"name":"Basic","damage":10,"health":10,"size":2,"cooldown":1200,"count":1,"color":"#90EE90"},
-  "prism_mirror":{"name":"Prism Mirror Petal","damage":0,"damageFromMobBody":true,"health":null,"size":1.25,"cooldown":3000,"knockback":0,"damageCooldown":1000,"count":1,"projectileReflection":{"speedMultiplier":1.5,"speedMultiplierPerRarity":0.25,"damageMultiplier":0.1,"damageMultiplierPerRarity":0.1,"reloadDivisorPerRarity":1.35,"reloadReductionMillisByRarity":{"super":100,"unique":100,"apex":100}},"color":"#B8F4FF"},
+  "prism_mirror":{"name":"Prism Mirror Petal","damage":0,"damageFromMobBody":true,"health":null,"size":1.25,"cooldown":3000,"knockback":0,"damageCooldown":1000,"count":1,"projectileReflection":{"speedMultiplier":1.5,"speedMultiplierPerRarity":0.25,"damageMultiplier":0.1,"damageMultiplierPerRarity":0.1,"reloadDivisorPerRarity":1.35,"reloadReductionMillisByRarity":{"super":100,"eternal":100,"apex":100}},"color":"#B8F4FF"},
   "icosahedron":{"name":"Icosahedron","damage":10,"health":10,"petalArmor":10,"size":2,"cooldown":2500,"count":1,"color":"#8B5CF6"},
   "sandy":    {"name":"Sandy","damage":4,"health":12,"size":1,"cooldown":800,"count":4,"clumped":true,"color":"#8B0000"},
   "spready":  {"name":"Spready","damage":4,"health":12,"size":1,"cooldown":800,"count":3,"clumped":true,"clumpSpacing":2.5,"color":"#F0BD48"},
@@ -2003,7 +2003,7 @@ TEST(a_petal_at_zero_health_breaks_and_returns_on_its_cooldown) {
 TEST(a_spent_prism_mirror_returns_only_after_its_rarity_scaled_reload) {
     if (!contentLoaded()) return;
     double commonReload = 0.0;
-    for (const Rarity rarity : {Rarity::Common, Rarity::Super, Rarity::Unique, Rarity::Apex}) {
+    for (const Rarity rarity : {Rarity::Common, Rarity::Super, Rarity::Eternal, Rarity::Apex}) {
         for (const bool reaped : {false, true}) {
             Rig rig;
             rig.equip(0, "prism_mirror", rarity);

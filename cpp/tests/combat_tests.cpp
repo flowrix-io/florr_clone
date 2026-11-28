@@ -5255,7 +5255,7 @@ TEST(prism_mirror_return_can_kill_the_original_shooter_and_credits_its_player) {
 
 TEST(prism_mirror_super_eternal_and_apex_return_their_damage_share_to_the_shooter) {
     const ContentRegistry& content = testsupport::shippedContent();
-    for (const Rarity rarity : {Rarity::Super, Rarity::Unique, Rarity::Apex}) {
+    for (const Rarity rarity : {Rarity::Super, Rarity::Eternal, Rarity::Apex}) {
         Arena a;
         const Entity owner = a.player({1500, 1000});
         // Survive even Apex's 400x return so the exact dealt damage, rather
@@ -5463,7 +5463,7 @@ TEST(prism_mirror_apex_hornet_body_dps_uses_updated_damage_and_armor) {
     CHECK_NEAR(hornet.health, 48000000000.0, 1e-9);
     const struct { Rarity rarity; double netHit; } cases[] = {
         {Rarity::Super, 11481021.0},
-        {Rarity::Unique, 65609271.0},
+        {Rarity::Eternal, 65609271.0},
         {Rarity::Apex, 6560999271.0}
     };
     for (const auto& sample : cases) {

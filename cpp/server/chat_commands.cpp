@@ -137,7 +137,8 @@ Realm realmOf(const World& world, Entity entity) {
 bool parseRarityStrict(const std::string& text, Rarity& out) {
     const std::string key = lowerCase(text);
     for (int i = 0; i < kRarityCount; ++i) {
-        // "unique" is eternal's old name; an admin's habit still works.
+        // Admin commands call eternal "unique", as the database does
+        // (kRaritySaveKeys); "eternal", the name players see, works too.
         if (key == kRarityNames[static_cast<std::size_t>(i)] ||
             key == kRaritySaveKeys[static_cast<std::size_t>(i)]) {
             out = static_cast<Rarity>(i);
@@ -147,11 +148,15 @@ bool parseRarityStrict(const std::string& text, Rarity& out) {
     return false;
 }
 
+/// A rarity as admin commands spell it: the database's own key, so eternal
+/// reads "unique" here as it does in the save file.
+const char* adminRarityName(Rarity rarity) { return raritySaveKey(rarity); }
+
 std::string rarityList() {
     std::string out;
     for (int i = 0; i < kRarityCount; ++i) {
         if (i > 0) out += ", ";
-        out += kRarityNames[static_cast<std::size_t>(i)];
+        out += kRaritySaveKeys[static_cast<std::size_t>(i)];
     }
     return out;
 }
@@ -2287,7 +2292,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             // ladder; universal is a petal tier and spawns as apex
             // (SpawnSystem::spawnMobAt clamps it), so it is named as that.
             out("Valid rarities: common, uncommon, rare, epic, legendary, mythic, ultra, super, "
-                "eternal, apex (universal spawns as apex)");
+                "unique, apex (universal spawns as apex)");
             return;
         }
 
@@ -2383,7 +2388,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             const Rarity standing = clampLadderRarity(
                 std::max(rarityIndex(rarity), rarityIndex(content().mob(mobIndex).minRarity)));
             if (barredFromPrestige(standing) && spawning_->prestigeRealm(spawnRealm)) {
-                out(std::string("Refused: no ") + rarityName(standing) +
+                out(std::string("Refused: no ") + adminRarityName(standing) +
                     " can stand in a prestige biome");
                 return;
             }
@@ -2392,7 +2397,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             if (cooling > 0.0) {
                 const std::string biome = biomeOfRealm(spawnRealm);
                 out(std::string("Refused: ") + (biome.empty() ? "this biome" : biomeLabel(biome)) +
-                    "'s " + rarityName(standing) + " clock is cooling down (ready in " +
+                    "'s " + adminRarityName(standing) + " clock is cooling down (ready in " +
                     clockWaitLabel(cooling) + "; see /boss-timers)");
                 return;
             }
@@ -2503,7 +2508,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         const char* sideName = team == Team::Players  ? "players'"
                              : team == Team::Hostiles ? "hostile"
                                                       : "neutral";
-        out("Placed a " + std::string(rarityName(placed)) + " " + words[1] + " NPC (" +
+        out("Placed a " + std::string(adminRarityName(placed)) + " " + words[1] + " NPC (" +
             sideName + " side) at your location");
         return;
     }
@@ -3002,10 +3007,10 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             // One profile for the whole batch, rather than one per petal.
             if (self) sendProfile(session, connection);
             else if (online) sendProfile(*target.session);
-            out("Gave " + std::to_string(amount) + "x every " + rarityName(rarity) +
+            out("Gave " + std::to_string(amount) + "x every " + adminRarityName(rarity) +
                 " petal" + (excludedNames.empty() ? std::string() : " except " + excludedNames) +
                 " to " + (self ? std::string("yourself") : username) + ".");
-            audit("gave " + std::to_string(amount) + "x every " + rarityName(rarity) + " petal" +
+            audit("gave " + std::to_string(amount) + "x every " + adminRarityName(rarity) + " petal" +
                   (excludedNames.empty() ? std::string() : " except " + excludedNames) + " to " +
                   (self ? session.username : database_.canonicalUsername(username)));
             return;
@@ -3070,10 +3075,10 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         database_.markDirty();
         if (online) sendProfile(*target.session);
         const std::string amountLabel = amount > 1 ? std::to_string(amount) + "x " : std::string();
-        out("Gave " + amountLabel + rarityText + " " + itemType + " petal to " +
+        out("Gave " + amountLabel + adminRarityName(rarity) + " " + itemType + " petal to " +
             (online ? target.name + " (" + std::to_string(target.session->connection) + ")"
                     : database_.canonicalUsername(words[1]) + " (offline)"));
-        audit("gave " + std::to_string(amount) + "x " + rarityText + " " + itemType + " to " +
+        audit("gave " + std::to_string(amount) + "x " + adminRarityName(rarity) + " " + itemType + " to " +
               (online ? target.name : database_.canonicalUsername(words[1]) + " (offline)"));
         return;
     }
@@ -3739,16 +3744,16 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         if (text.empty()) {
             out("Usage: notification <type> <message>");
             out("  Or: notify <type> <message> (shorthand)");
-            out("  Valid types: super_craft, eternal_craft, apex_craft, star_code, universal_craft");
+            out("  Valid types: super_craft, unique_craft, apex_craft, star_code, universal_craft");
             out("  Examples:");
             out("    notification star_code Special event starting now!");
-            out("    notify eternal_craft New eternal petal discovered!");
+            out("    notify unique_craft New eternal petal discovered!");
             return;
         }
         // The feed's own list of tags (notificationKind), so a tag the console
         // accepts is always one the feed can tell apart from Generic.
         if (notificationKind(type) == net::NotificationKind::Generic) {
-            out("Invalid notification type. Valid types: super_craft, eternal_craft, apex_craft, "
+            out("Invalid notification type. Valid types: super_craft, unique_craft, apex_craft, "
                 "star_code, universal_craft");
             return;
         }

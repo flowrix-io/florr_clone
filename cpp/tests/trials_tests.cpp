@@ -92,7 +92,7 @@ TEST(trial_chamber_fits_its_mobs) {
     }
 }
 
-TEST(only_unique_and_apex_trials_refresh) {
+TEST(only_eternal_and_apex_trials_refresh) {
     CHECK(!trialIsRefreshing(16));
     CHECK(trialIsRefreshing(17));
     CHECK(trialIsRefreshing(20));

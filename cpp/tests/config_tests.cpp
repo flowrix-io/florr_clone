@@ -553,7 +553,7 @@ TEST(projectile_reflection_exact_rarity_shares_override_only_damage) {
     CHECK(loadPetals(r, R"JSON({
       "mirror": {"damage": 0, "damageFromMobBody": true, "health": null,
         "cooldown": 3000, "projectileReflection": {
-          "damageMultiplierByRarity": {"super": 0.7, "unique": 4, "apex": 400}}}
+          "damageMultiplierByRarity": {"super": 0.7, "eternal": 4, "apex": 400}}}
     })JSON"));
     const auto mirror = r.petalIndex("mirror");
     const std::array<double, kRarityCount> expected{
@@ -581,7 +581,7 @@ TEST(projectile_reflection_rarity_overrides_allow_amplification_and_sanitize_ext
       "wrong": {"damage": 1, "health": 1, "projectileReflection": {
           "damageMultiplierByRarity": true}},
       "bounded": {"damage": 1, "health": 1, "projectileReflection": {
-          "damageMultiplierByRarity": {"super": -1, "unique": 2, "apex": "bad"}}},
+          "damageMultiplierByRarity": {"super": -1, "eternal": 2, "apex": "bad"}}},
       "capped": {"damage": 1, "health": 1, "projectileReflection": {
           "damageMultiplierByRarity": {"apex": 1000000}}},
       "zero": {"damage": 1, "health": 1, "projectileReflection": {
@@ -592,7 +592,7 @@ TEST(projectile_reflection_rarity_overrides_allow_amplification_and_sanitize_ext
                .8, 1e-9);
     CHECK_NEAR(r.petalStats(r.petalIndex("bounded"), Rarity::Super).reflectionDamageMultiplier,
                0.0, 1e-9);
-    CHECK_NEAR(r.petalStats(r.petalIndex("bounded"), Rarity::Unique).reflectionDamageMultiplier,
+    CHECK_NEAR(r.petalStats(r.petalIndex("bounded"), Rarity::Eternal).reflectionDamageMultiplier,
                2.0, 1e-9);
     CHECK_NEAR(r.petalStats(r.petalIndex("bounded"), Rarity::Apex).reflectionDamageMultiplier,
                1.0, 1e-9);
@@ -616,7 +616,7 @@ TEST(projectile_reflection_prism_reload_reduces_only_super_eternal_and_apex_by_1
         .1, .2, .3, .4, .5, .6, .7, .7, 4.0, 400.0, 400.0, 400.0};
     for (int tier = 0; tier < kRarityCount; ++tier) {
         const Rarity rarity = static_cast<Rarity>(tier);
-        const bool reduced = rarity == Rarity::Super || rarity == Rarity::Unique ||
+        const bool reduced = rarity == Rarity::Super || rarity == Rarity::Eternal ||
                              rarity == Rarity::Apex;
         const double adminScale = rarity == Rarity::Admin ? .5 : 1.0;
         const double previousReload = 3000.0 / std::pow(1.35, tier) * adminScale;
@@ -628,7 +628,7 @@ TEST(projectile_reflection_prism_reload_reduces_only_super_eternal_and_apex_by_1
         CHECK(finite(stats));
     }
     CHECK_NEAR(r.petalStats(prism, Rarity::Super).reloadMillis, 267.10041482143237, 1e-9);
-    CHECK_NEAR(r.petalStats(prism, Rarity::Unique).reloadMillis, 171.92623320106094, 1e-9);
+    CHECK_NEAR(r.petalStats(prism, Rarity::Eternal).reloadMillis, 171.92623320106094, 1e-9);
     CHECK_NEAR(r.petalStats(prism, Rarity::Apex).reloadMillis, 101.42683940819330, 1e-9);
     CHECK(!warned(r, "reloadReductionMillisByRarity"));
 }
@@ -640,13 +640,13 @@ TEST(projectile_reflection_reload_reductions_are_sanitized_and_do_not_inherit) {
           "reloadReductionMillisByRarity": true}},
       "bounded": {"damage": 1, "health": 1, "cooldown": 3000, "projectileReflection": {
           "reloadReductionMillisByRarity": {
-            "super": -10, "unique": "bad", "apex": 1000000, "universal": 0, "admin": 10}}}
+            "super": -10, "eternal": "bad", "apex": 1000000, "universal": 0, "admin": 10}}}
     })JSON"));
     const auto wrong = r.petalIndex("wrong");
     const auto bounded = r.petalIndex("bounded");
     CHECK(warned(r, "reloadReductionMillisByRarity is a boolean"));
     CHECK(warned(r, "super is -10"));
-    CHECK(warned(r, "unique is a string"));
+    CHECK(warned(r, "eternal is a string"));
     CHECK(warned(r, "above the sane maximum"));
     CHECK_NEAR(r.petal(bounded).projectileReflection.reloadReductionMillisByRarity[
                    rarityIndex(Rarity::Apex)], 600000.0, 1e-9);
@@ -654,7 +654,7 @@ TEST(projectile_reflection_reload_reductions_are_sanitized_and_do_not_inherit) {
                3000.0 / std::pow(1.35, 9), 1e-9);
     CHECK_NEAR(r.petalStats(bounded, Rarity::Super).reloadMillis,
                3000.0 / std::pow(1.35, 7), 1e-9);
-    CHECK_NEAR(r.petalStats(bounded, Rarity::Unique).reloadMillis,
+    CHECK_NEAR(r.petalStats(bounded, Rarity::Eternal).reloadMillis,
                3000.0 / std::pow(1.35, 8), 1e-9);
     CHECK_NEAR(r.petalStats(bounded, Rarity::Apex).reloadMillis, 1.0, 1e-9);
     CHECK_NEAR(r.petalStats(bounded, Rarity::Universal).reloadMillis,
@@ -677,7 +677,7 @@ TEST(projectile_reflection_invalid_settings_are_sanitized) {
         "cooldown": 3000, "count": 1, "price": 10, "projectileReflection": {
           "speedMultiplier": -5, "speedMultiplierPerRarity": 1e400,
           "damageMultiplier": -1, "damageMultiplierPerRarity": 5,
-          "damageMultiplierByRarity": {"super": 1e400, "unique": -1e400},
+          "damageMultiplierByRarity": {"super": 1e400, "eternal": -1e400},
           "reloadDivisorPerRarity": 0,
           "reloadReductionMillisByRarity": {"super": 1e400}}}
     })JSON";
@@ -693,7 +693,7 @@ TEST(projectile_reflection_invalid_settings_are_sanitized) {
     CHECK(warned(r, "damageMultiplierPerRarity is 5"));
     CHECK(warned(r, "reloadDivisorPerRarity is 0"));
     CHECK(warned(r, "super is not a finite number"));
-    CHECK(warned(r, "unique is not a finite number"));
+    CHECK(warned(r, "eternal is not a finite number"));
     CHECK_NEAR(r.petal(r.petalIndex("extreme")).projectileReflection.speedMultiplierPerRarity,
                0.25, 1e-9);
     for (int tier = 0; tier < kRarityCount; ++tier) {

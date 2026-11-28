@@ -524,7 +524,7 @@ TEST(the_shop_never_offers_a_petal_below_its_floor) {
     CHECK(offered > 0);
 }
 
-TEST(every_rotation_is_two_mythic_two_ultra_four_super_two_unique) {
+TEST(every_rotation_is_two_mythic_two_ultra_four_super_two_eternal) {
     CHECK(ensureShippedContent());
     for (std::int64_t rotation = 0; rotation < 2000; ++rotation) {
         const std::vector<ShopOffer> offers = shopOffers(rotation);
@@ -808,7 +808,7 @@ TEST(an_offer_is_charged_its_discounted_price_and_a_wrong_slot_is_refused) {
     CHECK_EQ(client.profile().stars, stars);
 }
 
-TEST(a_unique_card_sells_the_unique_the_ladder_will_not) {
+TEST(an_eternal_card_sells_the_eternal_the_ladder_will_not) {
     CHECK(ensureShippedContent());
     const std::vector<ShopOffer> offers = shopOffers(shopRotation(shopClockNow()));
     std::size_t slot = offers.size();

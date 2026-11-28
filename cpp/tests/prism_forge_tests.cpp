@@ -131,7 +131,7 @@ TEST(prism_assembler_recipe_is_an_extra_only_at_computer_super_eternal_and_apex_
         CHECK(recipe.availableAtEveryStation);
         CHECK_EQ(recipe.minRarity, recipe.maxRarity);
         CHECK(prismForgeable(recipe.minRarity));
-        CHECK_EQ(recipe.takes(glass), std::int64_t(recipe.minRarity == Rarity::Unique ? 50 : 30));
+        CHECK_EQ(recipe.takes(glass), std::int64_t(recipe.minRarity == Rarity::Eternal ? 50 : 30));
         CHECK_EQ(recipe.makes(prism), std::int64_t(1));
         CHECK_EQ(recipe.inputs.size(), std::size_t(1));
         CHECK_EQ(recipe.outputs.size(), std::size_t(1));
@@ -156,8 +156,8 @@ TEST(prism_assembler_guarantees_same_tier_batches_beside_the_stations_original_r
         AssemblyMap map("prism-assembly-success", mapId);
         Harness h("prism-assembly-success", [](const std::string& path) {
             seedUser(path, "smith", "password7");
-            for (const Rarity rarity : {Rarity::Super, Rarity::Unique, Rarity::Apex}) {
-                seedStack(path, "smith", "petal_glass", rarity, rarity == Rarity::Unique ? 101 : 61);
+            for (const Rarity rarity : {Rarity::Super, Rarity::Eternal, Rarity::Apex}) {
+                seedStack(path, "smith", "petal_glass", rarity, rarity == Rarity::Eternal ? 101 : 61);
                 seedStack(path, "smith", "petal_prism_mirror", rarity, 2);
             }
         }, map.dir, 0);
@@ -172,7 +172,7 @@ TEST(prism_assembler_guarantees_same_tier_batches_beside_the_stations_original_r
         if (npc == NULL_ENTITY) continue;
         auto& database = const_cast<Database&>(h.server.database());
         CHECK(database.save());
-        for (const Rarity rarity : {Rarity::Super, Rarity::Unique, Rarity::Apex}) {
+        for (const Rarity rarity : {Rarity::Super, Rarity::Eternal, Rarity::Apex}) {
             const auto recipe = recipeFor(kPrismForgeOutputId, rarity, mapId);
             CHECK(h.server.world().get<Npc>(npc).recipe != recipe);
             standAt(h, client, rarity);
@@ -196,7 +196,7 @@ TEST(prism_assembler_guarantees_same_tier_batches_beside_the_stations_original_r
         const PlayerRecord* record = reopened.findProgress(account->id);
         CHECK(record != nullptr);
         if (record == nullptr) continue;
-        for (const Rarity rarity : {Rarity::Super, Rarity::Unique, Rarity::Apex}) {
+        for (const Rarity rarity : {Rarity::Super, Rarity::Eternal, Rarity::Apex}) {
             CHECK_EQ(record->itemCount(rarity, "petal_glass"), 1);
             CHECK_EQ(record->itemCount(rarity, "petal_prism_mirror"), 4);
         }
@@ -208,9 +208,9 @@ TEST(prism_assembler_does_not_spend_equipped_glass_or_overflow_a_full_output_sta
     Harness h("prism-assembly-stock", [](const std::string& path) {
         seedUser(path, "smith", "password7");
         seedStack(path, "smith", "petal_glass", Rarity::Super, 29);
-        seedStack(path, "smith", "petal_glass", Rarity::Unique, 50);
+        seedStack(path, "smith", "petal_glass", Rarity::Eternal, 50);
         seedStack(path, "smith", "petal_glass", Rarity::Apex, 60);
-        seedStack(path, "smith", "petal_prism_mirror", Rarity::Unique, kMaxStackCount);
+        seedStack(path, "smith", "petal_prism_mirror", Rarity::Eternal, kMaxStackCount);
         seedStack(path, "smith", "petal_prism_mirror", Rarity::Apex, kMaxStackCount - 1);
         seedWornGlass(path, Rarity::Super);
     }, map.dir, 0);
@@ -221,7 +221,7 @@ TEST(prism_assembler_does_not_spend_equipped_glass_or_overflow_a_full_output_sta
     const auto glass = content().petalIndex(kPrismForgeInputId);
     const auto prism = content().petalIndex(kPrismForgeOutputId);
     AssembleOutcome outcome;
-    for (const Rarity rarity : {Rarity::Super, Rarity::Unique, Rarity::Apex}) {
+    for (const Rarity rarity : {Rarity::Super, Rarity::Eternal, Rarity::Apex}) {
         standAt(h, client, rarity);
         CHECK(assemble(h, client, rarity, recipeFor(kPrismForgeOutputId, rarity),
                        rarity == Rarity::Apex ? 2 : 1, outcome));
@@ -229,10 +229,10 @@ TEST(prism_assembler_does_not_spend_equipped_glass_or_overflow_a_full_output_sta
         CHECK_EQ(outcome.made, 0);
     }
     CHECK_EQ(client.profile().stackCount(glass, Rarity::Super), 29u);
-    CHECK_EQ(client.profile().stackCount(glass, Rarity::Unique), 50u);
+    CHECK_EQ(client.profile().stackCount(glass, Rarity::Eternal), 50u);
     CHECK_EQ(client.profile().stackCount(glass, Rarity::Apex), 60u);
     CHECK_EQ(client.profile().stackCount(prism, Rarity::Super), 0u);
-    CHECK_EQ(client.profile().stackCount(prism, Rarity::Unique),
+    CHECK_EQ(client.profile().stackCount(prism, Rarity::Eternal),
              static_cast<unsigned>(kMaxStackCount));
     const auto& db = h.server.database();
     const PlayerRecord* record = db.findProgress(db.findUser("smith")->id);
@@ -251,40 +251,40 @@ TEST(prism_assembler_eternal_requires_fifty_unequipped_glass_per_prism) {
         AssemblyMap map("prism-assembly-eternal-cost");
         Harness h("prism-assembly-eternal-cost", [stock](const std::string& path) {
             seedUser(path, "smith", "password7");
-            seedStack(path, "smith", "petal_glass", Rarity::Unique, stock);
+            seedStack(path, "smith", "petal_glass", Rarity::Eternal, stock);
             // Forty-nine bagged plus one worn is still short of the cost.
-            if (stock == 49) seedWornGlass(path, Rarity::Unique);
+            if (stock == 49) seedWornGlass(path, Rarity::Eternal);
         }, map.dir, 0);
         CHECK(h.ready);
         if (!h.ready) continue;
         NetClient client;
         CHECK(enter(h, client));
-        standAt(h, client, Rarity::Unique);
+        standAt(h, client, Rarity::Eternal);
         const auto glass = content().petalIndex(kPrismForgeInputId);
         const auto prism = content().petalIndex(kPrismForgeOutputId);
         const int runs = stock == 100 ? 2 : 1;
         const int made = stock >= 50 ? runs : 0;
         AssembleOutcome outcome;
-        CHECK(assemble(h, client, Rarity::Unique,
-                       recipeFor(kPrismForgeOutputId, Rarity::Unique), runs, outcome));
+        CHECK(assemble(h, client, Rarity::Eternal,
+                       recipeFor(kPrismForgeOutputId, Rarity::Eternal), runs, outcome));
         CHECK_EQ(outcome.success, made > 0);
         CHECK_EQ(outcome.made, made);
         CHECK(awaitProfile(h, client, [&](const Profile& profile) {
-            return profile.stackCount(glass, Rarity::Unique) ==
+            return profile.stackCount(glass, Rarity::Eternal) ==
                        static_cast<unsigned>(stock - made * 50) &&
-                   profile.stackCount(prism, Rarity::Unique) == static_cast<unsigned>(made);
+                   profile.stackCount(prism, Rarity::Eternal) == static_cast<unsigned>(made);
         }));
         const auto& db = h.server.database();
         const PlayerRecord* record = db.findProgress(db.findUser("smith")->id);
         CHECK(record != nullptr);
         if (record == nullptr) continue;
-        CHECK_EQ(record->itemCount(Rarity::Unique, "petal_glass"), stock - made * 50);
-        CHECK_EQ(record->itemCount(Rarity::Unique, "petal_prism_mirror"), made);
+        CHECK_EQ(record->itemCount(Rarity::Eternal, "petal_glass"), stock - made * 50);
+        CHECK_EQ(record->itemCount(Rarity::Eternal, "petal_prism_mirror"), made);
         if (stock == 49) {
             CHECK(!record->loadout.empty() && record->loadout[0].has_value());
             if (!record->loadout.empty() && record->loadout[0]) {
                 CHECK_EQ(record->loadout[0]->petalType, std::string("glass"));
-                CHECK_EQ(record->loadout[0]->rarity, Rarity::Unique);
+                CHECK_EQ(record->loadout[0]->rarity, Rarity::Eternal);
             }
         }
     }
@@ -294,31 +294,31 @@ TEST(prism_assembler_eternal_rejects_the_cheaper_super_and_apex_recipe_indices) 
     AssemblyMap map("prism-assembly-eternal-bypass");
     Harness h("prism-assembly-eternal-bypass", [](const std::string& path) {
         seedUser(path, "smith", "password7");
-        seedStack(path, "smith", "petal_glass", Rarity::Unique, 100);
+        seedStack(path, "smith", "petal_glass", Rarity::Eternal, 100);
     }, map.dir, 0);
     CHECK(h.ready);
     if (!h.ready) return;
     NetClient client;
     CHECK(enter(h, client));
-    standAt(h, client, Rarity::Unique);
+    standAt(h, client, Rarity::Eternal);
     const auto glass = content().petalIndex(kPrismForgeInputId);
     const auto prism = content().petalIndex(kPrismForgeOutputId);
     AssembleOutcome outcome;
     for (const Rarity cheapTier : {Rarity::Super, Rarity::Apex}) {
         const auto cheaper = recipeFor(kPrismForgeOutputId, cheapTier);
-        CHECK(assemble(h, client, Rarity::Unique, cheaper, 2, outcome));
+        CHECK(assemble(h, client, Rarity::Eternal, cheaper, 2, outcome));
         CHECK(!outcome.success);
         CHECK_EQ(outcome.made, 0);
-        CHECK_EQ(client.profile().stackCount(glass, Rarity::Unique), 100u);
-        CHECK_EQ(client.profile().stackCount(prism, Rarity::Unique), 0u);
+        CHECK_EQ(client.profile().stackCount(glass, Rarity::Eternal), 100u);
+        CHECK_EQ(client.profile().stackCount(prism, Rarity::Eternal), 0u);
     }
-    CHECK(assemble(h, client, Rarity::Unique,
-                   recipeFor(kPrismForgeOutputId, Rarity::Unique), 2, outcome));
+    CHECK(assemble(h, client, Rarity::Eternal,
+                   recipeFor(kPrismForgeOutputId, Rarity::Eternal), 2, outcome));
     CHECK(outcome.success);
     CHECK_EQ(outcome.made, 2);
     CHECK(awaitProfile(h, client, [&](const Profile& profile) {
-        return profile.stackCount(glass, Rarity::Unique) == 0u &&
-               profile.stackCount(prism, Rarity::Unique) == 2u;
+        return profile.stackCount(glass, Rarity::Eternal) == 0u &&
+               profile.stackCount(prism, Rarity::Eternal) == 2u;
     }));
 }
 

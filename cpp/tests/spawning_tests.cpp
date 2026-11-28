@@ -2565,7 +2565,7 @@ TEST(a_ready_clock_upgrades_one_super_and_then_cools_down) {
     CHECK_EQ(world.announced[rarityIndex(Rarity::Eternal)], 1);
 }
 
-TEST(both_clocks_ready_gives_one_apex_and_one_unique) {
+TEST(both_clocks_ready_gives_one_apex_and_one_eternal) {
     SuperBand world;
     world.deal();
     SpawnSystem::BiomeBossClock& clock = onlyClock(world.sim);
@@ -2833,7 +2833,7 @@ TEST(the_minion_cap_never_raises_a_minion) {
     for (const Rarity r : guard) CHECK(r == Rarity::Mythic);
 }
 
-TEST(a_biome_keeps_only_its_first_unique_and_its_first_apex) {
+TEST(a_biome_keeps_only_its_first_eternal_and_its_first_apex) {
     // However two got there -- here spawnMob called while both clocks stand
     // ready, which is the one moment the console may place either tier (and
     // spawnMob itself charges nothing) -- the one that appeared LATER is
@@ -2872,7 +2872,7 @@ TEST(a_biome_keeps_only_its_first_unique_and_its_first_apex) {
     CHECK_EQ(corpses.count(), std::size_t(0));
 }
 
-TEST(an_extra_unique_centipede_goes_with_its_whole_body) {
+TEST(an_extra_eternal_centipede_goes_with_its_whole_body) {
     // Counted per animal: one eternal centipede is one eternal, not a head and
     // a dozen more. And the extra one leaves nothing behind -- its segments
     // are bosses too, and a boss is never recycled, so a body left standing
@@ -2931,7 +2931,7 @@ TEST(a_ready_clock_waits_while_its_tier_is_standing_in_the_biome) {
     CHECK_EQ(onlyClock(world.sim).eternalReadyMillis, 0.0);
 }
 
-TEST(a_unique_or_apex_asked_for_during_its_cooldown_never_appears) {
+TEST(an_eternal_or_apex_asked_for_during_its_cooldown_never_appears) {
     // However it is asked for -- here the path the console and every script
     // take -- an eternal or an apex that would appear while its biome's clock
     // for that tier is cooling down is refused before it is an entity:
@@ -3030,7 +3030,7 @@ TEST(charging_a_clock_restarts_only_that_tier_in_that_biome) {
     CHECK_NEAR(total / kCharges, 2.0 * 3600000.0, 120000.0);
 }
 
-TEST(a_biome_with_no_clock_refuses_no_unique) {
+TEST(a_biome_with_no_clock_refuses_no_eternal) {
     // The arena, the maze and a harness with no maps are not biomes and keep
     // no clock, so nothing there is refused on the clock's account.
     Sim sim;
@@ -6813,7 +6813,7 @@ TEST(a_band_on_another_map_is_stocked_through_that_maps_own_terrain) {
 }
 
 
-TEST(two_biomes_may_each_hold_a_unique) {
+TEST(two_biomes_may_each_hold_an_eternal) {
     // The rule is one per BIOME. An eternal in the garden says nothing about
     // the desert, just as each biome's clocks run on their own.
     const Realm other = worldRealm(1);

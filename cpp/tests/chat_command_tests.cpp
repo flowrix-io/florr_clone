@@ -610,7 +610,7 @@ TEST(a_boss_is_announced_to_a_player_still_on_the_title_screen) {
     CHECK(idle.status() == NetClient::Status::LoggedIn);
 }
 
-TEST(the_console_cannot_spawn_a_unique_while_its_biome_clock_cools_down) {
+TEST(the_console_cannot_spawn_an_eternal_while_its_biome_clock_cools_down) {
     // A server that has just started has every boss clock cooling down (they
     // are dealt out over one cooldown, none ready at boot), so an eternal or an
     // apex typed now is refused -- nothing stands and chat says why -- while
@@ -632,8 +632,8 @@ TEST(the_console_cannot_spawn_a_unique_while_its_biome_clock_cools_down) {
         return count;
     };
 
-    CHECK(say(h, client, "/admin spawn bee eternal"));
-    CHECK(sawText(client, "eternal clock is cooling down"));
+    CHECK(say(h, client, "/admin spawn bee unique"));
+    CHECK(sawText(client, "unique clock is cooling down"));
     CHECK(say(h, client, "/admin spawn bee apex 3"));
     CHECK(sawText(client, "apex clock is cooling down"));
     h.step(30, {&client});
@@ -671,8 +671,8 @@ TEST(a_full_admin_named_a19kisme_is_held_to_the_boss_clock) {
     };
     const std::string clocksBefore = h.server.database().storedTable("bossClocks").dump();
 
-    CHECK(say(h, client, "/admin spawn bee eternal"));
-    CHECK(sawText(client, "eternal clock is cooling down"));
+    CHECK(say(h, client, "/admin spawn bee unique"));
+    CHECK(sawText(client, "unique clock is cooling down"));
     CHECK(say(h, client, "/admin spawn bee apex 3"));
     CHECK(sawText(client, "apex clock is cooling down"));
     h.step(30, {&client});
@@ -683,7 +683,7 @@ TEST(a_full_admin_named_a19kisme_is_held_to_the_boss_clock) {
     CHECK_EQ(h.server.database().storedTable("bossClocks").dump(), clocksBefore);
 }
 
-TEST(a_unique_from_the_console_restarts_its_biome_clock) {
+TEST(an_eternal_from_the_console_restarts_its_biome_clock) {
     // An admin's eternal spends the biome's clock just as a wild one does: let
     // in while the clock is ready, and then the next one there waits a whole
     // cooldown. Per tier, so the apex clock is still ready afterwards.
@@ -714,12 +714,12 @@ TEST(a_unique_from_the_console_restarts_its_biome_clock) {
     h.clock += kApexSpawnCooldownMaxMillis;
     h.step(1, {&client});
 
-    CHECK(say(h, client, "/admin spawn bee eternal"));
-    CHECK(sawText(client, "Spawned eternal bee"));
+    CHECK(say(h, client, "/admin spawn bee unique"));
+    CHECK(sawText(client, "Spawned unique bee"));
     CHECK_EQ(liveOfRarity(Rarity::Eternal), 1);
 
-    CHECK(say(h, client, "/admin spawn bee eternal"));
-    CHECK(sawText(client, "eternal clock is cooling down"));
+    CHECK(say(h, client, "/admin spawn bee unique"));
+    CHECK(sawText(client, "unique clock is cooling down"));
     CHECK_EQ(liveOfRarity(Rarity::Eternal), 1);
 
     CHECK(say(h, client, "/admin spawn bee apex"));
@@ -791,8 +791,8 @@ TEST(boss_clocks_are_kept_in_the_database_and_survive_a_restart) {
     CHECK(say(h, client, "/boss-timers"));
     CHECK(sawText(client, "eternal ready, apex 59m") || sawText(client, "eternal ready, apex 1h 0m"));
 
-    CHECK(say(h, client, "/admin spawn bee eternal"));
-    CHECK(sawText(client, "Spawned eternal bee"));
+    CHECK(say(h, client, "/admin spawn bee unique"));
+    CHECK(sawText(client, "Spawned unique bee"));
     CHECK(say(h, client, "/admin spawn bee apex"));
     CHECK(sawText(client, "apex clock is cooling down"));
 }
@@ -881,8 +881,8 @@ TEST(a_boss_standing_at_a_restart_hands_its_clock_back) {
         h.step(1, {&client});
 
         const std::uint16_t bee = content().mobIndex("bee");
-        CHECK(say(h, client, "/admin spawn bee eternal"));
-        CHECK(sawText(client, "Spawned eternal bee"));
+        CHECK(say(h, client, "/admin spawn bee unique"));
+        CHECK(sawText(client, "Spawned unique bee"));
         Entity boss = NULL_ENTITY;
         Query<MobTag, MobType> mobs{h.server.world()};
         mobs.each([&](Entity e, MobTag&, MobType& type) {
@@ -932,9 +932,9 @@ TEST(a_boss_standing_at_a_restart_hands_its_clock_back) {
         client.joinGame(1920, 1080, {}, "Boss");
         h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; },
                     200);
-        say(h, client, "/admin spawn bee eternal");
-        if (sawText(client, "Spawned eternal bee")) return std::string("spawned");
-        if (sawText(client, "eternal clock is cooling down")) return std::string("cooling");
+        say(h, client, "/admin spawn bee unique");
+        if (sawText(client, "Spawned unique bee")) return std::string("spawned");
+        if (sawText(client, "unique clock is cooling down")) return std::string("cooling");
         return std::string("no answer");
     };
     CHECK_EQ(bootFrom("cmd-boss-clock-after-standing", standing), std::string("spawned"));
@@ -956,8 +956,8 @@ TEST(a_boss_cleared_by_killall_is_saved_gone_by_a_save_straight_after) {
     CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }, 200));
     h.clock += kApexSpawnCooldownMaxMillis;
     h.step(1, {&client});
-    CHECK(say(h, client, "/admin spawn bee eternal"));
-    CHECK(sawText(client, "Spawned eternal bee"));
+    CHECK(say(h, client, "/admin spawn bee unique"));
+    CHECK(sawText(client, "Spawned unique bee"));
     h.step(net::kTicksPerSecond, {&client});
 
     // The eternal clocks as the database FILE holds them, in ms from now.

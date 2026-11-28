@@ -789,7 +789,7 @@ void GameServer::announceRareCraft(const Session& session, std::uint16_t petalIn
 
     addNotification(forged                   ? "universal_craft"
                     : made == Rarity::Apex   ? "apex_craft"
-                    : made == Rarity::Eternal ? "eternal_craft"
+                    : made == Rarity::Eternal ? "unique_craft"
                                              : "super_craft",
                     plain);
 }

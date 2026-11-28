@@ -2166,8 +2166,8 @@
                     ],
                     "to": "prism_mirror",
                     "availableAtEveryStation": true,
-                    "minRarity": "unique",
-                    "maxRarity": "unique",
+                    "minRarity": "eternal",
+                    "maxRarity": "eternal",
                     "maps": [
                         "computer",
                         "prestige_computer"

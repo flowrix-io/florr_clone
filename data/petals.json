@@ -2306,12 +2306,12 @@
             "damageMultiplierPerRarity": 0.1,
             "damageMultiplierByRarity": {
                 "super": 0.7,
-                "unique": 4,
+                "eternal": 4,
                 "apex": 400
             },
             "reloadReductionMillisByRarity": {
                 "super": 100,
-                "unique": 100,
+                "eternal": 100,
                 "apex": 100
             }
         },
