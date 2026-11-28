@@ -1012,6 +1012,25 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
         // out, though -- the reference puts the slot on cooldown whether or not
         // the petal has health -- so the flag is left for the expiry to clear.
         const bool hasPool = stats.breakable && count > 0;
+        // A mirror phases through ordinary mob contact like glass, but combat
+        // still spends it after a reflection. With no health pool there is no
+        // damage to fold: observe the lost/Dead instance itself, including one
+        // already removed by the end-of-tick reaper, and pay the same reload.
+        if (!stats.breakable && config.projectileReflection.present && count > 0 &&
+            !slotState.independent && !slot.broken && slotState.populated &&
+            (static_cast<int>(live.size()) < count ||
+             std::any_of(live.begin(), live.end(), [&](Entity petal) {
+                 return world.has<Dead>(petal);
+             }))) {
+            for (const Entity petal : live) {
+                if (world.has<Dead>(petal)) removePetal(world, petal);
+            }
+            destroySlotPetals(world, loadout, slotId);
+            live.clear();
+            slotState.populated = false;
+            slot.broken = true;
+            slot.reloadReadyAtMillis = nowMillis + reload;
+        }
         if (hasPool && slotState.independent) {
             // Each instance owns its health: the ones at zero go, alone, and
             // start their own timer. The slot as a whole only reads as broken

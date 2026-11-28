@@ -6,6 +6,7 @@
 #include "server/systems/combat.h"
 #include "server/systems/petals.h"
 #include "server/systems/movement.h"
+#include "server/systems/petals.h"
 #include "shared/core/world.h"
 #include "shared/game/components.h"
 #include "shared/game/config.h"
@@ -5163,4 +5164,483 @@ TEST(admin_glitch_full_heals_a_mob_but_respects_healing_lockouts) {
     a.combat.applyNoHeal(a.world, mob, 10000.0, 1100.0);
     a.combat.applyDamage(a.world, mob, petal, -10.0, 1200.0);
     CHECK_NEAR(a.health(mob), 10.0, 1e-9);
+}
+
+namespace {
+
+constexpr double kPrismMirrorReturnedShares[kRarityCount] = {
+    0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.7, 4.0, 400.0, 400.0, 400.0
+};
+
+Entity equipPrismMirror(Arena& arena, Entity owner, Vec2 at,
+                       Rarity rarity = Rarity::Common) {
+    const ContentRegistry& content = testsupport::shippedContent();
+    const auto index = content.petalIndex("prism_mirror");
+    CHECK(index != kNoPetal);
+    const Entity mirror = equipPetal(arena, owner, index, rarity, at);
+    const PetalStats stats = content.petalStats(index, rarity);
+    if (stats.breakable) arena.world.add<Health>(mirror, Health{stats.health, stats.health});
+    return mirror;
+}
+
+} // namespace
+
+TEST(prism_mirror_preserves_the_projectile_and_reverses_every_bearing_at_every_rarity) {
+    const ContentRegistry& content = testsupport::shippedContent();
+    const auto index = content.petalIndex("prism_mirror");
+    CHECK(index != kNoPetal);
+    if (index == kNoPetal) return;
+    for (int tier = 0; tier < kRarityCount; ++tier) {
+        for (const Vec2 incoming : {Vec2{300, 0}, Vec2{0, -300}, Vec2{-180, 240}}) {
+            Arena a;
+            const Entity owner = a.player({1500, 1000});
+            const Entity shooter = a.mob({500, 1000}, 100.0);
+            const Entity mirror = equipPrismMirror(a, owner, {1000, 1000},
+                                                   static_cast<Rarity>(tier));
+            const Entity shot = spawnDurableShot(a, {1000, 1000}, incoming, 23.0, 900.0,
+                                                shooter, shooter, 7.0, Team::Hostiles);
+            a.world.add<NetId>(shot, NetId{41});
+            a.world.get<Projectile>(shot).petalConfigIndex = content.petalIndex("hornet_missile");
+            a.world.get<Projectile>(shot).rarity = Rarity::Rare;
+            a.world.get<HitCooldowns>(shot).arm(shooter, 99999.0);
+            a.step(1000.0, content);
+
+            CHECK(a.world.isAlive(shot));
+            CHECK(!a.world.has<Dead>(shot));
+            CHECK_EQ(a.world.get<NetId>(shot).value, 41u);
+            CHECK_EQ(a.world.get<Faction>(shot).team, Team::Players);
+            CHECK_EQ(a.world.get<Projectile>(shot).owner, owner);
+            CHECK_EQ(a.world.get<Projectile>(shot).creditTo, owner);
+            CHECK_EQ(CombatSystem::creditedPlayer(a.world, shot), owner);
+            CHECK_NEAR(a.health(shot), 7.0, 1e-9);
+            const double returnedShare = kPrismMirrorReturnedShares[tier];
+            CHECK_NEAR(a.world.get<Projectile>(shot).damage, 23.0 * returnedShare, 1e-9);
+            CHECK_EQ(a.world.get<Projectile>(shot).rarity, Rarity::Rare);
+            CHECK_EQ(a.world.get<Projectile>(shot).petalConfigIndex,
+                     content.petalIndex("hornet_missile"));
+            const double boost = 1.5 + 0.25 * tier;
+            const Vec2 velocity = a.world.get<Motion>(shot).velocity;
+            CHECK_NEAR(velocity.x, -incoming.x * boost, 1e-9);
+            CHECK_NEAR(velocity.y, -incoming.y * boost, 1e-9);
+            CHECK_NEAR(std::cos(a.world.get<Transform>(shot).angle),
+                       velocity.x / velocity.length(), 1e-9);
+            CHECK_NEAR(std::sin(a.world.get<Transform>(shot).angle),
+                       velocity.y / velocity.length(), 1e-9);
+            CHECK(a.world.get<HitCooldowns>(shot).ready(shooter, 1000.0));
+            CHECK(a.world.has<Dead>(mirror));
+            CHECK_NEAR(a.health(owner), 100.0, 1e-9);
+        }
+    }
+}
+
+TEST(prism_mirror_return_can_kill_the_original_shooter_and_credits_its_player) {
+    const ContentRegistry& content = testsupport::shippedContent();
+    Arena a;
+    const Entity owner = a.player({1500, 1000});
+    const Entity shooter = a.mob({500, 1000}, 20.0, 40.0);
+    equipPrismMirror(a, owner, {1000, 1000}, Rarity::Apex);
+    const Entity shot = spawnDurableShot(a, {1000, 1000}, {300, 0}, 50.0, 2000.0,
+                                        shooter, shooter, 7.0, Team::Hostiles);
+    a.step(1000.0, content);
+    CHECK(!a.world.has<Dead>(shot));
+    a.world.get<Transform>(shot).position = {500, 1000};
+    a.step(1100.0, content);
+    CHECK(a.world.has<Dead>(shooter));
+    CHECK_EQ(a.world.get<Dead>(shooter).killer, owner);
+    // Credited XP may level the owner up and refill a larger health pool.
+    CHECK(a.health(owner) >= 100.0);
+    CHECK_NEAR(a.health(owner), a.world.get<Health>(owner).max, 1e-9);
+    CHECK(a.world.get<PlayerProgress>(owner).totalXp > 0.0);
+}
+
+TEST(prism_mirror_super_eternal_and_apex_return_their_damage_share_to_the_shooter) {
+    const ContentRegistry& content = testsupport::shippedContent();
+    for (const Rarity rarity : {Rarity::Super, Rarity::Unique, Rarity::Apex}) {
+        Arena a;
+        const Entity owner = a.player({1500, 1000});
+        // Survive even Apex's 400x return so the exact dealt damage, rather
+        // than a health floor at zero, verifies that amplification reaches hits.
+        const Entity shooter = a.mob({500, 1000}, 50000.0);
+        equipPrismMirror(a, owner, {1000, 1000}, rarity);
+        const Entity shot = spawnDurableShot(a, {1000, 1000}, {300, 0}, 80.0, 2000.0,
+                                            shooter, shooter, 7.0, Team::Hostiles);
+        a.step(1000.0, content);
+        a.world.get<Transform>(shot).position = {500, 1000};
+        a.step(1100.0, content);
+        const double returnedDamage = 80.0 * kPrismMirrorReturnedShares[rarityIndex(rarity)];
+        CHECK_NEAR(a.health(shooter), 50000.0 - returnedDamage, 1e-9);
+        CHECK(!a.world.has<Dead>(shooter));
+        CHECK_NEAR(a.health(owner), 100.0, 1e-9);
+    }
+}
+
+TEST(prism_mirror_intercepts_fast_glitch_shots_before_the_flower_behind_it) {
+    const ContentRegistry& content = testsupport::shippedContent();
+    Arena a;
+    const Entity owner = a.player({1050, 1000});
+    a.world.add<PlayerVisuals>(owner);
+    const Entity shooter = a.mob({500, 1000}, 100.0);
+    const Entity mirror = equipPrismMirror(a, owner, {950, 1000});
+    const Entity shot = spawnDurableShot(a, {1100, 1000}, {3000, 0}, 25.0, 2000.0,
+                                        shooter, shooter, 7.0, Team::Hostiles);
+    a.world.get<Projectile>(shot).lastPosition = {700, 1000};
+    a.world.get<Projectile>(shot).glitchInfecting = true;
+    a.step(1000.0, content);
+    CHECK(!a.world.has<Dead>(shot));
+    CHECK(a.world.has<Dead>(mirror));
+    CHECK_EQ(a.world.get<Projectile>(shot).owner, owner);
+    CHECK_NEAR(a.health(owner), 100.0, 1e-9);
+    CHECK(!a.world.get<PlayerVisuals>(owner).glitched);
+    CHECK(a.world.get<Transform>(shot).position.x <= 950.0);
+    CHECK(a.world.get<Projectile>(shot).glitchInfecting);
+}
+
+TEST(prism_mirror_leaves_friendly_projectiles_untouched) {
+    const ContentRegistry& content = testsupport::shippedContent();
+    Arena a;
+    const Entity owner = a.player({1500, 1000});
+    const Entity friendPlayer = a.player({500, 1000});
+    const Entity mirror = equipPrismMirror(a, owner, {1000, 1000});
+    const Entity shot = spawnDurableShot(a, {1000, 1000}, {300, 0}, 25.0, 2000.0,
+                                        friendPlayer, friendPlayer, 7.0, Team::Players);
+    a.step(1000.0, content);
+    CHECK(!a.world.has<Dead>(shot));
+    CHECK(!a.world.has<Dead>(mirror));
+    CHECK_EQ(a.world.get<Projectile>(shot).owner, friendPlayer);
+    CHECK_NEAR(a.world.get<Motion>(shot).velocity.x, 300.0, 1e-9);
+    CHECK_NEAR(a.health(shot), 7.0, 1e-9);
+}
+
+TEST(prism_mirror_reverses_a_weaving_shots_actual_arrival_and_holds_the_return_line) {
+    const ContentRegistry& content = testsupport::shippedContent();
+    Arena a;
+    Terrain terrain;
+    MovementSystem movement;
+    const Entity owner = a.player({1500, 1000});
+    const Entity shooter = a.mob({500, 1000}, 100.0);
+    const Vec2 origin{900, 1000};
+    const Entity shot = spawnDurableShot(a, origin, {300, 0}, 25.0, 2000.0,
+                                        shooter, shooter, 7.0, Team::Hostiles);
+    a.world.get<Projectile>(shot).waveAmplitude = 10.0;
+    a.world.get<Projectile>(shot).waveFrequency = 3.0;
+    movement.run(a.world, terrain, 1000.0, 0.1);
+    const Vec2 arrival = a.world.get<Transform>(shot).position;
+    const Vec2 incoming = (arrival - origin) * 10.0;
+    CHECK(std::abs(incoming.y) > 1.0);
+    equipPrismMirror(a, owner, arrival);
+    // A stale launch seeker must not retarget the returned shot on its next tick.
+    a.world.get<Projectile>(shot).seekRange = 1000.0;
+    a.world.get<Projectile>(shot).seekCone = kPi;
+    a.step(1000.0, content, 0.1);
+    const Vec2 velocity = a.world.get<Motion>(shot).velocity;
+    CHECK_NEAR(velocity.x, -incoming.x * 1.5, 1e-8);
+    CHECK_NEAR(velocity.y, -incoming.y * 1.5, 1e-8);
+    CHECK_NEAR(a.world.get<Projectile>(shot).waveAmplitude, 0.0, 1e-9);
+    CHECK_NEAR(a.world.get<Projectile>(shot).seekRange, 0.0, 1e-9);
+    const Vec2 reflectedAt = a.world.get<Transform>(shot).position;
+    movement.run(a.world, terrain, 1100.0, 0.1);
+    const Vec2 after = a.world.get<Transform>(shot).position;
+    CHECK_NEAR(after.x, reflectedAt.x + velocity.x * 0.1, 1e-8);
+    CHECK_NEAR(after.y, reflectedAt.y + velocity.y * 0.1, 1e-8);
+}
+
+TEST(prism_mirror_reflection_updates_projectile_team_and_position_caches_in_the_same_phase) {
+    const ContentRegistry& content = testsupport::shippedContent();
+    Arena a;
+    const Entity owner = a.player({1500, 1000});
+    const Entity shooter = a.mob({500, 1000}, 100.0);
+    equipPrismMirror(a, owner, {950, 1000});
+    const Entity returning = spawnDurableShot(a, {1100, 1000}, {3000, 0}, 23.0, 2000.0,
+                                             shooter, shooter, 100.0, Team::Hostiles);
+    a.world.get<Projectile>(returning).lastPosition = {700, 1000};
+    // Outside the mirror's reach, but touching the returned shot's FIRST
+    // contact at x=937. Initially both shots are hostile and cannot collide.
+    const Entity following = spawnDurableShot(a, {932, 1000}, {300, 0}, 5.0, 2000.0,
+                                             shooter, shooter, 100.0, Team::Hostiles);
+    a.step(1000.0, content);
+    CHECK_EQ(a.world.get<Projectile>(returning).owner, owner);
+    CHECK_EQ(a.world.get<Faction>(returning).team, Team::Players);
+    CHECK_NEAR(a.health(returning), 95.0, 1e-9);
+    CHECK_NEAR(a.health(following), 97.7, 1e-9);
+}
+
+TEST(prism_mirror_reflects_contact_even_when_damage_is_temporarily_blocked) {
+    const ContentRegistry& content = testsupport::shippedContent();
+    for (const bool swept : {false, true}) {
+        Arena a;
+        const Entity owner = a.player({1500, 1000});
+        const Entity shooter = a.mob({500, 1000}, 100.0);
+        const Entity mirror = equipPrismMirror(a, owner, {1000, 1000});
+        const Entity shot = spawnDurableShot(a, {swept ? 1200.0 : 1000.0, 1000},
+                                             {300, 0}, 23.0, 2000.0,
+                                             shooter, shooter, 7.0, Team::Hostiles);
+        // Test temporary damage protection as well as the ordinary unbreakable
+        // mirror, which intentionally carries no Health component.
+        a.world.add<Health>(mirror, Health{1.0, 1.0, 0.0, 10000.0});
+        a.world.get<Health>(shot).invulnerableUntilMillis = 10000.0;
+        if (swept) a.world.get<Projectile>(shot).lastPosition = {700, 1000};
+        a.step(1000.0, content);
+        CHECK_EQ(a.world.get<Projectile>(shot).owner, owner);
+        CHECK_NEAR(a.world.get<Motion>(shot).velocity.x, -450.0, 1e-9);
+        CHECK_NEAR(a.health(shot), 7.0, 1e-9);
+        CHECK(a.world.has<Dead>(mirror));
+    }
+}
+
+TEST(prism_mirror_distinguishes_a_swept_arrival_from_later_wall_bounce_contact) {
+    const ContentRegistry& content = testsupport::shippedContent();
+    for (const bool swept : {false, true}) {
+        Arena a;
+        Terrain terrain;
+        MovementSystem movement;
+        for (int y = 0; y < terrain.tileRows(); ++y) terrain.setTile(10, y, Tile::Solid);
+        const double wall = 10.0 * kTileSize;
+        const Entity owner = a.player({wall - 400, 1200});
+        const Entity shooter = a.mob({wall - 500, 1000}, 100.0);
+        const Entity shot = spawnDurableShot(a, {wall - 100, 1000}, {600, 0}, 23.0, 2000.0,
+                                             shooter, shooter, 7.0, Team::Hostiles);
+        a.world.get<Projectile>(shot).bouncesOffWalls = true;
+        movement.run(a.world, terrain, 1000.0, 0.2);
+        CHECK(a.world.get<Motion>(shot).velocity.x < 0.0);
+        const Vec2 end = a.world.get<Transform>(shot).position;
+        // The swept mirror was met on the eastbound path BEFORE the wall;
+        // an overlapping mirror is met AFTER the shot turned westward.
+        const Entity mirror = equipPrismMirror(a, owner,
+                                                swept ? Vec2{wall - 50, 1000} : end);
+        a.step(1000.0, content);
+        CHECK(a.world.has<Dead>(mirror));
+        CHECK_EQ(a.world.get<Projectile>(shot).owner, owner);
+        CHECK_NEAR(a.world.get<Motion>(shot).velocity.x, swept ? -900.0 : 900.0, 1e-9);
+        CHECK_NEAR(a.health(shot), 7.0, 1e-9);
+    }
+}
+
+TEST(prism_mirror_melee_uses_its_reflection_percentage_without_extra_talent_scaling) {
+    const ContentRegistry& content = testsupport::shippedContent();
+    const struct { const char* id; Rarity rarity; } targets[] = {
+        {"ladybug", Rarity::Common}, {"hornet", Rarity::Rare}, {"scorpion", Rarity::Apex}
+    };
+    for (int tier = 0; tier < kRarityCount; ++tier) {
+        for (const auto& target : targets) {
+            Arena a;
+            const Entity owner = a.player({1500, 1000});
+            a.world.add<PlayerModifiers>(owner);
+            a.world.get<PlayerModifiers>(owner).petalDamageScale = 7.0;
+            const auto type = content.mobIndex(target.id);
+            const double bodyDamage = content.mobStats(type, target.rarity).damage;
+            CHECK(bodyDamage > 0.0);
+            // Keep the target alive after the full 400x Apex body return.
+            const double initialHealth = bodyDamage * 600.0;
+            const Entity mob = a.mob({1000, 1000}, initialHealth);
+            // As the spawner does: ContactDamage is already scaled to the
+            // mob's tier. Apply only the mirror's return percentage, never
+            // its ordinary petal damage ladder or the owner's talent bonus.
+            a.world.add<MobType>(mob, MobType{type, target.rarity});
+            a.world.add<ContactDamage>(mob, ContactDamage{bodyDamage});
+            const Entity mirror = equipPrismMirror(a, owner, {1010, 1000},
+                                                   static_cast<Rarity>(tier));
+            a.step(1000.0, content);
+            const double returnedShare = kPrismMirrorReturnedShares[tier];
+            CHECK_NEAR((initialHealth - a.health(mob)) / bodyDamage, returnedShare, 1e-9);
+            CHECK(!a.world.has<Dead>(mob));
+            CHECK(!a.world.has<Health>(mirror));
+            CHECK(!a.world.has<Dead>(mirror));
+            CHECK(!a.world.has<Knockback>(mob));
+        }
+    }
+}
+
+TEST(prism_mirror_apex_hornet_body_dps_uses_updated_damage_and_armor) {
+    const ContentRegistry& content = testsupport::shippedContent();
+    const auto hornetIndex = content.mobIndex("hornet");
+    CHECK(hornetIndex != kInvalidIndex);
+    if (hornetIndex == kInvalidIndex) return;
+    const auto& hornet = content.mobStats(hornetIndex, Rarity::Apex);
+    // The current dev Apex body-damage scale is 328050, independent of
+    // the projectile/petal damage ladder and the Hornet's health ladder.
+    CHECK_NEAR(hornet.damage, 16402500.0, 1e-9);
+    CHECK_NEAR(hornet.armor, 729.0, 1e-9);
+    CHECK_NEAR(hornet.health, 48000000000.0, 1e-9);
+    const struct { Rarity rarity; double netHit; } cases[] = {
+        {Rarity::Super, 11481021.0},
+        {Rarity::Unique, 65609271.0},
+        {Rarity::Apex, 6560999271.0}
+    };
+    for (const auto& sample : cases) {
+        Arena a;
+        const Entity owner = a.player({1500, 1000});
+        a.world.add<PlayerModifiers>(owner);
+        a.world.get<PlayerModifiers>(owner).petalDamageScale = 7.0;
+        const Entity target = a.mob({1000, 1000}, hornet.health);
+        a.world.add<MobType>(target, MobType{hornetIndex, Rarity::Apex});
+        a.world.add<ContactDamage>(target, ContactDamage{hornet.damage});
+        a.world.add<Armor>(target, Armor{hornet.armor});
+        const Entity mirror = equipPrismMirror(a, owner, {1010, 1000}, sample.rarity);
+        a.step(1000.0, content);
+        CHECK_NEAR(hornet.health - a.health(target), sample.netHit, 1e-6);
+        CHECK(!a.world.has<Dead>(target));
+        a.step(1999.0, content);
+        CHECK_NEAR(hornet.health - a.health(target), sample.netHit, 1e-6);
+        CHECK(!a.world.has<Dead>(target));
+        a.step(2000.0, content);
+        CHECK_NEAR(hornet.health - a.health(target), sample.netHit * 2.0, 1e-6);
+        CHECK(!a.world.has<Dead>(target));
+        if (sample.rarity == Rarity::Apex) {
+            // Current dev gives an Apex Hornet 48 billion HP. At 400x it
+            // survives seven body hits and dies on the eighth, keeping the
+            // upstream health balance while checking damage and kill credit.
+            for (int hit = 3; hit <= 7; ++hit) {
+                a.step(hit * 1000.0, content);
+                CHECK_NEAR(hornet.health - a.health(target), sample.netHit * hit, 1e-6);
+                CHECK(!a.world.has<Dead>(target));
+            }
+            CHECK_NEAR(a.health(target), 2073005103.0, 1e-6);
+            a.step(7999.0, content);
+            CHECK_NEAR(a.health(target), 2073005103.0, 1e-6);
+            CHECK(!a.world.has<Dead>(target));
+            a.step(8000.0, content);
+            CHECK_NEAR(a.health(target), 0.0, 1e-9);
+            CHECK(a.world.has<Dead>(target));
+            CHECK_EQ(a.world.get<Dead>(target).killer, owner);
+        }
+        CHECK(!a.world.has<Dead>(mirror));
+    }
+}
+
+TEST(prism_mirror_phases_through_mobs_without_recoil_or_knockback_like_glass) {
+    const ContentRegistry& content = testsupport::shippedContent();
+    Arena a;
+    Terrain terrain;
+    MovementSystem movement;
+    const Entity owner = a.player({1500, 1000});
+    const Entity mob = a.mob({980, 1000}, 20000.0);
+    a.world.add<ContactDamage>(mob, ContactDamage{10000.0});
+    a.world.get<Motion>(mob).velocity = {300, 0};
+    const Entity mirror = equipPrismMirror(a, owner, {1000, 1000});
+
+    a.step(1000.0, content);
+    CHECK_NEAR(a.health(mob), 19000.0, 1e-9);
+    CHECK(!a.world.has<Health>(mirror));
+    CHECK(!a.world.has<Dead>(mirror));
+    CHECK(!a.world.has<Knockback>(mob));
+    CHECK(!a.world.has<Knockback>(mirror));
+    movement.run(a.world, terrain, 1100.0, 0.1);
+    CHECK_NEAR(a.world.get<Transform>(mob).position.x, 1010.0, 1e-9);
+    a.step(1100.0, content);
+    movement.run(a.world, terrain, 1200.0, 0.1);
+    CHECK_NEAR(a.world.get<Transform>(mob).position.x, 1040.0, 1e-9);
+    CHECK_NEAR(a.world.get<Transform>(mirror).position.x, 1000.0, 1e-9);
+    CHECK_NEAR(a.health(mob), 19000.0, 1e-9);
+    CHECK(!a.world.has<Dead>(mirror));
+}
+
+TEST(prism_mirror_copies_each_new_targets_live_damage_on_its_global_hit_interval) {
+    const ContentRegistry& content = testsupport::shippedContent();
+    Arena a;
+    const Entity owner = a.player({1500, 1000});
+    const Entity first = a.mob({1000, 1000}, 200.0);
+    const Entity second = a.mob({1300, 1000}, 200.0);
+    a.world.add<ContactDamage>(first, ContactDamage{20.0});
+    a.world.add<ContactDamage>(second, ContactDamage{75.0});
+    const Entity mirror = equipPrismMirror(a, owner, {1000, 1000});
+    a.step(1000.0, content);
+    CHECK_NEAR(a.health(first), 198.0, 1e-9);
+    // A new target cannot bypass the global cooldown, and its damage must
+    // be read at the hit rather than cached from the first victim.
+    a.world.get<Transform>(first).position = {500, 1000};
+    a.world.get<Transform>(second).position = {1000, 1000};
+    a.step(1100.0, content);
+    a.step(1999.0, content);
+    CHECK_NEAR(a.health(second), 200.0, 1e-9);
+    a.step(2000.0, content);
+    CHECK_NEAR(a.health(second), 192.5, 1e-9);
+    // A live body-damage change (such as division) is followed on the next
+    // hit, without respawning or re-equipping the mirror.
+    a.world.get<ContactDamage>(second).amount = 13.0;
+    a.step(3000.0, content);
+    CHECK_NEAR(a.health(second), 191.2, 1e-9);
+    CHECK(!a.world.has<Health>(mirror));
+    CHECK(!a.world.has<Dead>(mirror));
+}
+
+TEST(prism_mirror_reflects_even_while_its_glass_like_melee_hit_is_recharging) {
+    const ContentRegistry& content = testsupport::shippedContent();
+    for (const bool swept : {false, true}) {
+        Arena a;
+        const Entity owner = a.player({1500, 1000});
+        const Entity mob = a.mob({1010, 1000}, 100.0);
+        a.world.add<ContactDamage>(mob, ContactDamage{37.0});
+        const Entity mirror = equipPrismMirror(a, owner, {1000, 1000});
+        a.step(1000.0, content);
+        CHECK_NEAR(a.health(mob), 96.3, 1e-9);
+        CHECK(!a.world.get<HitCooldowns>(mirror).globalReady(1100.0));
+        a.world.get<Transform>(mob).position = {500, 1000};
+        const Entity shot = spawnDurableShot(a, {swept ? 1200.0 : 1000.0, 1000},
+                                             {300, 0}, 80.0, 2000.0,
+                                             mob, mob, 7.0, Team::Hostiles);
+        if (swept) a.world.get<Projectile>(shot).lastPosition = {700, 1000};
+        a.step(1100.0, content);
+        CHECK_EQ(a.world.get<Projectile>(shot).owner, owner);
+        CHECK_NEAR(a.world.get<Projectile>(shot).damage, 8.0, 1e-9);
+        CHECK_NEAR(a.world.get<Motion>(shot).velocity.x, -450.0, 1e-9);
+        CHECK_NEAR(a.health(shot), 7.0, 1e-9);
+        CHECK(a.world.has<Dead>(mirror));
+    }
+}
+
+TEST(prism_mirror_does_not_invent_damage_for_zero_or_missing_mob_body_attacks) {
+    const ContentRegistry& content = testsupport::shippedContent();
+    for (const bool hasContact : {false, true}) {
+        Arena a;
+        const Entity owner = a.player({1500, 1000});
+        const Entity mob = a.mob({1000, 1000}, 100.0);
+        if (hasContact) a.world.add<ContactDamage>(mob, ContactDamage{0.0});
+        const Entity mirror = equipPrismMirror(a, owner, {1010, 1000});
+        a.step(1000.0, content);
+        CHECK_NEAR(a.health(mob), 100.0, 1e-9);
+        CHECK(!a.world.has<Dead>(mirror));
+        CHECK(!a.world.has<Knockback>(mob));
+        // Zero contact still respects the normal hit cadence, but acquiring
+        // a body attack changes what this same mirror copies next time.
+        a.world.ensure<ContactDamage>(mob).amount = 40.0;
+        a.step(1100.0, content);
+        CHECK_NEAR(a.health(mob), 100.0, 1e-9);
+        a.step(2000.0, content);
+        CHECK_NEAR(a.health(mob), 96.0, 1e-9);
+    }
+}
+
+TEST(prism_mirror_copies_actual_body_damage_before_normal_target_defenses) {
+    const ContentRegistry& content = testsupport::shippedContent();
+    Arena a;
+    const Entity owner = a.player({1500, 1000});
+    a.world.add<PlayerModifiers>(owner);
+    a.world.get<PlayerModifiers>(owner).petalDamageScale = 20.0;
+    const Entity mob = a.mob({1000, 1000}, 1000.0);
+    a.world.add<ContactDamage>(mob, ContactDamage{60.0});
+    a.world.add<PlayerModifiers>(mob);
+    a.world.get<PlayerModifiers>(mob).damageScale = 1.5;
+    a.world.add<Armor>(mob, Armor{3.0});
+    equipPrismMirror(a, owner, {1010, 1000});
+    a.step(1000.0, content);
+    // The mob currently deals 60 * 1.5 = 90. Common returns 10% (9),
+    // then its armor subtracts 3. The owner's 20x petal bonus is not applied.
+    CHECK_NEAR(a.health(mob), 994.0, 1e-9);
+    a.world.get<Health>(mob).invulnerableUntilMillis = 10000.0;
+    a.step(2000.0, content);
+    CHECK_NEAR(a.health(mob), 994.0, 1e-9);
+}
+
+TEST(prism_mirror_does_not_copy_body_damage_from_other_players) {
+    const ContentRegistry& content = testsupport::shippedContent();
+    Arena a;
+    const Entity owner = a.player({1500, 1000});
+    const Entity opponent = a.player({1000, 1000});
+    a.world.get<Faction>(owner).friendlyFireEnabled = true;
+    a.world.get<Faction>(opponent).friendlyFireEnabled = true;
+    a.world.add<ContactDamage>(opponent, ContactDamage{80.0});
+    const Entity mirror = equipPrismMirror(a, owner, {1010, 1000});
+    a.step(1000.0, content);
+    CHECK_NEAR(a.health(opponent), 100.0, 1e-9);
+    CHECK(!a.world.has<Dead>(mirror));
 }

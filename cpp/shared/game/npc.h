@@ -58,9 +58,9 @@ enum class NpcService : std::uint8_t {
     /// forges the same petal; see kTitanForgeRefund.
     Titan,
     /// Recipes: what a recipe takes for what it makes, every petal at the
-    /// assembler's own tier. Each assembler offers ONE of its mob's
-    /// `npc.recipes`, rolled when it is put down, as florr's do. Never a
-    /// roll for the outcome, and no wait.
+    /// assembler's own tier. Each assembler offers one ordinary recipe,
+    /// rolled when it is put down, plus eligible shared extras from its
+    /// mob's `npc.recipes`. Never a roll for the outcome, and no wait.
     Assembler,
     Casino,
     Market,

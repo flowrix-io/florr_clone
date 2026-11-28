@@ -1,0 +1,56 @@
+Prism Mirror Petal
+Creator: Itz
+
+Prism mirrors hostile projectiles and copies the struck mob's body damage.
+It phases through mobs like Glass, without breaking or applying knockback.
+The original projectile survives reflection, changes to the player's team,
+reverses its actual incoming velocity by 180 degrees, and gains return speed.
+Seeking and weaving stop so it keeps that return line. Kill credit follows
+its new owner. Friendly projectiles are unaffected.
+
+Rarity     Body/projectile damage     Return speed    Reflection reload
+Super      70% (0.7x)                 3.25x           267.100415 ms
+Eternal    400% (4x)                  3.50x           171.926233 ms
+Apex       40,000% (400x)             3.75x           101.426839 ms
+
+Body hits use the target's current body-contact damage, including its live
+modifiers, then apply normal target defenses. The owner's damage talent and
+the ordinary petal damage ladder do not multiply this copied damage again.
+A target with no body damage supplies zero. Normal body hits use a separate
+1000 ms interval. Reflecting a projectile puts the petal into reload.
+Universal and Admin inherit Apex's damage multiplier; their ordinary special
+rules remain in place. Common through Ultra retain the 10%-70% curve.
+
+Computer Assembler recipe
+- Super: 30 unequipped Super Glass -> 1 Super Prism.
+- Eternal: 50 unequipped Eternal Glass -> 1 Eternal Prism.
+- Apex: 30 unequipped Apex Glass -> 1 Apex Prism.
+All recipes are guaranteed and preserve rarity. They are extra choices at
+matching-tier Computer and Prestige Computer Assemblers; the station's
+original recipe remains available. Stand beside the machine, press C,
+select Prism Mirror Petal, and Assemble. Batches multiply input and output.
+Equipped Glass is not consumed. Insufficient stock, full output stacks,
+wrong tiers/maps, or being too far away refuse without spending inputs.
+The regular Craft panel does not offer this recipe. No authored mob drop
+is added, and Prism is excluded from random-petal drops. Shop eligibility
+remains ordinary; Assembler is not claimed to be the exclusive source.
+
+Current dev compatibility
+This change is based on dev b16544905d80fc3e2033581d6d7cdc3388a5a6d4.
+It preserves upstream petals, maps, mob balance, original Assembler recipes,
+protocol 98, and the pinned cpp_canvas submodule. No message layout changes
+are required: the existing Assemble request/result carries the recipe index.
+
+On this dev base, an ordinary Apex Hornet has 48,000,000,000 health,
+16,402,500 body damage, and 729 armor. One Prism's ideal body DPS is:
+Super 11,481,021; Eternal 65,609,271; Apex 6,560,999,271.
+An Apex Prism therefore needs eight normal body hits without other damage.
+These are theoretical continuous-contact rates; movement and reflection
+reloads affect actual uptime. No change to Hornet's upstream stats is made.
+
+Both client and server must be rebuilt and shipped together. Staged game
+JSON is minified by the existing build and included in the content hash.
+The committed dist includes matching compressed and plain client assets.
+Run the prepared game with npm run start_nobuild; open localhost:3000.
+Rebuild with npm run build after initializing the existing submodule.
+See PRISM-VALIDATION.txt for verification. License: AGPL-3.0-or-later.

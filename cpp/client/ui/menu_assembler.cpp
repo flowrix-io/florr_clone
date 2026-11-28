@@ -1,7 +1,7 @@
 // The assembler.
 //
 // What the craft key opens while the flower stands at an assembler NPC (see
-// shared/game/npc.h): one of each petal its recipe names, at the assembler's
+// shared/game/npc.h): the counts of each petal its recipe names, at the assembler's
 // tier, for one of the petal it makes at that tier. Never a roll, and no wait.
 //
 // It is florr's assemble window, read out of florr's own client: the screen's
@@ -10,9 +10,10 @@
 // off the assembler entity (+0x198/+0x199) and its recipe table
 // (0x10234f910, built by 0x10081c920). Everything below is florr's:
 //
-//   - the craft family's card in machine grey #999999, 610 x 356, no grid;
+//   - the craft family's card in machine grey #999999, with no grid;
 //   - the assembler's one recipe (florr's assemblers each offer one; ours
-//     rolls it when it is put down and sends it with the NPC);
+//     rolls it when it is put down and sends it with the NPC), plus a row
+//     of available alternatives filtered by the station's tier and map;
 //   - the recipe's inputs, each on a 60-unit seat in the theme's shade with
 //     its tile grown in florr's way (scale, opacity and one backward turn,
 //     0.0214/ms): one input on the slot's centre, two 45 either side of it,
@@ -52,6 +53,7 @@
 #include "client/ui/menus.h"
 #include "client/ui/text.h"
 #include "shared/game/config.h"
+#include "shared/game/map_elements.h"
 #include "shared/game/npc.h"
 
 namespace flix {
@@ -62,7 +64,8 @@ namespace {
 
 /// florr's window: its least width, and its body with no grid under it.
 constexpr double kWindowWidth = 610.0;
-constexpr double kWindowHeight = 356.0;
+constexpr double kWindowHeight = 416.0;
+constexpr double kRecipeChoiceHeight = 32.0;
 
 /// The seats: 60 across about the slot's centre -- one on it, two 45 either
 /// side of it, three or more on a ring 90 out with the first straight up.
@@ -140,6 +143,13 @@ int affordable(const Profile& profile, const AssemblyRecipe& recipe, Rarity tier
         const std::int64_t held = static_cast<std::int64_t>(profile.stackCount(input.petal, tier));
         most = std::min(most, held / takes);
     }
+    for (const AssemblyRecipe::Stack& output : recipe.outputs) {
+        const std::int64_t net = recipe.makes(output.petal) - recipe.takes(output.petal);
+        if (net <= 0) continue;
+        const std::int64_t room = std::max<std::int64_t>(
+            0, static_cast<std::int64_t>(kMaxStackCount) - profile.stackCount(output.petal, tier));
+        most = std::min(most, room / net);
+    }
     return static_cast<int>(most);
 }
 
@@ -181,6 +191,7 @@ void AssemblerPanel::reset() {
     phase_ = Phase::Idle;
     resultPending_ = false;
     refusal_.clear();
+    selectedRecipe_ = stationRecipe_;
     // Nothing was showing before the card opened, so nothing vanishes as it
     // does, and every tile grows in afresh.
     seatKey_.fill(kNothing);
@@ -204,6 +215,31 @@ bool AssemblerPanel::render(MenuContext& ctx, std::uint16_t mobIndex, Rarity tie
         stationMob_ = mobIndex;
         stationTier_ = tier;
         stationRecipe_ = recipeIndex;
+        selectedRecipe_ = recipeIndex;
+        count_ = "1";
+        countField_.blur();
+        phase_ = Phase::Idle;
+        resultPending_ = false;
+    }
+
+    static const std::vector<AssemblyRecipe> kNoRecipes;
+    const std::vector<AssemblyRecipe>& recipes =
+        mobIndex < content().mobCount() ? content().mob(mobIndex).npc.recipes : kNoRecipes;
+    const WorldMaps* maps = ctx.net.worldMaps();
+    const MapData* map = maps ? maps->forRealm(ctx.net.view().realm()) : nullptr;
+    const std::string mapId = map ? map->id() : std::string();
+    std::vector<std::uint8_t> choices;
+    for (std::size_t i = 0; i < recipes.size(); ++i) {
+        const AssemblyRecipe& candidate = recipes[i];
+        if ((i == recipeIndex || candidate.availableAtEveryStation) &&
+            candidate.availableAt(tier, mapId)) {
+            choices.push_back(static_cast<std::uint8_t>(i));
+        }
+    }
+    if (!choices.empty() &&
+        std::find(choices.begin(), choices.end(), selectedRecipe_) == choices.end()) {
+        selectedRecipe_ = choices.front();
+        count_ = "1";
         phase_ = Phase::Idle;
         resultPending_ = false;
     }
@@ -213,10 +249,13 @@ bool AssemblerPanel::render(MenuContext& ctx, std::uint16_t mobIndex, Rarity tie
     AssembleOutcome& outcome = ctx.net.assembleOutcome();
     if (outcome.pending) {
         outcome.pending = false;
-        if (outcome.success) {
+        // A late answer for an earlier selection must not animate the
+        // currently selected recipe. Its profile update still lands normally.
+        const bool matches = outcome.rarity == tier && outcome.recipe == selectedRecipe_;
+        if (matches && outcome.success) {
             made_ = outcome.made;
             resultPending_ = true;
-        } else {
+        } else if (matches) {
             // Nothing left the bag: the seats grow back and the reason takes
             // the line's place.
             if (phase_ == Phase::Assembling) phase_ = Phase::Idle;
@@ -239,16 +278,12 @@ bool AssemblerPanel::render(MenuContext& ctx, std::uint16_t mobIndex, Rarity tie
     const Rect panel = card.panel;
     const Vec2 body = card.body;
 
-    // An assembler offers one recipe, as florr's does: the one it rolled.
-    static const std::vector<AssemblyRecipe> kNoRecipes;
-    const std::vector<AssemblyRecipe>& recipes =
-        mobIndex < content().mobCount() ? content().mob(mobIndex).npc.recipes : kNoRecipes;
-    if (recipeIndex >= recipes.size()) {
+    if (choices.empty()) {
         drawSlotLine(canvas, card, kAssemblerInstructions);
         if (ctx.pressed() && card.close.contains(mouse)) return false;
         return true;
     }
-    const AssemblyRecipe& recipe = recipes[recipeIndex];
+    const AssemblyRecipe& recipe = recipes[selectedRecipe_];
     const int most = rarityIndex(tier) >= kLadderRarityCount ? 0 : affordable(profile, recipe, tier);
 
     // --- the count -----------------------------------------------------------
@@ -367,7 +402,53 @@ bool AssemblerPanel::render(MenuContext& ctx, std::uint16_t mobIndex, Rarity tie
         drawSlotLine(canvas, card, refusal_, kSlotCardRefusalInk);
     } else {
         refusal_.clear();
-        drawSlotLine(canvas, card, kAssemblerInstructions);
+        if (recipe.availableAtEveryStation && recipe.inputs.size() == 1 &&
+            recipe.outputs.size() == 1) {
+            const auto& input = recipe.inputs.front();
+            const auto& output = recipe.outputs.front();
+            const std::uint64_t runs = static_cast<std::uint64_t>(std::max(1, count));
+            const std::string summary = stackCountText(input.count * runs) + " " +
+                content().petal(input.petal).name + " to " + stackCountText(output.count * runs) +
+                " " + content().petal(output.petal).name;
+            drawSlotLine(canvas, card, summary);
+            const bool outputFull = recipe.makes(output.petal) > recipe.takes(output.petal) &&
+                profile.stackCount(output.petal, tier) >= static_cast<std::uint32_t>(kMaxStackCount);
+            drawSlotLine(canvas, card,
+                         outputFull ? "Your output stack is full." :
+                             std::string(rarityLabel(tier)) + " inputs and output - 100% success",
+                         outputFull ? std::optional<std::uint32_t>(kSlotCardRefusalInk) : std::nullopt,
+                         true);
+        } else {
+            drawSlotLine(canvas, card, kAssemblerInstructions);
+        }
+    }
+
+    // The station keeps its rolled recipe. Eligible alternatives are choices
+    // beside it, and cannot be switched while its request is being assembled.
+    std::vector<Rect> choiceRects;
+    if (choices.size() > 1) {
+        const double gap = 8.0;
+        const double width = (panel.w - 40.0 - gap * (choices.size() - 1)) / choices.size();
+        const bool canChoose = phase_ != Phase::Assembling;
+        for (std::size_t i = 0; i < choices.size(); ++i) {
+            const auto index = choices[i];
+            const AssemblyRecipe& candidate = recipes[index];
+            const Rect rect{panel.x + 20.0 + i * (width + gap), panel.bottom() - 48.0,
+                            width, kRecipeChoiceHeight};
+            choiceRects.push_back(rect);
+            const std::string label = candidate.availableAtEveryStation &&
+                                      !candidate.outputs.empty() &&
+                                      knownPetal(candidate.outputs.front().petal)
+                                          ? content().petal(candidate.outputs.front().petal).name
+                                          : "Station recipe";
+            const std::string clipped = ellipsize(label, 16.0, width - 24.0);
+            const bool selected = index == selectedRecipe_;
+            drawSlotButton(canvas, rect, clipped.c_str(),
+                           canChoose ? std::optional<std::uint32_t>(
+                                           selected ? rarityColor(tier) : kAssemblerSkin.accent) : std::nullopt,
+                           canChoose && rect.contains(mouse),
+                           selected || (rect.contains(mouse) && ctx.window.mouseDown(MouseButton::Left)));
+        }
     }
 
     // Tiles on their way out go over everything.
@@ -404,6 +485,16 @@ bool AssemblerPanel::render(MenuContext& ctx, std::uint16_t mobIndex, Rarity tie
 
     if (!ctx.pressed()) return true;
     if (card.close.contains(mouse)) return false;
+    if (phase_ != Phase::Assembling) {
+        for (std::size_t i = 0; i < choiceRects.size(); ++i) {
+            if (!choiceRects[i].contains(mouse)) continue;
+            if (choices[i] != selectedRecipe_) {
+                reset();
+                selectedRecipe_ = choices[i];
+            }
+            return true;
+        }
+    }
     // The field answered for its own press above.
     if (countRect.contains(mouse)) return true;
 
@@ -422,7 +513,7 @@ bool AssemblerPanel::render(MenuContext& ctx, std::uint16_t mobIndex, Rarity tie
             made_ = 0;
             refusal_.clear();
             countField_.blur();
-            ctx.net.requestAssemble(tier, recipeIndex, static_cast<std::uint16_t>(count));
+            ctx.net.requestAssemble(tier, selectedRecipe_, static_cast<std::uint16_t>(count));
             // Sent: the grains fly from the middle as the seats empty, and
             // the count goes back to one.
             motion_.burst(card.slot, tier, slotBurstGrains(tier), kBurst);

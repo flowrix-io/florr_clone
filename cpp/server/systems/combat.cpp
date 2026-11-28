@@ -285,6 +285,22 @@ double contactDamageOf(const World& world, Entity mob) {
     return contact != nullptr ? contact->amount : 1.0;
 }
 
+/// The hit a mob's body currently deals, before the victim's defences. The
+/// spawner already applies mob rarity and division to ContactDamage; looking
+/// at live state also follows later changes. Unlike recoil's fallback above,
+/// a creature with no body attack returns zero. Its own modifiers are applied
+/// exactly as in gatherContact, never the mirror owner's petal bonuses.
+double mirroredBodyDamage(const World& world, Entity victim) {
+    const ContactDamage* contact = world.tryGet<ContactDamage>(victim);
+    if (contact == nullptr) return 0.0;
+    double damage = contact->amount;
+    if (const auto* modifiers = world.tryGet<PlayerModifiers>(victim)) {
+        damage *= modifiers->damageScale;
+    }
+    if (const auto* undead = world.tryGet<Undead>(victim)) damage *= undead->bodyDamageScale;
+    return std::isfinite(damage) ? std::max(0.0, damage) : 0.0;
+}
+
 /// What one strike from this mob takes off.
 ///
 /// The spec's own number when it states one, and otherwise the mob's tier-
@@ -2695,13 +2711,14 @@ void CombatSystem::gatherPetals(World& world, const ContentRegistry& content, do
         // default 5 would make it a "zero swing" against every mob pressed
         // flush against it, shoving each one on every tick of contact.
         const bool loose = world.has<LoosePetal>(e);
-        if (loose && stats.damage <= 0.0) return;
+        if (loose && stats.damage <= 0.0 && !config.damageFromMobBody) return;
 
         const bool inert = stats.damage <= 0.0 && stats.critDamage <= 0.0 &&
                            stats.poisonPerSecond <= 0.0 && stats.slowFactor >= 1.0 &&
                            stats.knockback <= 0.0 && stats.armorReduction <= 0.0 &&
                            stats.noHealDurationMillis <= 0.0 && stats.extraPoisonMillis <= 0.0 &&
-                           !petalDividesMobs(config);
+                           !petalDividesMobs(config) && !config.damageFromMobBody &&
+                           !(stats.reflectionSpeedMultiplier > 0.0);
         if (inert) return;
 
         MeleeSource source;
@@ -2710,6 +2727,7 @@ void CombatSystem::gatherPetals(World& world, const ContentRegistry& content, do
         source.realm = transform.realm;
         source.radius = body.radius;
         source.damage = stats.damage;
+        source.damageFromMobBody = config.damageFromMobBody;
         source.hitIntervalMillis = stats.damageIntervalMillis;
         source.knockback = stats.knockback;
         source.poisonPerSecond = stats.poisonPerSecond;
@@ -2725,6 +2743,9 @@ void CombatSystem::gatherPetals(World& world, const ContentRegistry& content, do
         source.owner = petal.owner;
         source.rarity = petal.rarity;
         source.isPetal = true;
+        source.reflectionSpeedMultiplier = stats.reflectionSpeedMultiplier;
+        source.reflectionDamageMultiplier = config.projectileReflection.present
+                                                ? stats.reflectionDamageMultiplier : 1.0;
         source.isLoose = loose;
         source.hitKind = petalHitKind(content, petal.configIndex);
         // A tomato hits harder the longer it has been out; a reload starts it
@@ -3010,6 +3031,15 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid,
             if (const auto* petal = world.tryGet<PetalInstance>(source.attacker)) {
                 if (!petal->ricochet.allowsHit(victim, nowMillis)) continue;
             }
+            // Contact runs before flight. An incoming shot already touching
+            // the mirror must turn here, before the petal's ordinary swing
+            // can destroy it or movement can carry it through the ring.
+            if (source.reflectionSpeedMultiplier > 0.0 &&
+                reflectProjectile(world, source.attacker, victim,
+                                  source.reflectionSpeedMultiplier,
+                                  source.reflectionDamageMultiplier, transform->position, false)) {
+                break; // the mirror is now reloading
+            }
             if (!canHit(world, victim, source.attacker, nowMillis)) continue;
 
             // Almost nothing is throttled in the reference, and the throttle
@@ -3036,7 +3066,13 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid,
 
             // A claw's bonus is decided here, per victim, off the health the
             // victim has BEFORE this hit.
-            double swing = swingDamage(world, source.damage, source.critDamage, victim);
+            const bool copiesBody = source.damageFromMobBody &&
+                                    (world.has<MobTag>(victim) || world.has<NpcTag>(victim));
+            // Prism returns the same rarity-dependent share of a body's
+            // damage as of a projectile's, before normal target defences.
+            double swing = copiesBody ? mirroredBodyDamage(world, victim) *
+                                           source.reflectionDamageMultiplier
+                                     : swingDamage(world, source.damage, source.critDamage, victim);
             // The first Icosahedron hit keeps its normal damage; each bounce
             // retains 75% of the previous hit, using the petal's current stats.
             if (const auto* petal = world.tryGet<PetalInstance>(source.attacker)) {
@@ -3457,6 +3493,77 @@ void CombatSystem::resolvePetalPvp(World& world, const MeleeSource& source, Enti
     }
 }
 
+bool CombatSystem::reflectProjectile(World& world, Entity mirror, Entity shot,
+                                     double speedMultiplier, double damageMultiplier,
+                                     Vec2 at, bool swept) {
+    if (!(speedMultiplier > 0.0) || !world.isAlive(mirror) || world.has<Dead>(mirror) ||
+        !world.isAlive(shot) || world.has<Dead>(shot)) return false;
+    const PetalInstance* petal = world.tryGet<PetalInstance>(mirror);
+    const Projectile* incoming = world.tryGet<Projectile>(shot);
+    const Motion* motion = world.tryGet<Motion>(shot);
+    const Transform* transform = world.tryGet<Transform>(shot);
+    if (petal == nullptr || incoming == nullptr || motion == nullptr || transform == nullptr) {
+        return false;
+    }
+    const Entity owner = petal->owner;
+    if (!world.isAlive(owner) || !world.has<PlayerTag>(owner) || world.has<Dead>(owner) ||
+        teamOf(world, shot).team != Team::Hostiles ||
+        teamOf(world, owner).team != Team::Players) return false;
+
+    // Copy everything needed before an archetype can move. The actual step
+    // includes the sideways carry of a weaving shot; using only Motion would
+    // return a wasp missile along its launch axis instead of its arrival angle.
+    const Vec2 velocity = (!swept && incoming->lastStepBounced)
+                              ? motion->velocity
+                              : incoming->lastStepVelocity.lengthSq() > 0.0
+                                    ? incoming->lastStepVelocity : motion->velocity;
+    const Vec2 reflected = velocity * -speedMultiplier;
+    if (!std::isfinite(reflected.x) || !std::isfinite(reflected.y)) return false;
+    const double angle = reflected.lengthSq() > 0.0
+                             ? reflected.angle() : wrapAngle(transform->angle + kPi);
+    const double unusedTravel = (transform->position - at).length();
+    const std::uint8_t slot = petal->slot;
+    const Entity credit = petal->creditTo != NULL_ENTITY ? petal->creditTo : owner;
+    const Faction faction = world.tryGet<Faction>(owner) != nullptr
+                                ? world.get<Faction>(owner) : Faction{Team::Players};
+
+    world.ensure<Faction>(shot) = faction;
+    Projectile& returned = world.get<Projectile>(shot);
+    returned.owner = owner;
+    returned.creditTo = credit;
+    returned.damage *= damageMultiplier;
+    returned.slot = slot;
+    returned.lastPosition = at;
+    returned.lastStepVelocity = reflected;
+    returned.lastStepBounced = false;
+    // The sweep may have carried the shot beyond the mirror. Return it to
+    // first contact and refund that unflown distance, preserving its range.
+    returned.remainingDistance += unusedTravel;
+    // Complete reflection follows one exact bearing: neither a launch seek
+    // nor a later weave may steer the returned projectile away from it.
+    returned.seekRange = 0.0;
+    returned.seekCone = 0.0;
+    returned.waveAmplitude = 0.0;
+    returned.waveFrequency = 0.0;
+    returned.wavePhase = 0.0;
+    world.get<Motion>(shot).velocity = reflected;
+    Transform& moved = world.get<Transform>(shot);
+    moved.position = at;
+    moved.angle = angle;
+    if (HitCooldowns* ledger = world.tryGet<HitCooldowns>(shot)) *ledger = HitCooldowns{};
+
+    // Spend the petal, never the projectile. The ordinary slot lifecycle
+    // applies its rarity-scaled reload and keeps the bar/respawn in sync.
+    if (Health* health = world.tryGet<Health>(mirror)) health->current = 0.0;
+    world.add<Dead>(mirror);
+
+    // Shot groups cache ownership and position for the whole combat phase.
+    // Both changed: rebuilding also invalidates phaseCredit's answers, so a
+    // later enemy shot can hit this returned one in this very same tick.
+    fileShots(world);
+    return true;
+}
+
 void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
                                    const ContentRegistry& content, double nowMillis) {
     shots_.clear();
@@ -3484,6 +3591,7 @@ void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
         const std::uint16_t petalIndex = projectile->petalConfigIndex;
         const Rarity rarity = projectile->rarity;
         const bool infecting = projectile->glitchInfecting;
+        const bool reflectable = teamOf(world, shot.entity).team == Team::Hostiles;
         const Entity owner = projectile->owner;
         const std::uint8_t slot = projectile->slot;
         // A blueberry's shot lands as lightning and a glitch petal's as a
@@ -3558,12 +3666,15 @@ void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
             // -- in front of it one tick, behind it the next, never touching.
             // `offset` stays the vector from the
             // point of closest approach, which is what the shove below pushes
-            // along and what the nearest-first ordering sorts on.
+            // along. Impacts are ordered by the FIRST contact along the path,
+            // so a mirror in front of a flower catches even a very fast shot.
             const Vec2 toVictim = position - shot.from;
             double along = 0.0;
+            double projection = 0.0;
             if (flownLength > 1e-9) {
                 const Vec2 axis = flown * (1.0 / flownLength);
-                along = clamp(toVictim.x * axis.x + toVictim.y * axis.y, 0.0, flownLength);
+                projection = toVictim.x * axis.x + toVictim.y * axis.y;
+                along = clamp(projection, 0.0, flownLength);
             }
             const Vec2 nearest = shot.from + (flownLength > 1e-9
                                                   ? flown * (along / flownLength)
@@ -3575,24 +3686,43 @@ void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
             // After the distance test, which turns away most candidates for the
             // two lookups this costs. Pure filters both, so the order is free.
             if (!isShootable(world, victim)) continue;
-            // Above canHit() on purpose: a glitch shot marks the flower it
-            // touches whether or not the hit itself is refused, and a
-            // flower under respawn protection is not in `impacts_` at all.
-            if (infecting && world.has<PlayerTag>(victim) && !world.has<Dead>(victim) &&
-                canDamage(world, shot.entity, victim)) {
-                markGlitched(world, victim);
+            // Infection ignores respawn protection, but must wait for impact
+            // order too: a shot reflected before a flower never touched it.
+            const bool canInfect = infecting && world.has<PlayerTag>(victim) &&
+                                   !world.has<Dead>(victim) &&
+                                   canDamage(world, shot.entity, victim);
+            double reflectionBoost = 0.0;
+            double reflectionDamage = 1.0;
+            if (reflectable && !world.has<Dead>(victim)) {
+                if (const auto* mirror = world.tryGet<PetalInstance>(victim)) {
+                    const PetalStats mirrorStats = content.petalStats(mirror->configIndex,
+                                                                    mirror->rarity);
+                    reflectionBoost = mirrorStats.reflectionSpeedMultiplier;
+                    reflectionDamage = mirrorStats.reflectionDamageMultiplier;
+                }
             }
-            if (!canHit(world, victim, shot.entity, nowMillis)) continue;
-            impacts_.push_back({victim, offset, distanceSquared, nearest});
+            if (!canInfect && !(reflectionBoost > 0.0) &&
+                !canHit(world, victim, shot.entity, nowMillis)) continue;
+            const double perpendicularSq =
+                std::max(0.0, toVictim.lengthSq() - projection * projection);
+            const double entry = flownLength > 1e-9
+                                     ? clamp(projection - std::sqrt(std::max(0.0,
+                                                reach * reach - perpendicularSq)),
+                                             0.0, flownLength)
+                                     : 0.0;
+            impacts_.push_back({victim, offset, distanceSquared, entry,
+                                reflectionBoost, reflectionDamage, nearest});
         }
         if (impacts_.empty()) continue;
 
-        // Nearest first. A shot arriving into a clump spends its health pool
-        // front to back, and ordering by distance is the only answer that does
-        // not depend on grid bucket order.
+        // First contact first, then nearest for a stationary overlapping shot.
         std::sort(impacts_.begin(), impacts_.end(),
                   [](const ShotImpact& a, const ShotImpact& b) {
-                      return a.distanceSquared < b.distanceSquared;
+                      if (a.travel != b.travel) return a.travel < b.travel;
+                      if (a.distanceSquared != b.distanceSquared) {
+                          return a.distanceSquared < b.distanceSquared;
+                      }
+                      return a.victim < b.victim;
                   });
 
         // Only resolved once something is actually going to be hit: this is a
@@ -3608,6 +3738,23 @@ void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
 
         for (const ShotImpact& impact : impacts_) {
             if (!world.isAlive(shot.entity) || world.has<Dead>(shot.entity)) break;
+            if (infecting && world.isAlive(impact.victim) &&
+                world.has<PlayerTag>(impact.victim) && !world.has<Dead>(impact.victim) &&
+                canDamage(world, shot.entity, impact.victim)) {
+                markGlitched(world, impact.victim);
+            }
+            // Reflection is contact, not damage: invulnerability must not
+            // turn either the projectile or the mirror into a pass-through.
+            if (impact.reflectionSpeedMultiplier > 0.0) {
+                const Vec2 contact = shot.from + (flownLength > 1e-9
+                    ? flown * (impact.travel / flownLength) : Vec2{});
+                if (reflectProjectile(world, impact.victim, shot.entity,
+                                      impact.reflectionSpeedMultiplier,
+                                      impact.reflectionDamageMultiplier, contact, true)) {
+                    break; // all remaining impacts belong to the incoming path
+                }
+            }
+
             // Re-tested per victim rather than trusted from the gather: an
             // earlier impact in this same pass may have killed this one, and a
             // corpse must not pay out twice.

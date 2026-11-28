@@ -167,11 +167,19 @@ Entity NpcSystem::spawnNpc(World& world, const Terrain& terrain, const ContentRe
     // Flies like its mob does when its mob flies like a bee, starting off on
     // a heading and a weave of its own.
     npc.still = still;
-    // One recipe each, rolled here: a replaced assembler may well make
-    // something else. Off the NPCs' own stream, so it moves no spawn.
+    // One ordinary recipe each, rolled here. Shared extras remain selectable
+    // beside it and never displace a station's original random offering.
+    // Off the NPCs' own stream, so it moves no spawn.
     if (!config.npc.recipes.empty()) {
-        npc.recipe = static_cast<std::uint8_t>(
-            rng_.below(static_cast<std::uint32_t>(config.npc.recipes.size())));
+        std::vector<std::uint8_t> rolledRecipes;
+        for (std::size_t i = 0; i < config.npc.recipes.size(); ++i) {
+            if (!config.npc.recipes[i].availableAtEveryStation) {
+                rolledRecipes.push_back(static_cast<std::uint8_t>(i));
+            }
+        }
+        if (!rolledRecipes.empty()) {
+            npc.recipe = rolledRecipes[rng_.below(static_cast<std::uint32_t>(rolledRecipes.size()))];
+        }
     }
     npc.cruises = !still && config.beeFlight && stats.speed > 0.0;
     const BeeCruiseDrive cruise = beeCruiseDrive(stats.speed, stats.cruiseSpeed);

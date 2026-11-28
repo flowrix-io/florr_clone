@@ -211,6 +211,7 @@ const std::vector<std::uint16_t>& WorldRenderer::droppablePetals() const {
         // one.
         if (petal.isAdminPetal) continue;
         if (petal.id == "cutter" || petal.id == "lightning_cutter") continue;
+        if (petal.id == "prism_mirror") continue;
         if (petalHasOwnSource(petal)) continue;
         const std::string suffix = "_egg";
         if (petal.id.size() > suffix.size() &&
