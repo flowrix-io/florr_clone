@@ -683,7 +683,7 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
 
     // Trial blessings only apply inside their challenge. Resolve a shot or
     // petal back to its flower, but test projectile-ness on the actual source.
-    if (amount > 0.0 && world.has<TrialMob>(victim) && !sharingColonyHit_ &&
+    if (amount > 0.0 && inTrialGrounds(world, victim) && !sharingColonyHit_ &&
         !sharingRelicHit_) {
         const Entity player = creditedPlayer(world, source);
         TrialBuff* blessing = world.tryGet<TrialBuff>(player);
@@ -1342,7 +1342,7 @@ void CombatSystem::popBubbles(World& world, const SpatialGrid& grid,
 }
 
 void CombatSystem::awardBounty(World& world, Entity victim) {
-    if (world.has<TrialMob>(victim)) return;
+    if (inTrialGrounds(world, victim)) return;
     const Bounty* bounty = world.tryGet<Bounty>(victim);
     if (bounty == nullptr || bounty->xp <= 0.0) return;
 

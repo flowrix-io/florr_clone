@@ -229,6 +229,23 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
         }
     }
 
+    // The bag is read-only on a Trial Grounds run: nothing is crafted, traded,
+    // bought, redeemed or claimed into it until the run is over. Loadout
+    // changes still go through -- they move petals, they make none.
+    if (session->inTrial()) {
+        switch (id) {
+            case net::ClientMessage::Craft: case net::ClientMessage::OracleCraft:
+            case net::ClientMessage::Trade: case net::ClientMessage::TitanForge:
+            case net::ClientMessage::Assemble: case net::ClientMessage::Absorb:
+            case net::ClientMessage::BuyPetal: case net::ClientMessage::ClaimTrialReward:
+            case net::ClientMessage::RedeemCode:
+                sendNotice(connection, net::NoticeSeverity::Warning,
+                           "Your inventory is read-only in the Trial Grounds.");
+                return;
+            default: break;
+        }
+    }
+
     switch (id) {
         case net::ClientMessage::Hello:         handleHello(*session, connection, reader); break;
         case net::ClientMessage::Register:      handleRegister(*session, connection, reader); break;

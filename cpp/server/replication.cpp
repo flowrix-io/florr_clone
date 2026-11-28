@@ -225,6 +225,100 @@ void Replicator::indexWorld(World& world, double nowMillis) {
     facts_.assign(index_.size(), Facts{});
     spawnFacts_.assign(index_.size(), SpawnFacts{});
     indexedAtMillis_ = nowMillis;
+    fileIndex();
+}
+
+namespace {
+
+/// The cell edge the index is filed at. A default screen's streamed box is a
+/// few of them across, so a viewer reads a handful of cells, and an empty one
+/// costs two loads.
+constexpr double kIndexCellSize = 512.0;
+/// The most cells one realm is filed over; past it the cells grow instead.
+constexpr std::int64_t kMaxIndexCells = std::int64_t{1} << 18;
+/// Coordinates past this are left out of the cells and looked at by every
+/// build instead: no world is anywhere near it.
+constexpr double kMaxFiledCoord = 1.0e7;
+constexpr std::uint32_t kLooseCell = 0xFFFFFFFFu;
+
+bool fileable(Vec2 p) {
+    return std::isfinite(p.x) && std::isfinite(p.y) && std::fabs(p.x) <= kMaxFiledCoord &&
+           std::fabs(p.y) <= kMaxFiledCoord;
+}
+
+}  // namespace
+
+void Replicator::fileIndex() {
+    realmCells_.assign(kMaxRealms, RealmCells{});
+    looseItems_.clear();
+    itemCell_.assign(index_.size(), kLooseCell);
+    std::uint32_t cells = 0;
+    for (std::size_t begin = 0; begin < index_.size();) {
+        const Realm realm = index_[begin].realm;
+        std::size_t end = begin;
+        double minX = 0, minY = 0, maxX = 0, maxY = 0;
+        bool any = false;
+        for (; end < index_.size() && index_[end].realm == realm; ++end) {
+            const Vec2 p = index_[end].position;
+            if (index_[end].market || !fileable(p)) continue;
+            if (!any) {
+                minX = maxX = p.x;
+                minY = maxY = p.y;
+                any = true;
+            } else {
+                minX = std::min(minX, p.x);
+                maxX = std::max(maxX, p.x);
+                minY = std::min(minY, p.y);
+                maxY = std::max(maxY, p.y);
+            }
+        }
+        RealmCells& grid = realmCells_[static_cast<std::size_t>(realm)];
+        if (any) {
+            double size = kIndexCellSize;
+            std::int64_t cols = 0, rows = 0;
+            for (;;) {
+                cols = static_cast<std::int64_t>((maxX - minX) / size) + 1;
+                rows = static_cast<std::int64_t>((maxY - minY) / size) + 1;
+                if (cols * rows <= kMaxIndexCells) break;
+                size *= 2.0;
+            }
+            grid.filed = true;
+            grid.originX = minX;
+            grid.originY = minY;
+            grid.size = size;
+            grid.cols = static_cast<int>(cols);
+            grid.rows = static_cast<int>(rows);
+            grid.firstCell = cells;
+            cells += static_cast<std::uint32_t>(cols * rows);
+        }
+        for (std::size_t at = begin; at < end; ++at) {
+            const Vec2 p = index_[at].position;
+            if (index_[at].market || !fileable(p)) {
+                looseItems_.push_back(static_cast<std::uint32_t>(at));
+                continue;
+            }
+            const int cx = std::clamp(static_cast<int>((p.x - grid.originX) / grid.size), 0, grid.cols - 1);
+            const int cy = std::clamp(static_cast<int>((p.y - grid.originY) / grid.size), 0, grid.rows - 1);
+            itemCell_[at] = grid.firstCell +
+                            static_cast<std::uint32_t>(cy) * static_cast<std::uint32_t>(grid.cols) +
+                            static_cast<std::uint32_t>(cx);
+        }
+        begin = end;
+    }
+    // A counting sort by cell, stable, so each cell lists its entries in
+    // index order.
+    cellStart_.assign(static_cast<std::size_t>(cells) + 1, 0);
+    for (const std::uint32_t cell : itemCell_) {
+        if (cell != kLooseCell) ++cellStart_[cell + 1];
+    }
+    for (std::size_t c = 1; c < cellStart_.size(); ++c) cellStart_[c] += cellStart_[c - 1];
+    cellItems_.resize(cellStart_.back());
+    gathered_.assign(cellStart_.begin(), cellStart_.end() - 1);   // a write cursor per cell
+    for (std::size_t at = 0; at < itemCell_.size(); ++at) {
+        const std::uint32_t cell = itemCell_[at];
+        if (cell != kLooseCell) cellItems_[gathered_[cell]++] = static_cast<std::uint32_t>(at);
+    }
+    gathered_.clear();
 }
 
 void Replicator::beginPass(World& world, double nowMillis) {
@@ -405,31 +499,109 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
     // Only the viewer's own realm: nothing in another is ever streamed to it --
     // the viewer is always in this one, and a squadmate or market NPC is
     // exempt from the box only within it.
-    for (auto it = runBegin; it != runEnd; ++it) {
-        const Indexed& entry = *it;
+    //
+    // What could be in the box is read off the cells it covers (fileIndex),
+    // with the realm's loose entries and the exempt bodies, and put back in
+    // index order: the order the whole run used to be walked in, so what is
+    // written does not change.
+    gathered_.clear();
+    const RealmCells& grid = realmCells_[static_cast<std::size_t>(realm)];
+    // A box no cell walk can describe -- a viewer standing at a coordinate
+    // that is not a number -- is tested against every entry, as it was, and
+    // so is one the walk would not save anything on (below).
+    const bool boxed = fileable(centre) && std::isfinite(reachX) && std::isfinite(reachY) &&
+                       reachX < kMaxFiledCoord && reachY < kMaxFiledCoord;
+    int cx0 = 0, cx1 = -1, cy0 = 0, cy1 = -1;
+    bool scanRun = !boxed;
+    if (boxed && grid.filed) {
+        const auto cellOf = [&](double v, double origin, int count) {
+            return std::clamp(static_cast<int>(std::floor((v - origin) / grid.size)), 0, count - 1);
+        };
+        cx0 = cellOf(centre.x - reachX, grid.originX, grid.cols);
+        cx1 = cellOf(centre.x + reachX, grid.originX, grid.cols);
+        cy0 = cellOf(centre.y - reachY, grid.originY, grid.rows);
+        cy1 = cellOf(centre.y + reachY, grid.originY, grid.rows);
+        // A box over most of the realm -- a crowd, everyone in everyone's
+        // view -- gathers nearly every entry and would then have to sort them
+        // all back into order: walking the run in order is cheaper there.
+        std::size_t covered = 0;
+        for (int cy = cy0; cy <= cy1; ++cy) {
+            const std::uint32_t row =
+                grid.firstCell + static_cast<std::uint32_t>(cy) * static_cast<std::uint32_t>(grid.cols);
+            covered += cellStart_[row + static_cast<std::uint32_t>(cx1) + 1] -
+                       cellStart_[row + static_cast<std::uint32_t>(cx0)];
+        }
+        if (covered * 3 > static_cast<std::size_t>(runEnd - runBegin)) scanRun = true;
+    }
+    // What gets past the box: a drop's claims, and then the candidate list.
+    const auto admit = [&](std::uint32_t at) {
+        const Indexed& entry = index_[at];
         const Entity e = entry.entity;
+        // A drop's claims after the box: both only ever turn an entity away,
+        // and every drop on the map is out of nearly every viewer's box, where
+        // reading its claims was a component lookup per drop per viewer.
+        if (entry.drop) {
+            const DropItem* drop = world.tryGet<DropItem>(e);
+            if (!drop->eligible.empty() && !claimed(drop->eligible, viewer, viewerOwner)) return;
+            if (claimed(drop->pickedUpBy, viewer, viewerOwner)) return;
+        }
+        candidates_.push_back({e, entry.netId, flix::distanceSq(entry.position, centre), at});
+    };
+    if (scanRun) {
+        for (auto it = runBegin; it != runEnd; ++it) {
+            const Indexed& entry = *it;
+            if (entry.entity != viewer && outsideView(entry.position) && !entry.market &&
+                !(frame.alwaysVisible != nullptr &&
+                  std::find(frame.alwaysVisible->begin(), frame.alwaysVisible->end(),
+                            entry.entity) != frame.alwaysVisible->end())) {
+                continue;
+            }
+            admit(static_cast<std::uint32_t>(it - index_.begin()));
+        }
+    } else {
+        if (grid.filed) {
+            for (int cy = cy0; cy <= cy1; ++cy) {
+                const std::uint32_t row =
+                    grid.firstCell + static_cast<std::uint32_t>(cy) * static_cast<std::uint32_t>(grid.cols);
+                const std::uint32_t last = cellStart_[row + static_cast<std::uint32_t>(cx1) + 1];
+                for (std::uint32_t k = cellStart_[row + static_cast<std::uint32_t>(cx0)]; k < last; ++k) {
+                    const std::uint32_t at = cellItems_[k];
+                    if (!outsideView(index_[at].position)) gathered_.push_back(at);
+                }
+            }
+        }
+        // Market NPCs, wherever they stand, and the box's own test for the
+        // rest of the loose entries.
+        for (const std::uint32_t at : looseItems_) {
+            const Indexed& entry = index_[at];
+            if (entry.realm == realm && (entry.market || !outsideView(entry.position))) {
+                gathered_.push_back(at);
+            }
+        }
         // The viewer's own body is always replicated, however the camera sits:
         // losing it would leave the client with no flower of its own to draw,
         // and no SpawnIsSelf record to learn which net id is its own.
         // A squadmate is exempt for its own reason -- see Frame::alwaysVisible
         // -- but only within the viewer's realm: a party member in the maze has
         // no position that means anything on an overworld screen.
-        if (e != viewer && outsideView(entry.position) && !entry.market &&
-            !(frame.alwaysVisible != nullptr &&
-              std::find(frame.alwaysVisible->begin(), frame.alwaysVisible->end(), e) !=
-                  frame.alwaysVisible->end())) {
-            continue;
+        const auto exemptBody = [&](Entity e) {
+            const NetId* id = world.tryGet<NetId>(e);
+            if (id == nullptr) return;
+            const auto it = std::lower_bound(runBegin, runEnd, id->value,
+                                             [](const Indexed& x, std::uint32_t netId) {
+                                                 return x.netId < netId;
+                                             });
+            if (it != runEnd && it->netId == id->value && it->entity == e) {
+                gathered_.push_back(static_cast<std::uint32_t>(it - index_.begin()));
+            }
+        };
+        exemptBody(viewer);
+        if (frame.alwaysVisible != nullptr) {
+            for (const Entity e : *frame.alwaysVisible) exemptBody(e);
         }
-        // A drop's claims after the box: both only ever turn an entity away,
-        // and every drop on the map is out of nearly every viewer's box, where
-        // reading its claims was a component lookup per drop per viewer.
-        if (entry.drop) {
-            const DropItem* drop = world.tryGet<DropItem>(e);
-            if (!drop->eligible.empty() && !claimed(drop->eligible, viewer, viewerOwner)) continue;
-            if (claimed(drop->pickedUpBy, viewer, viewerOwner)) continue;
-        }
-        candidates_.push_back({e, entry.netId, flix::distanceSq(entry.position, centre),
-                               static_cast<std::uint32_t>(it - index_.begin())});
+        std::sort(gathered_.begin(), gathered_.end());
+        gathered_.erase(std::unique(gathered_.begin(), gathered_.end()), gathered_.end());
+        for (const std::uint32_t at : gathered_) admit(at);
     }
 
     if (candidates_.size() > maxEntities) {

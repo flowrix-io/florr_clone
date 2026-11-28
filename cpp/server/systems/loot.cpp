@@ -394,6 +394,9 @@ void LootSystem::spawnPublicMobLoot(World& world,const ContentRegistry& content,
 Entity LootSystem::spawnDrop(World& world, std::uint16_t petalIndex, Rarity rarity, Vec2 position,
                              Realm realm, const std::vector<Entity>& eligible) {
     if (petalIndex == kNoPetal) return NULL_ENTITY;
+    // Nothing is ever dropped in the Trial Grounds, whatever asked for it: the
+    // floor reward is a chamber's only payout.
+    if (isTrialRealm(realm)) return NULL_ENTITY;
 
     const Entity e = world.create();
     world.add<DropTag>(e);
@@ -494,6 +497,12 @@ void LootSystem::maintainDrops(double dt, CommandBuffer& commands) {
                 terrain->resolveCircle(transform.position, kDropWallRadius, transform.realm);
         }
         lifetime.remainingSeconds -= dt;
+        // Loot lying in a trial chamber goes the tick it is seen, however it
+        // got there (spawnDrop already refuses to put any there).
+        if (isTrialRealm(transform.realm)) {
+            expired_.push_back(e);
+            return;
+        }
         // Outside its realm's playable area, where nothing can ever reach it.
         // Tested after the wall push, which is what normally pulls an escaping
         // drop back inside -- what reaches here is a drop the resolver could
@@ -552,6 +561,8 @@ void LootSystem::tryCollect(World& world, Entity player, Vec2 playerPosition, Re
     // a flower standing at the same coordinates on another map, a contributor
     // who changed map on the tick of the kill, took its copy from there.
     if (at->realm != playerRealm) return;
+    // Never picked up in a trial: maintainDrops has queued its destroy.
+    if (isTrialRealm(at->realm)) return;
     // A magnet reaches only for loot that has lain half a second: a fresh kill's
     // drops are seen on the ground first. Loot already lying there when the
     // magnet goes on is old enough, and comes in at once.
@@ -593,7 +604,9 @@ void LootSystem::awardDeaths(World& world, const ContentRegistry& content, Rng& 
     const std::uint16_t crown = content.petalIndex(kChampionCrownPetalId);
     corpses_->collect(corpseList_);
     for (const Entity corpse : corpseList_) {
-        if (world.has<TrialMob>(corpse)) {
+        // A chamber mob, or anything it made of itself -- summons, a divider's
+        // pieces -- drops nothing.
+        if (inTrialGrounds(world, corpse)) {
             world.add<LootAwarded>(corpse);
             continue;
         }

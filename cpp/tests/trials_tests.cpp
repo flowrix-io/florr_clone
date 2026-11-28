@@ -1,3 +1,5 @@
+#include "server/systems/loot.h"
+#include "server/systems/spawning.h"
 #include "shared/game/realm.h"
 #include "shared/game/trials.h"
 #include "test.h"
@@ -381,4 +383,113 @@ TEST(a_trial_reward_claimed_in_the_world_is_still_on_the_account_after_the_next_
     CHECK_NEAR(record->totalXp, 1000.0 + xp, 1e-6);
     CHECK_NEAR(record->stars, starsBefore + stars, 1e-6);
     CHECK_NEAR(client.view().self().totalXp, 1000.0 + xp, 1e-6);
+}
+
+TEST(nothing_a_trial_chamber_makes_of_itself_drops_loot_or_fills_the_bag) {
+    using namespace flix::testsupport;
+    // A pharaoh beetle's mummies and a divider's pieces never went through
+    // spawnTrialWave, so they carried no TrialMob and paid drops like any wild
+    // mob. Everything in a trial realm is the chamber's now: no drop is made
+    // there, any lying there is destroyed, and the bag takes nothing.
+    Harness h("trial-no-loot",
+              [](const std::string& path) {
+                  seedUser(path, "looter", "password7");
+                  Database db;
+                  std::string error;
+                  db.load(path, error);
+                  const Account* account = db.findUser("looter");
+                  if (account == nullptr) return;
+                  db.progress(account->id).extra["trialGrounds"]["unlocked"] = true;
+                  db.markDirty();
+                  db.save();
+              },
+              dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+    NetClient client;
+    CHECK(loginAs(h, client, "looter", "password7"));
+    client.joinGame(1920, 1080, std::string(kTrialsSpawnChoice) + ":1", "looter", false);
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; },
+                      200));
+    Session* session = GameServerPeer::sessionOf(h.server, "looter");
+    if (session == nullptr) { CHECK(false); return; }
+    std::remove_reference_t<decltype(GameServerPeer::trials(h.server)[0])>* run = nullptr;
+    for (auto& trial : GameServerPeer::trials(h.server)) {
+        if (trial.owner == session->connection) run = &trial;
+    }
+    if (run == nullptr) { CHECK(false); return; }
+    client.startTrialChamber();
+    CHECK(h.stepUntil({&client}, [&] { return run->phase == TrialPhase::Active; }, 200));
+    CHECK(session->inTrial());
+
+    World& world = h.server.world();
+    const Realm realm = run->realm;
+    const Entity flower = session->entity;
+    const Vec2 here = world.get<Transform>(flower).position;
+    const std::uint16_t basic = content().petalIndex("basic");
+    const auto bagged = [&] {
+        const PlayerRecord* record = h.server.database().findProgress(session->userId);
+        return record != nullptr ? record->itemCount(Rarity::Common, "petal_basic") : -1;
+    };
+    const int before = bagged();
+    const double xpBefore = world.get<PlayerProgress>(flower).totalXp;
+
+    // Nothing can be put down in a trial realm.
+    LootSystem& loot = GameServerPeer::loot(h.server);
+    CHECK(loot.spawnDrop(world, basic, Rarity::Common, here, realm, {flower}) == NULL_ENTITY);
+
+    // One that got there anyway -- made elsewhere and carried in -- is gone
+    // the next tick, at the flower's feet, without being picked up.
+    const Entity stray =
+        loot.spawnDrop(world, basic, Rarity::Common, Vec2{1000.0, 1000.0}, Realm::Overworld, {});
+    CHECK(stray != NULL_ENTITY);
+    if (stray != NULL_ENTITY) {
+        Transform& at = world.get<Transform>(stray);
+        at.realm = realm;
+        at.position = here;
+    }
+
+    // A summon: a mob in the chamber that spawnTrialWave never tagged, killed
+    // by the flower with every bit of damage its own.
+    const Entity summon = GameServerPeer::spawning(h.server).spawnMob(
+        world, h.server.terrain(), content(), content().mobIndex("mummy_beetle"), Rarity::Common,
+        here + Vec2{60.0, 0.0}, realm, GameServerPeer::clockMillis(h.server), h.probeRng, false);
+    CHECK(summon != NULL_ENTITY);
+    CHECK(!world.has<TrialMob>(summon));
+    if (summon != NULL_ENTITY) {
+        world.get<Bounty>(summon).credit(flower, world.get<Health>(summon).max * 10.0);
+        world.get<Health>(summon).current = 0.0;
+        world.add<Dead>(summon, Dead{flower});
+    }
+
+    // A divider's pieces of a chamber mob are the chamber's too.
+    Entity chamberMob = NULL_ENTITY;
+    Query<TrialMob> roster{world};
+    roster.each([&](Entity e, TrialMob&) { if (chamberMob == NULL_ENTITY) chamberMob = e; });
+    CHECK(chamberMob != NULL_ENTITY);
+    if (chamberMob != NULL_ENTITY &&
+        GameServerPeer::spawning(h.server).divideMob(world, h.server.terrain(), content(),
+                                                     chamberMob, 2,
+                                                     GameServerPeer::clockMillis(h.server),
+                                                     h.probeRng)) {
+        int pieces = 0;
+        Query<DividedMob> divided{world};
+        divided.each([&](Entity e, DividedMob&) {
+            ++pieces;
+            CHECK(world.has<TrialMob>(e));
+        });
+        CHECK_EQ(pieces, 2);
+    }
+
+    h.step(5, {&client});
+    CHECK(!world.isAlive(stray));
+    int lying = 0;
+    Query<DropTag, Transform> drops{world};
+    drops.each([&](Entity, DropTag&, Transform& at) {
+        if (at.realm == realm) ++lying;
+    });
+    CHECK_EQ(lying, 0);
+    CHECK_EQ(bagged(), before);
+    CHECK_NEAR(world.get<PlayerProgress>(flower).totalXp, xpBefore, 1e-9);
+    // The chamber is still on: a summon's death is not a wave cleared.
+    CHECK(run->phase == TrialPhase::Active);
 }

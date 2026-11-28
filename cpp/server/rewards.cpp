@@ -42,7 +42,7 @@ void GameServer::announceBossSpawns() {
         // Trial Grounds are private challenges. Their Super+ mobs still
         // replicate to the owner (and therefore keep their boss bars), but a
         // private chamber must never become global spawn news.
-        if (world_.has<TrialMob>(boss.entity)) continue;
+        if (inTrialGrounds(world_, boss.entity)) continue;
         // The bots hear about it too, from the same event and in the same
         // breath. Every path that can put a boss in the world queues one of
         // these -- a band stocking itself in a corner nobody has visited, a
@@ -98,6 +98,9 @@ void GameServer::bankPickups() {
         Session* session = sessionForEntity(pickup.player);
         if (!session || session->userId.empty()) continue;
         if (pickup.petalIndex >= content().petalCount()) continue;
+        // The bag is read-only on a trial run. The loot system already makes
+        // no drop there and lets none be taken; this is the second lock.
+        if (session->inTrial() || inTrialGrounds(world_, pickup.player)) continue;
 
         // The one universal a ground pickup can be (the champion's crown off
         // an apex): there is only ever one of each petal at universal, so a
@@ -140,7 +143,7 @@ void GameServer::bankKills() {
     std::vector<net::ConnectionId> paidAccounts;
     for (const CombatSystem::DeathRecord& death : combat_->deaths()) {
         if (death.wasPlayer) continue;
-        if (world_.has<TrialMob>(death.entity)) continue;
+        if (inTrialGrounds(world_, death.entity)) continue;
         const MobType* type = world_.tryGet<MobType>(death.entity);
         if (type == nullptr) continue;
 

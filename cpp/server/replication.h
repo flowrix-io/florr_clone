@@ -523,6 +523,31 @@ private:
     std::vector<SpawnFacts> spawnFacts_;
 
     std::vector<Indexed> index_;
+
+    /// index_ filed by where each entry stands, so a build reads the cells
+    /// its view box covers instead of its whole realm: the realm's entries,
+    /// tested one by one for every viewer, were most of a snapshot's cost on
+    /// a full map. Each realm's run is bucketed over its own bounding box, in
+    /// compressed rows: cell `c`'s entries are cellItems_[cellStart_[c] ..
+    /// cellStart_[c + 1]), in index order. Rebuilt with the index.
+    struct RealmCells {
+        bool filed = false;
+        double originX = 0, originY = 0;
+        double size = 0;
+        int cols = 0, rows = 0;
+        std::uint32_t firstCell = 0;
+    };
+    void fileIndex();
+    std::vector<RealmCells> realmCells_;
+    std::vector<std::uint32_t> cellStart_;
+    std::vector<std::uint32_t> cellItems_;
+    /// Entries a build of their realm always looks at: a position no cell can
+    /// hold (not a sane number), and the market NPCs, streamed from any
+    /// distance.
+    std::vector<std::uint32_t> looseItems_;
+    /// fileIndex's scratch, and a build's list of what it gathered.
+    std::vector<std::uint32_t> itemCell_;
+    std::vector<std::uint32_t> gathered_;
     /// indexWorld()'s sort scratch, kept for its capacity.
     std::vector<std::uint64_t> sortKeys_;
     std::vector<Indexed> sorted_;

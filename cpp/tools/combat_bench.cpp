@@ -8,10 +8,17 @@
 // stays put, and the operator's console keeping mobs coming in around them --
 // and prints what every phase of the tick cost, combat's steps included.
 //
-// Usage: combat_bench [seconds] [players] [mobs]
+// `spread` is the other shape a busy server takes: the same flowers scattered
+// over the whole overworld instead of crowded into one fight, the spawner
+// left to stock the world around them on its own, and every account a
+// veteran's row -- tens of kilobytes of bag and kill counts -- so what the
+// journal writes for a farming flower is what it writes on prod.
+//
+// Usage: combat_bench [seconds] [players] [mobs] [crowd|spread]
 //   seconds  simulated seconds to measure after the warm-up (default: 20)
 //   players  flowers in the crowd (default: 50)
-//   mobs     mobs the console keeps alive around the crowd (default: 500)
+//   mobs     mobs the console keeps alive around the crowd (default: 500;
+//            ignored by `spread`)
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -49,6 +56,9 @@ double percentile(std::vector<double> samples, double p) {
 
 /// How many fighter accounts seedAccounts makes.
 int gPlayers = 50;
+/// Whether they are given a veteran's row: a bag of every petal at the tiers
+/// a long-played account holds, and kill counts for every mob.
+bool gVeterans = false;
 
 /// The admin and every fighter, made before the server opens the database:
 /// signing that many up over the wire would trip the per-address limit on
@@ -61,7 +71,25 @@ void seedAccounts(const std::string& path) {
     CreateResult created = db.createUser("benchadmin", "password7");
     if (created.ok()) created.account->admin = true;
     for (int i = 0; i < gPlayers; ++i) {
-        db.createUser("fighter" + std::to_string(i), "hunter2!");
+        CreateResult fighter = db.createUser("fighter" + std::to_string(i), "hunter2!");
+        if (!gVeterans || !fighter.ok()) continue;
+        PlayerRecord& record = db.progress(fighter.account->id);
+        Rng rng{static_cast<std::uint64_t>(0x5EED + i)};
+        for (std::size_t p = 0; p < content().petalCount(); ++p) {
+            const std::string key = "petal_" + content().petal(static_cast<std::uint16_t>(p)).id;
+            for (int r = 0; r <= static_cast<int>(Rarity::Mythic); ++r) {
+                if (rng.below(3) == 0) continue;
+                record.addItem(static_cast<Rarity>(r), key, 1 + static_cast<int>(rng.below(400)));
+            }
+        }
+        for (std::size_t m = 0; m < content().mobCount(); ++m) {
+            const std::string& id = content().mob(static_cast<std::uint16_t>(m)).id;
+            for (int r = 0; r <= static_cast<int>(Rarity::Ultra); ++r) {
+                for (int k = static_cast<int>(rng.below(3)); k > 0; --k) {
+                    record.recordKill(id, static_cast<Rarity>(r));
+                }
+            }
+        }
     }
     db.markDirty();
     db.save();
@@ -87,8 +115,18 @@ int main(int argc, char** argv) {
     const double seconds = argc > 1 ? std::atof(argv[1]) : 20.0;
     const int players = argc > 2 ? std::max(1, std::atoi(argv[2])) : 50;
     const int mobTarget = argc > 3 ? std::max(0, std::atoi(argv[3])) : 500;
+    const bool spread = argc > 4 && std::strcmp(argv[4], "spread") == 0;
 
     gPlayers = players;
+    gVeterans = spread;
+    if (spread) {
+        // The rows are seeded before the server is up, and they name petals.
+        std::string error;
+        if (!loadContent(dataDir(), error)) {
+            std::printf("content: %s\n", error.c_str());
+            return 1;
+        }
+    }
     Harness h("combat-bench", seedAccounts, dataDir(), 0);
     if (!h.ready) return 1;
 
@@ -133,7 +171,13 @@ int main(int argc, char** argv) {
         if (body == NULL_ENTITY) return 1;
         bodies.push_back(body);
         if (world.get<Transform>(body).realm == realm) {
-            world.get<Transform>(body).position = centre + rng.insideCircle(900.0);
+            if (spread) {
+                const double half = h.server.terrain().realmSize(realm) / 2.0;
+                world.get<Transform>(body).position =
+                    h.server.terrain().findOpenSpawn(rng, Vec2{half, half}, half * 0.95, realm);
+            } else {
+                world.get<Transform>(body).position = centre + rng.insideCircle(900.0);
+            }
         }
         world.get<Health>(body).invulnerableUntilMillis = std::numeric_limits<double>::infinity();
         for (int slot = 0; slot < kLoadoutActiveSlots; ++slot) {
@@ -172,7 +216,7 @@ int main(int argc, char** argv) {
     for (int i = 0; i < ticks; ++i) {
         // Top the mobs up around the crowd, a console line at a time: the
         // console takes one line per tick.
-        if (i % 2 == 0 && countMobs() < mobTarget) {
+        if (!spread && i % 2 == 0 && countMobs() < mobTarget) {
             const Vec2 at = centre + rng.insideCircle(1600.0);
             admin.sendChat(std::string("/admin spawn ") + kMobs[rng.below(std::size(kMobs))] + " " +
                            kMobRarities[rng.below(std::size(kMobRarities))] + " " +
@@ -221,7 +265,13 @@ int main(int argc, char** argv) {
     const double n = std::max<double>(1.0, static_cast<double>(tickCost.size()));
     double tickSum = 0;
     for (const double t : tickCost) tickSum += t;
-    std::printf("players=%d seconds=%.0f mob target=%d\n", players, seconds, mobTarget);
+    std::size_t mobsInWorld = 0;
+    {
+        Query<MobTag> mobs{world};
+        mobs.each([&](Entity, MobTag&) { ++mobsInWorld; });
+    }
+    std::printf("players=%d seconds=%.0f mob target=%d %s; mobs in the world at the end: %zu\n",
+                players, seconds, mobTarget, spread ? "spread" : "crowd", mobsInWorld);
     std::printf("shots in the air: peak %zu, mean %.0f; mobs around the crowd: mean %.0f\n",
                 peakShots, static_cast<double>(shotSum) / n,
                 mobSum / std::max(1.0, n / 30.0));

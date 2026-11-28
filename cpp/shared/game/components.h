@@ -1854,4 +1854,15 @@ inline bool isStanding(const World& world, Entity e) {
     return health == nullptr || health->alive();
 }
 
+/// Whether `e` belongs to a Trial Grounds chamber: tagged as one of its
+/// mobs, or simply standing in a trial realm. The realm half is what catches
+/// what a chamber mob makes of itself -- a pharaoh beetle's summons, a
+/// divider's pieces -- which never went through spawnTrialWave. Nothing in a
+/// trial pays out loot, XP or kills; only the floor reward does.
+inline bool inTrialGrounds(const World& world, Entity e) {
+    if (world.has<TrialMob>(e)) return true;
+    const Transform* at = world.tryGet<Transform>(e);
+    return at != nullptr && isTrialRealm(at->realm);
+}
+
 } // namespace flix

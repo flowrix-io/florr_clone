@@ -733,6 +733,10 @@ EM_JS(int, flix_ch_listen,
     channel.path = (request.url || "/").split("?")[0].slice(0, 200);
     channel.state = 1;
     channel.sender = (bytes) => socket.write(encode(0x2, bytes));
+    // encode() copies the payload into the frame it allocates before it
+    // returns, so this sender keeps nothing of what it is handed: flix_ch_send
+    // can give it a view straight into the heap and skip a copy of its own.
+    channel.copiesPayload = true;
     // What Node is holding and has not handed to the kernel: the same question
     // bufferedAmount answers in the page, and the backpressure signal
     // writeAvailable() stops feeding.
@@ -1050,9 +1054,13 @@ EM_JS(int, flix_ch_send, (int id, const char* data, int size), {
   const channel = Module.flixNet.get(id);
   if (!channel || channel.listener || channel.state !== 1 || !channel.sender) return 0;
   try {
-    // Copied out of the heap, not a view into it: the transport keeps the
-    // bytes past this call and the heap can move under it when memory grows.
-    channel.sender(HEAPU8.slice(data, data + size));
+    // Most transports keep the bytes past this call, and the heap can move
+    // under them when memory grows, so they are handed a copy. A server-side
+    // WebSocket copies them into its frame before it returns
+    // (copiesPayload): a view is enough there, and the frame is the only
+    // copy made -- copying twice was twice the work for every byte sent.
+    const view = HEAPU8.subarray(data, data + size);
+    channel.sender(channel.copiesPayload ? view : view.slice());
     return 1;
   } catch (e) {
     Module.flixNet.fail(channel, e);

@@ -412,6 +412,24 @@ public:
             thaw(it->first, it->second);
             return &it->second.value;
         }
+        /// findKeepingParts for a change the CALLER puts in the journal, as a
+        /// patch on the row rather than the whole row (Database::RowPatch):
+        /// the text is dropped and the version moves, so a save and a copy
+        /// both see it, but the row is not listed for takeTouched.
+        T* findPatching(const std::string& key) {
+            auto it = byKey_.find(key);
+            if (it == byKey_.end()) return nullptr;
+            thaw(it->first, it->second);
+            it->second.cached = false;
+            ++it->second.version;
+            ++edits_;
+            return &it->second.value;
+        }
+        /// Whether the row is listed for the next takeTouched.
+        bool isTouched(const std::string& key) const {
+            auto it = byKey_.find(key);
+            return it != byKey_.end() && it->second.touched;
+        }
         T& insert(const std::string& key) {
             auto it = byKey_.find(key);
             if (it == byKey_.end()) {
@@ -1213,6 +1231,42 @@ private:
 
     /// Unmodelled tables changed since the journal last wrote, in order.
     std::vector<std::string> touchedTop_;
+
+    /// What the journal writes for a progress row that only changed in the
+    /// ways a farming flower's does on almost every tick -- its XP and stars,
+    /// a kill count, the stack it just picked up -- in place of the whole
+    /// row. A veteran's row is tens of kilobytes, and writing all of it each
+    /// time was most of what the journal cost, and what filled it to
+    /// kJournalSaveBytes (and so forced a snapshot) every few seconds.
+    ///
+    /// Each part is written as the value it has when the line is taken, not
+    /// as a delta, so a patch replayed onto a row that already has it changes
+    /// nothing. Replayed onto the row as the snapshot or an earlier line left
+    /// it, it puts exactly the same text back: anything that would change the
+    /// row's SHAPE -- a new tier in the bag, a first kill count -- is written
+    /// as the whole row instead (Database::patchRow).
+    struct RowPatch {
+        /// totalXP, mazeTotalXP and stars.
+        bool progress = false;
+        /// (mob, tier) pairs whose kill count changed, once each.
+        std::vector<std::pair<std::string, std::string>> kills;
+        /// Stored-inventory tiers that changed, once each: written whole, as
+        /// the row's text has them (the worn petals added back).
+        std::vector<std::string> tiers;
+    };
+    /// Pending patches by user id, and the order they were first made in,
+    /// which is the order a line writes them in.
+    std::unordered_map<std::string, RowPatch> patches_;
+    std::vector<std::string> patchOrder_;
+    /// The row to change in place, with `patch` set to what to note the
+    /// change in -- or null when the change must reach the journal as the
+    /// whole row: on a replica, whose rows travel whole, or for a row already
+    /// waiting to be written whole. Null with no row at all.
+    PlayerRecord* patchRow(const std::string& userId, RowPatch*& patch);
+    /// Appends the pending patches to `line` as a `"patch"` section and
+    /// forgets them. Rows that are written whole in the same line, or that
+    /// no longer exist, are skipped.
+    void takePatches(std::string& line, bool& any);
 
     /// The id the snapshot on disk names its journal by; empty for a file no
     /// journalling build has saved yet.

@@ -590,9 +590,13 @@ void GameServer::abandonTrial(Session& session) {
 }
 
 void GameServer::clearTrialMobs(TrialRun& trial) {
+    // Every wild mob in the chamber, not only the TrialMob roster: what the
+    // roster made of itself -- a pharaoh beetle's mummies -- goes with it.
+    // A flower's own pets stay with the flower.
     std::vector<Entity> remove;
-    Query<TrialMob> mobs{world_};
-    mobs.each([&](Entity entity, TrialMob&) {
+    Query<MobTag> mobs{world_};
+    mobs.without<Pet>();
+    mobs.each([&](Entity entity, MobTag&) {
         const Transform* at = world_.tryGet<Transform>(entity);
         if (at != nullptr && at->realm == trial.realm) remove.push_back(entity);
     });

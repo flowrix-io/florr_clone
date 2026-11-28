@@ -394,6 +394,13 @@ struct Session {
     /// overworld's with no body. The maze shifts the ring and has a track of
     /// its own, so the Profile and the bar are read through this.
     Realm accountRealm() const { return playing() ? realm : Realm::Overworld; }
+    /// Whether the account is on a Trial Grounds run: picked from the floor
+    /// picker, standing in a trial realm, or (on the gateway) reported in one
+    /// by the server its body is on. Its bag is read-only until it leaves.
+    bool inTrial() const {
+        return trialFloor > 0 || (playing() && isTrialRealm(realm)) ||
+               (elsewhere.state.playing && isTrialRealm(elsewhere.state.realm));
+    }
     /// Whether a splitter has given this connection a second body.
     bool split() const { return splitOther != NULL_ENTITY; }
     /// Whether `body` is one of this session's own -- either half.

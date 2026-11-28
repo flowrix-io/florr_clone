@@ -742,6 +742,7 @@ bool SpawnSystem::divideMob(World& world, const Terrain& terrain, const ContentR
         timer != nullptr ? std::optional<Lifetime>(*timer) : std::nullopt;
     const bool keepAwake = world.has<KeepAwake>(mob);
     const bool quiet = world.has<QuietBoss>(mob);
+    const bool trial = world.has<TrialMob>(mob);
 
     std::vector<Entity> bodies{mob};
     for (int i = 1; i < pieces; ++i) {
@@ -800,6 +801,9 @@ bool SpawnSystem::divideMob(World& world, const Terrain& terrain, const ContentR
         if (keepAwake) world.add<KeepAwake>(piece);
         // Pieces of a super that came in silently go out silently.
         if (quiet) world.add<QuietBoss>(piece);
+        // Pieces of a chamber mob are the chamber's: the wave is not clear
+        // until every one is down, and none of them pays out.
+        if (trial) world.add<TrialMob>(piece);
         if (tether) {
             world.add<HoleTether>(piece, *tether);
             // A nest falls with the last of its brood, this piece included.

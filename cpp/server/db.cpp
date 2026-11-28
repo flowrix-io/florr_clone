@@ -379,6 +379,26 @@ Json playerTree(const PlayerRecord& record, bool placeholders) {
 
 Json playerToJson(const PlayerRecord& record) { return playerTree(record, false); }
 
+/// One tier of the stored inventory as its text: the bag's tier, with the worn
+/// petals of that tier added back when any are worn. `worn` is whether any
+/// are, which the caller has usually found out already.
+std::string renderStoredTier(const PlayerRecord& record, const std::string& tier, bool worn) {
+    std::string text;
+    if (!worn) {
+        record.inventory[tier].dumpTo(text, 0, 0);
+        return text;
+    }
+    PlayerRecord stored;
+    stored.inventory = Json::object();
+    if (record.inventory.contains(tier)) stored.inventory[tier] = record.inventory[tier];
+    for (const std::optional<StoredItem>& slot : record.loadout) {
+        if (!slot || slot->petalType.empty() || raritySaveKey(slot->rarity) != tier) continue;
+        stored.addItem(slot->rarity, "petal_" + slot->petalType, 1);
+    }
+    std::as_const(stored.inventory)[tier].dumpTo(text, 0, 0);
+    return text;
+}
+
 /// The stored inventory (the bag with every worn petal added back, exactly as
 /// playerToJson builds it) written straight to `out`. Only the rarity tiers a
 /// worn petal lands in are copied; the rest are dumped where they stand.
@@ -396,20 +416,8 @@ void writeStoredInventory(const PlayerRecord& record, std::string& out,
         // tiers in the bag's order, then the ones only a worn petal names.
         const auto tierText = [&](const std::string& tier) -> const std::string& {
             if (const std::string* kept = cache->tier(tier)) return *kept;
-            std::string text;
-            if (std::find(tiers.begin(), tiers.end(), tier) == tiers.end()) {
-                record.inventory[tier].dumpTo(text, 0, 0);
-            } else {
-                PlayerRecord stored;
-                stored.inventory = Json::object();
-                if (record.inventory.contains(tier)) stored.inventory[tier] = record.inventory[tier];
-                for (const std::optional<StoredItem>& slot : record.loadout) {
-                    if (!slot || slot->petalType.empty() || raritySaveKey(slot->rarity) != tier) continue;
-                    stored.addItem(slot->rarity, "petal_" + slot->petalType, 1);
-                }
-                std::as_const(stored.inventory)[tier].dumpTo(text, 0, 0);
-            }
-            cache->tiers.emplace_back(tier, std::move(text));
+            const bool worn = std::find(tiers.begin(), tiers.end(), tier) != tiers.end();
+            cache->tiers.emplace_back(tier, renderStoredTier(record, tier, worn));
             return cache->tiers.back().second;
         };
         char separator = '{';
@@ -786,6 +794,8 @@ void Database::reset() {
     journalLinesReplayed_ = 0;
     journalNote_.clear();
     journalBacklog_.clear();
+    patches_.clear();
+    patchOrder_.clear();
     users_.clear();
     players_.clear();
     sessions_.clear();
@@ -1029,6 +1039,8 @@ bool Database::load(const std::string& path, std::string& errorOut) {
     players_.forgetTouched();
     users_.forgetTouched();
     sessions_.forgetTouched();
+    patches_.clear();
+    patchOrder_.clear();
     touchedTop_.clear();
     // Replayed lines are newer than the file: the next save has to happen.
     if (journalLinesReplayed_ > 0) dirty_ = true;
@@ -1554,6 +1566,40 @@ void applyJournalLine(Json& root, Json& line) {
             else table[key] = std::move(row);
         }
     }
+    // Patches on rows the snapshot or an earlier line holds whole (see
+    // Database::RowPatch). A row that is not there has nothing to patch: a
+    // patch is only ever written for a row that was written whole first.
+    if (line.contains("patch") && line["patch"].isObject() && root.contains("players") &&
+        root["players"].isObject()) {
+        Json& patches = line["patch"];
+        Json& players = root["players"];
+        for (const std::string& key : patches.keys()) {
+            Json& patch = patches[key];
+            if (!patch.isObject() || !players.contains(key)) continue;
+            Json& row = players[key];
+            if (!row.isObject()) continue;
+            for (const char* field : {"totalXP", "mazeTotalXP", "stars"}) {
+                if (patch.contains(field)) row[field] = std::move(patch[field]);
+            }
+            // The same assignments the record made, in the same order, so the
+            // kill counts come back in the order they are kept in.
+            if (patch.contains("kills") && patch["kills"].isArray()) {
+                for (Json& kill : patch["kills"].items()) {
+                    if (!kill.isArray() || kill.size() != 3 || !kill[0].isString() ||
+                        !kill[1].isString()) {
+                        continue;
+                    }
+                    row["mobKills"][kill[0].asString()][kill[1].asString()] = std::move(kill[2]);
+                }
+            }
+            if (patch.contains("tiers") && patch["tiers"].isObject()) {
+                Json& tiers = patch["tiers"];
+                for (const std::string& tier : tiers.keys()) {
+                    row["inventory"][tier] = std::move(tiers[tier]);
+                }
+            }
+        }
+    }
     if (line.contains("tables") && line["tables"].isObject()) {
         Json& tables = line["tables"];
         for (const std::string& key : tables.keys()) {
@@ -1779,7 +1825,7 @@ bool Database::appendJournal(const std::string& text) {
 
 bool Database::journalPending() const {
     return players_.anyTouched() || users_.anyTouched() || sessions_.anyTouched() ||
-           !touchedTop_.empty() || !journalBacklog_.empty();
+           !patchOrder_.empty() || !touchedTop_.empty() || !journalBacklog_.empty();
 }
 
 bool Database::flushJournal() {
@@ -1790,6 +1836,8 @@ bool Database::flushJournal() {
         players_.forgetTouched();
         users_.forgetTouched();
         sessions_.forgetTouched();
+        patches_.clear();
+        patchOrder_.clear();
         touchedTop_.clear();
         return false;
     }
@@ -1815,6 +1863,9 @@ bool Database::flushJournal() {
         for (const std::string& key : sessions_.touchedKeys()) onRowWritten(Part::Sessions, key);
         for (const std::string& key : touchedTop_) onRowWritten(Part::Tables, key);
     }
+    // Before the rows written whole, while they are still marked as such:
+    // those carry everything their patches would.
+    takePatches(line, any);
     section("players", players_, playerToText);
     if (onAccountWritten && users_.anyTouched()) {
         for (const std::string& key : users_.touchedKeys()) onAccountWritten(key);
@@ -2842,32 +2893,163 @@ PlayerRecord& Database::progress(const std::string& userId) {
     return record;
 }
 
+PlayerRecord* Database::patchRow(const std::string& userId, RowPatch*& patch) {
+    patch = nullptr;
+    if (replica_ || players_.isTouched(userId)) return players_.findKeepingParts(userId);
+    if (const PlayerRecord* row = std::as_const(players_).find(userId)) {
+        // playerToText writes such a row from its tree, where an unknown key
+        // of the same name takes the place of the real one: no part of it is
+        // where a patch would put it.
+        if (row->extra.isObject() &&
+            (row->extra.contains("inventory") || row->extra.contains("mobKills"))) {
+            return players_.findKeepingParts(userId);
+        }
+    }
+    PlayerRecord* record = players_.findPatching(userId);
+    if (record == nullptr) return nullptr;
+    auto [it, fresh] = patches_.try_emplace(userId);
+    if (fresh) patchOrder_.push_back(userId);
+    patch = &it->second;
+    return record;
+}
+
+void Database::takePatches(std::string& line, bool& any) {
+    if (patchOrder_.empty()) return;
+    bool opened = false;
+    for (const std::string& key : patchOrder_) {
+        auto found = patches_.find(key);
+        if (found == patches_.end()) continue;
+        // Gone, or written whole in this very line.
+        if (players_.isTouched(key)) continue;
+        const PlayerRecord* record = std::as_const(players_).find(key);
+        if (record == nullptr) continue;
+        const RowPatch& patch = found->second;
+        if (onRowWritten) onRowWritten(Part::Players, key);
+
+        line += opened ? "," : (any ? ",\"patch\":{" : "\"patch\":{");
+        opened = true;
+        any = true;
+        jsonEscapeTo(line, key);
+        line += ':';
+        char separator = '{';
+        const auto field = [&](const char* name) {
+            line += separator;
+            separator = ',';
+            line += '"';
+            line += name;
+            line += "\":";
+        };
+        if (patch.progress) {
+            field("totalXP");
+            Json(record->totalXp).dumpTo(line, 0, 0);
+            field("mazeTotalXP");
+            Json(record->mazeTotalXp).dumpTo(line, 0, 0);
+            field("stars");
+            Json(record->stars).dumpTo(line, 0, 0);
+        }
+        if (!patch.kills.empty()) {
+            field("kills");
+            char inner = '[';
+            for (const auto& [mob, tier] : patch.kills) {
+                line += inner;
+                inner = ',';
+                line += '[';
+                jsonEscapeTo(line, mob);
+                line += ',';
+                jsonEscapeTo(line, tier);
+                line += ',';
+                record->mobKills[mob][tier].dumpTo(line, 0, 0);
+                line += ']';
+            }
+            line += ']';
+        }
+        if (!patch.tiers.empty()) {
+            field("tiers");
+            PlayerRecord::RenderedParts& parts = record->rendered;
+            char inner = '{';
+            for (const std::string& tier : patch.tiers) {
+                line += inner;
+                inner = ',';
+                jsonEscapeTo(line, tier);
+                line += ':';
+                if (const std::string* kept = parts.keep ? parts.tier(tier) : nullptr) {
+                    line += *kept;
+                    continue;
+                }
+                bool worn = false;
+                for (const std::optional<StoredItem>& slot : record->loadout) {
+                    if (slot && !slot->petalType.empty() && raritySaveKey(slot->rarity) == tier) {
+                        worn = true;
+                        break;
+                    }
+                }
+                std::string text = renderStoredTier(*record, tier, worn);
+                line += text;
+                // What the row's next whole text splices in, too.
+                if (parts.keep) parts.tiers.emplace_back(tier, std::move(text));
+            }
+            line += '}';
+        }
+        // A patch with nothing in it still names the row, as an empty object.
+        if (separator == '{') line += '{';
+        line += '}';
+    }
+    if (opened) line += '}';
+    patches_.clear();
+    patchOrder_.clear();
+}
+
 PlayerRecord& Database::recordKill(const std::string& userId, const std::string& mobType,
                                    Rarity rarity) {
-    PlayerRecord* record = players_.findKeepingParts(userId);
+    RowPatch* patch = nullptr;
+    PlayerRecord* record = patchRow(userId, patch);
     if (record == nullptr) record = &progress(userId);
     record->rendered.forgetMobKills();
     record->recordKill(mobType, rarity);
+    if (patch != nullptr) {
+        // The assignment the replay repeats: mobKills[mob][tier] = count.
+        std::pair<std::string, std::string> kill{mobType, raritySaveKey(rarity)};
+        if (std::find(patch->kills.begin(), patch->kills.end(), kill) == patch->kills.end()) {
+            patch->kills.push_back(std::move(kill));
+        }
+    }
     markDirty();
     return *record;
 }
 
 void Database::addItem(const std::string& userId, Rarity rarity, const std::string& itemType,
                        int delta) {
-    PlayerRecord* record = players_.findKeepingParts(userId);
+    RowPatch* patch = nullptr;
+    PlayerRecord* record = patchRow(userId, patch);
     if (record == nullptr) record = &progress(userId);
-    record->rendered.forgetTier(raritySaveKey(rarity));
+    const std::string tier = raritySaveKey(rarity);
+    const bool had = record->inventory.isObject() && record->inventory.contains(tier);
+    record->rendered.forgetTier(tier);
     record->addItem(rarity, itemType, delta);
+    if (patch != nullptr) {
+        const bool has = record->inventory.isObject() && record->inventory.contains(tier);
+        if (had && has) {
+            if (std::find(patch->tiers.begin(), patch->tiers.end(), tier) == patch->tiers.end()) {
+                patch->tiers.push_back(tier);
+            }
+        } else {
+            // A tier the bag gained or lost moves the others in the row's
+            // text, which a patch on one tier cannot say: the whole row.
+            players_.findKeepingParts(userId);
+        }
+    }
     markDirty();
 }
 
 void Database::setLiveProgress(const std::string& userId, bool maze, double totalXp, double stars) {
-    PlayerRecord* record = players_.findKeepingParts(userId);
+    RowPatch* patch = nullptr;
+    PlayerRecord* record = patchRow(userId, patch);
     if (record == nullptr) record = &progress(userId);
     record->rendered.keep = true;
     if (maze) record->mazeTotalXp = totalXp;
     else record->totalXp = totalXp;
     record->stars = stars;
+    if (patch != nullptr) patch->progress = true;
     markDirty();
 }
 

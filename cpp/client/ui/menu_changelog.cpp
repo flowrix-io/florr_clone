@@ -731,7 +731,8 @@ constexpr ChangelogEntry kChangelog[] = {
         "Rainbow petal causes less lag",
         "Hidden Super spawn/kill messages no longer push other chat messages away",
         "Fixed Air and Splitter pushing you through sewer walls",
-        "Cactus now gives 3x more extra health"
+        "Cactus now gives 3x more extra health",
+        "You can now hide your profile in the Account menu"
       }
     },
 };

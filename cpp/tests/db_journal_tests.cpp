@@ -631,6 +631,128 @@ TEST(live_xp_rewrites_a_row_from_its_kept_parts_and_any_other_change_drops_them)
     CHECK_EQ(reloaded.progressText(id), db.progressText(id));
 }
 
+TEST(a_farming_flowers_journal_lines_are_patches_and_replay_to_the_same_row) {
+    // XP, a kill and a pickup are what a farming flower's row does on most
+    // ticks. Each used to put the whole row -- tens of kilobytes for a
+    // veteran -- into the journal; they go in as patches on it now, and a
+    // reload has to come back with exactly the row that was in memory.
+    Database db;
+    const std::string path = seededDatabase("patches", db);
+    const std::string id = "p-veteran";
+    {
+        PlayerRecord& record = db.progress(id);
+        for (int i = 0; i < 600; ++i) {
+            record.addItem(static_cast<Rarity>(i % 6), "petal_filler" + std::to_string(i), 1 + i);
+            record.recordKill("mob" + std::to_string(i % 40), static_cast<Rarity>(i % 5));
+        }
+        StoredItem worn;
+        worn.rarity = Rarity::Rare;
+        worn.petalType = "rose";
+        record.loadout.push_back(worn);
+        worn.rarity = Rarity::Eternal;   // a tier only the loadout names
+        worn.petalType = "stinger";
+        record.loadout.push_back(worn);
+    }
+    CHECK(db.save());
+    // Made through progress(), so it is still waiting to be written whole.
+    CHECK(db.flushJournal());
+    const std::uint64_t wholeRow = db.progressText(id).size();
+    CHECK(wholeRow > 12000);
+
+    std::uint64_t biggestPatchLine = 0;
+    const auto tick = [&](const std::function<void()>& change) {
+        const std::uint64_t before = db.journalBytes();
+        change();
+        CHECK(db.flushJournal());
+        biggestPatchLine = std::max(biggestPatchLine, db.journalBytes() - before);
+    };
+    tick([&] { db.setLiveProgress(id, false, 500, 1); });
+    tick([&] {
+        db.setLiveProgress(id, false, 520, 1);
+        db.recordKill(id, "mob3", Rarity::Rare);   // a count it already has
+        db.recordKill(id, "mob3", Rarity::Rare);
+    });
+    tick([&] { db.recordKill(id, "mob7", Rarity::Mythic); });   // a new tier of an old mob
+    tick([&] { db.recordKill(id, "brand_new", Rarity::Common); });   // a mob never killed
+    tick([&] { db.addItem(id, Rarity::Common, "petal_filler0", 5); });   // a stack it holds
+    tick([&] { db.addItem(id, Rarity::Rare, "petal_rose", 1); });   // the worn tier
+    tick([&] { db.addItem(id, Rarity::Uncommon, "petal_new", 1); });   // a new stack, old tier
+    tick([&] { db.setLiveProgress(id, true, 77, 2); });   // the maze track
+    CHECK(biggestPatchLine < wholeRow / 4);
+
+    // What changes the row's shape goes in whole, and still comes back.
+    tick([&] { db.addItem(id, Rarity::Eternal, "petal_stinger", 1); });   // the worn-only tier
+    tick([&] { db.addItem(id, Rarity::Super, "petal_fresh", 1); });   // a tier the bag lacked
+    tick([&] { db.addItem(id, Rarity::Common, "petal_filler0", -1000); });   // a stack emptied
+    // A patch after a whole row in the same line, and a whole row after a
+    // patch in the same line.
+    tick([&] {
+        db.progress(id).skills.clear();
+        db.setLiveProgress(id, false, 600, 3);
+    });
+    tick([&] {
+        db.recordKill(id, "mob1", Rarity::Common);
+        db.progress(id).equippedSkinId = "a-skin";
+    });
+    // And patches written over a snapshot taken between them.
+    tick([&] { db.recordKill(id, "mob9", Rarity::Common); });
+    CHECK(db.save());
+    tick([&] {
+        db.setLiveProgress(id, false, 700, 4);
+        db.addItem(id, Rarity::Epic, "petal_filler3", 2);
+        db.recordKill(id, "mob9", Rarity::Common);
+    });
+    CHECK(!db.journalPending());
+
+    const auto fresh = [&] {
+        PlayerRecord copy = *std::as_const(db).findProgress(id);
+        return playerRecordJson(copy).dump(0);
+    };
+    CHECK_EQ(db.progressText(id), fresh());
+    const std::string copy = journalScratch("patches-copy");
+    copyAsKilled(path, copy);
+    Database reloaded;
+    std::string error;
+    CHECK(reloaded.load(copy, error));
+    CHECK(reloaded.journalLinesReplayed() > 0);
+    CHECK_EQ(reloaded.progressText(id), db.progressText(id));
+    const PlayerRecord* back = std::as_const(reloaded).findProgress(id);
+    CHECK(back != nullptr);
+    if (back == nullptr) return;
+    CHECK_EQ(back->totalXp, 700.0);
+    CHECK_EQ(back->mazeTotalXp, 77.0);
+    CHECK_EQ(back->stars, 4.0);
+    CHECK_EQ(back->killCount("mob3", Rarity::Rare), std::as_const(db).findProgress(id)->killCount("mob3", Rarity::Rare));
+    CHECK_EQ(back->killCount("brand_new", Rarity::Common), 1);
+    CHECK_EQ(back->equippedSkinId, std::string("a-skin"));
+}
+
+TEST(a_patched_row_is_still_written_by_the_next_save) {
+    // A patch leaves the row off the journal's list of whole rows; the save
+    // must still see that it changed, or the snapshot keeps the old figures
+    // and only the journal -- which that save then retires -- has the new.
+    Database db;
+    const std::string path = seededDatabase("patch-save", db);
+    const std::string id = "p-saved";
+    db.progress(id).addItem(Rarity::Common, "petal_basic", 3);
+    CHECK(db.save());
+    db.setLiveProgress(id, false, 4242, 0);
+    db.recordKill(id, "bee", Rarity::Common);
+    db.addItem(id, Rarity::Common, "petal_basic", 1);
+    CHECK(db.flushJournal());
+    CHECK(db.save());
+    Database reloaded;
+    std::string error;
+    CHECK(reloaded.load(path, error));
+    CHECK_EQ(reloaded.journalLinesReplayed(), 0);
+    const PlayerRecord* back = std::as_const(reloaded).findProgress(id);
+    CHECK(back != nullptr);
+    if (back == nullptr) return;
+    CHECK_EQ(back->totalXp, 4242.0);
+    CHECK_EQ(back->killCount("bee", Rarity::Common), 1);
+    CHECK_EQ(back->itemCount(Rarity::Common, "petal_basic"), 4);
+}
+
 TEST(a_backup_restored_after_a_clean_stop_replaces_the_empty_journal_quietly) {
     // A clean stop saves, which leaves the journal a header and nothing else.
     // Restoring a backup over the file then is the documented procedure, and
