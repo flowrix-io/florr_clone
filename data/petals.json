@@ -2286,7 +2286,7 @@
         "isAdminPetal": false
     },
     "prism_mirror": {
-        "name": "Prism Mirror Petal",
+        "name": "Prism Mirror",
         "damage": 0,
         "health": null,
         "size": 1.25,
