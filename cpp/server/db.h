@@ -1251,8 +1251,15 @@ private:
         /// (mob, tier) pairs whose kill count changed, once each.
         std::vector<std::pair<std::string, std::string>> kills;
         /// Stored-inventory tiers that changed, once each: written whole, as
-        /// the row's text has them (the worn petals added back).
+        /// the row's text has them (the worn petals added back). For a stack
+        /// that came or went, which moves the rest of its tier's text.
         std::vector<std::string> tiers;
+        /// (tier, item) stacks whose count changed and that the bag held
+        /// before and after, once each, in no tier `tiers` names: each is
+        /// written alone, as its count stands in the row's text. A pickup
+        /// onto a stack the flower already has -- nearly every one -- is a
+        /// few dozen bytes this way, where its tier was kilobytes.
+        std::vector<std::pair<std::string, std::string>> items;
     };
     /// Pending patches by user id, and the order they were first made in,
     /// which is the order a line writes them in.

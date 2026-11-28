@@ -399,6 +399,33 @@ std::string renderStoredTier(const PlayerRecord& record, const std::string& tier
     return text;
 }
 
+/// One stack of the stored inventory, as renderStoredTier() writes it inside
+/// its tier: the bag's own value when nothing worn is of it, and otherwise
+/// the count with each worn one added back as that does, one at a time. For
+/// a stack the bag holds.
+void writeStoredStack(const PlayerRecord& record, const std::string& tier,
+                      const std::string& item, std::string& out) {
+    const Json& held = std::as_const(record.inventory)[tier][item];
+    PlayerRecord stored;
+    bool worn = false;
+    for (const std::optional<StoredItem>& slot : record.loadout) {
+        if (!slot || slot->petalType.empty() || raritySaveKey(slot->rarity) != tier) continue;
+        if ("petal_" + slot->petalType != item) continue;
+        if (!worn) {
+            stored.inventory = Json::object();
+            stored.inventory[tier] = Json::object();
+            stored.inventory[tier][item] = held;
+            worn = true;
+        }
+        stored.addItem(slot->rarity, item, 1);
+    }
+    if (!worn) {
+        held.dumpTo(out, 0, 0);
+        return;
+    }
+    std::as_const(stored.inventory)[tier][item].dumpTo(out, 0, 0);
+}
+
 /// The stored inventory (the bag with every worn petal added back, exactly as
 /// playerToJson builds it) written straight to `out`. Only the rarity tiers a
 /// worn petal lands in are copied; the rest are dumped where they stand.
@@ -1596,6 +1623,18 @@ void applyJournalLine(Json& root, Json& line) {
                 Json& tiers = patch["tiers"];
                 for (const std::string& tier : tiers.keys()) {
                     row["inventory"][tier] = std::move(tiers[tier]);
+                }
+            }
+            // Stacks the row already has, each in its place.
+            if (patch.contains("items") && patch["items"].isArray()) {
+                for (Json& item : patch["items"].items()) {
+                    if (!item.isArray() || item.size() != 3 || !item[0].isString() ||
+                        !item[1].isString()) {
+                        continue;
+                    }
+                    Json& tier = row["inventory"][item[0].asString()];
+                    if (!tier.isObject()) continue;
+                    tier[item[1].asString()] = std::move(item[2]);
                 }
             }
         }
@@ -2990,6 +3029,22 @@ void Database::takePatches(std::string& line, bool& any) {
             }
             line += '}';
         }
+        if (!patch.items.empty()) {
+            field("items");
+            char inner = '[';
+            for (const auto& [tier, item] : patch.items) {
+                line += inner;
+                inner = ',';
+                line += '[';
+                jsonEscapeTo(line, tier);
+                line += ',';
+                jsonEscapeTo(line, item);
+                line += ',';
+                writeStoredStack(*record, tier, item, line);
+                line += ']';
+            }
+            line += ']';
+        }
         // A patch with nothing in it still names the row, as an empty object.
         if (separator == '{') line += '{';
         line += '}';
@@ -3023,15 +3078,33 @@ void Database::addItem(const std::string& userId, Rarity rarity, const std::stri
     PlayerRecord* record = patchRow(userId, patch);
     if (record == nullptr) record = &progress(userId);
     const std::string tier = raritySaveKey(rarity);
+    const auto holds = [&] {
+        if (!record->inventory.isObject() || !record->inventory.contains(tier)) return false;
+        const Json& bucket = std::as_const(record->inventory)[tier];
+        return bucket.isObject() && bucket.contains(itemType);
+    };
     const bool had = record->inventory.isObject() && record->inventory.contains(tier);
+    const bool hadStack = holds();
     record->rendered.forgetTier(tier);
     record->addItem(rarity, itemType, delta);
     if (patch != nullptr) {
         const bool has = record->inventory.isObject() && record->inventory.contains(tier);
-        if (had && has) {
-            if (std::find(patch->tiers.begin(), patch->tiers.end(), tier) == patch->tiers.end()) {
-                patch->tiers.push_back(tier);
+        const bool wholeTier =
+            std::find(patch->tiers.begin(), patch->tiers.end(), tier) != patch->tiers.end();
+        if (had && has && hadStack && holds()) {
+            // The same stack in the same place in its tier's text: its count.
+            const std::pair<std::string, std::string> item{tier, itemType};
+            if (!wholeTier &&
+                std::find(patch->items.begin(), patch->items.end(), item) == patch->items.end()) {
+                patch->items.push_back(item);
             }
+        } else if (had && has) {
+            // A stack came or went: the tier, whole, which says it for any
+            // stack of it noted alone before.
+            if (!wholeTier) patch->tiers.push_back(tier);
+            patch->items.erase(std::remove_if(patch->items.begin(), patch->items.end(),
+                                              [&](const auto& item) { return item.first == tier; }),
+                               patch->items.end());
         } else {
             // A tier the bag gained or lost moves the others in the row's
             // text, which a patch on one tier cannot say: the whole row.

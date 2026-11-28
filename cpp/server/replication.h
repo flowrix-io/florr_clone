@@ -432,8 +432,9 @@ public:
 
     /// One snapshot in this many carries the far band. Staggered by net id, so
     /// the band's cost is spread evenly over the snapshots rather than landing
-    /// on every sixth one as a spike.
-    int farSnapshotStride = 6;
+    /// on every fourth one as a spike. Four at 20 snapshots a second is the
+    /// far band at 5 Hz.
+    int farSnapshotStride = 4;
 
     /// Ceiling on entities in one snapshot.
     ///

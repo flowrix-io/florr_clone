@@ -521,8 +521,8 @@ bool WorldView::applySnapshot(ByteReader& reader, double arrivedMillis) {
     // drawn in a single frame. Absent means "where you last had it", which is
     // exactly what the server's diff believes the client holds.
     //
-    // The far band (Replicator::farSnapshotStride) is absent five snapshots
-    // in six too, and is held the same way, so it is drawn stepping. That
+    // The far band (Replicator::farSnapshotStride) is absent three snapshots
+    // in four too, and is held the same way, so it is drawn stepping. That
     // band starts a quarter screen past the drawn edge, measured from the
     // body's edge, so a mob crossing into the near box is at full rate long
     // before any of it is seen.

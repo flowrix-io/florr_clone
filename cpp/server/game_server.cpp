@@ -637,6 +637,11 @@ bool GameServer::step() {
         if (tickNow >= nextDebugStatsMillis_) {
             broadcastDebugStats();
             nextDebugStatsMillis_ = tickNow + 1000.0;
+            if (tickNow >= nextTickReportMillis_) {
+                // The first window, start-up and all, is dropped unreported.
+                reportTickPhases(nextTickReportMillis_ > 0);
+                nextTickReportMillis_ = tickNow + kTickReportMillis;
+            }
             if (!slowTickLine_.empty()) {
                 std::printf("%s\n", slowTickLine_.c_str());
                 std::fflush(stdout);
@@ -735,27 +740,73 @@ void GameServer::foldTickPhases(double tookMillis) {
         if (took > total.maxMillis) total.maxMillis = took;
         ++total.runs;
     };
-    // Where the next phase not seen before goes: straight after the one this
-    // tick ran before it.
-    std::size_t insertAt = 0;
-    double from = tickStartedMillis_;
-    for (std::size_t i = 0; i < tickPhaseCount_; ++i) {
-        const TickPhase& phase = tickPhases_[i];
-        std::size_t at = 0;
-        while (at < tickPhaseTotals_.size() && tickPhaseTotals_[at].name != phase.name &&
-               std::strcmp(tickPhaseTotals_[at].name, phase.name) != 0) {
-            ++at;
+    const auto fold = [&](std::vector<TickPhaseTotal>& totals, TickPhaseTotal& other) {
+        // Where the next phase not seen before goes: straight after the one
+        // this tick ran before it.
+        std::size_t insertAt = 0;
+        double from = tickStartedMillis_;
+        for (std::size_t i = 0; i < tickPhaseCount_; ++i) {
+            const TickPhase& phase = tickPhases_[i];
+            std::size_t at = 0;
+            while (at < totals.size() && totals[at].name != phase.name &&
+                   std::strcmp(totals[at].name, phase.name) != 0) {
+                ++at;
+            }
+            if (at == totals.size()) {
+                at = insertAt;
+                totals.insert(totals.begin() + static_cast<std::ptrdiff_t>(at),
+                              TickPhaseTotal{phase.name});
+            }
+            add(totals[at], phase.endedMillis - from);
+            from = phase.endedMillis;
+            insertAt = at + 1;
         }
-        if (at == tickPhaseTotals_.size()) {
-            at = insertAt;
-            tickPhaseTotals_.insert(tickPhaseTotals_.begin() + static_cast<std::ptrdiff_t>(at),
-                                    TickPhaseTotal{phase.name});
-        }
-        add(tickPhaseTotals_[at], phase.endedMillis - from);
-        from = phase.endedMillis;
-        insertAt = at + 1;
+        add(other, std::max(0.0, tookMillis - (from - tickStartedMillis_)));
+    };
+    fold(tickPhaseTotals_, tickOtherTotal_);
+    fold(tickReportTotals_, tickReportOther_);
+    tickReportMillis_ += tookMillis;
+    tickReportMaxMillis_ = std::max(tickReportMaxMillis_, tookMillis);
+    ++tickReportTicks_;
+}
+
+void GameServer::reportTickPhases(bool print) {
+    if (print && tickReportTicks_ > 0) {
+        const double ticks = static_cast<double>(tickReportTicks_);
+        char buffer[160];
+        std::snprintf(buffer, sizeof buffer, "[tick] last %.0f min: %d ticks, %.2f ms mean, %.1f max;",
+                      kTickReportMillis / 60000.0, tickReportTicks_, tickReportMillis_ / ticks,
+                      tickReportMaxMillis_);
+        std::string line = buffer;
+        // Per tick over every tick, so the phases add up to the mean above;
+        // the ones too cheap to matter are left out.
+        bool first = true;
+        const auto put = [&](const TickPhaseTotal& phase) {
+            const double mean = phase.totalMillis / ticks;
+            if (mean < 0.05) return;
+            std::snprintf(buffer, sizeof buffer, "%s %s %.2f", first ? "" : ",", phase.name, mean);
+            line += buffer;
+            first = false;
+        };
+        for (const TickPhaseTotal& phase : tickReportTotals_) put(phase);
+        put(tickReportOther_);
+        std::size_t mobs = Query<MobTag>{world_}.count();
+        std::size_t petals = Query<PetalInstance>{world_}.count();
+        std::size_t shots = Query<ProjectileTag>{world_}.count();
+        std::size_t flowers = Query<PlayerTag>{world_}.count();
+        std::snprintf(buffer, sizeof buffer,
+                      "; now %zu players, %zu flowers, %zu mobs, %zu petals, %zu shots, %zu "
+                      "entities, %zu bodies filed",
+                      playerCount(), flowers, mobs, petals, shots, world_.size(), grid_.size());
+        line += buffer;
+        std::printf("%s\n", line.c_str());
+        std::fflush(stdout);
     }
-    add(tickOtherTotal_, std::max(0.0, tookMillis - (from - tickStartedMillis_)));
+    for (TickPhaseTotal& phase : tickReportTotals_) phase = TickPhaseTotal{phase.name};
+    tickReportOther_ = TickPhaseTotal{tickReportOther_.name};
+    tickReportMillis_ = 0;
+    tickReportMaxMillis_ = 0;
+    tickReportTicks_ = 0;
 }
 
 void GameServer::tick(double nowMillis) {

@@ -727,6 +727,69 @@ TEST(a_farming_flowers_journal_lines_are_patches_and_replay_to_the_same_row) {
     CHECK_EQ(back->equippedSkinId, std::string("a-skin"));
 }
 
+TEST(a_pickup_onto_a_stack_it_holds_journals_that_stack_alone) {
+    // Nearly every pickup lands on a stack the flower already has. Its tier
+    // is kilobytes for a veteran; the stack's count is a few dozen bytes, and
+    // a reload has to put exactly the row back either way.
+    Database db;
+    const std::string path = seededDatabase("stacks", db);
+    const std::string id = "p-stacks";
+    {
+        PlayerRecord& record = db.progress(id);
+        for (int i = 0; i < 600; ++i) {
+            record.addItem(static_cast<Rarity>(i % 6), "petal_filler" + std::to_string(i), 1 + i);
+        }
+        record.addItem(Rarity::Rare, "petal_rose", 4);
+        StoredItem worn;
+        worn.rarity = Rarity::Rare;
+        worn.petalType = "rose";   // worn twice and held: the text adds both back
+        record.loadout.push_back(worn);
+        record.loadout.push_back(worn);
+    }
+    CHECK(db.save());
+    CHECK(db.flushJournal());
+    const auto lineFor = [&](const std::function<void()>& change) {
+        const std::uint64_t before = db.journalBytes();
+        change();
+        CHECK(db.flushJournal());
+        return db.journalBytes() - before;
+    };
+    CHECK(lineFor([&] { db.addItem(id, Rarity::Common, "petal_filler0", 3); }) < 200);
+    CHECK(lineFor([&] { db.addItem(id, Rarity::Rare, "petal_rose", 1); }) < 200);
+    CHECK(lineFor([&] {
+        db.addItem(id, Rarity::Common, "petal_filler6", 1);
+        db.addItem(id, Rarity::Common, "petal_filler6", 1);   // once in the line
+        db.addItem(id, Rarity::Uncommon, "petal_filler1", -1);
+    }) < 300);
+    // A stack that goes is its tier, whole -- and a stack of that tier noted
+    // alone in the same line goes in with it rather than beside it.
+    const std::uint64_t emptied = lineFor([&] {
+        db.addItem(id, Rarity::Common, "petal_filler12", 2);
+        db.addItem(id, Rarity::Common, "petal_filler0", -100000);
+        db.addItem(id, Rarity::Common, "petal_filler18", 2);
+    });
+    CHECK(emptied > 1000);
+    // The worn stack emptied from the bag: its worn copies stay in the text.
+    lineFor([&] { db.addItem(id, Rarity::Rare, "petal_rose", -100000); });
+    CHECK(!db.journalPending());
+
+    PlayerRecord copy = *std::as_const(db).findProgress(id);
+    CHECK_EQ(db.progressText(id), playerRecordJson(copy).dump(0));
+    const std::string scratch = journalScratch("stacks-copy");
+    copyAsKilled(path, scratch);
+    Database reloaded;
+    std::string error;
+    CHECK(reloaded.load(scratch, error));
+    CHECK(reloaded.journalLinesReplayed() >= 5);
+    CHECK_EQ(reloaded.progressText(id), db.progressText(id));
+    const PlayerRecord* back = std::as_const(reloaded).findProgress(id);
+    CHECK(back != nullptr);
+    if (back == nullptr) return;
+    CHECK_EQ(back->itemCount(Rarity::Common, "petal_filler6"), 1 + 6 + 2);
+    CHECK_EQ(back->itemCount(Rarity::Common, "petal_filler0"), 0);
+    CHECK_EQ(back->itemCount(Rarity::Common, "petal_filler18"), 1 + 18 + 2);
+}
+
 TEST(a_patched_row_is_still_written_by_the_next_save) {
     // A patch leaves the row off the journal's list of whole rows; the save
     // must still see that it changed, or the snapshot keeps the old figures

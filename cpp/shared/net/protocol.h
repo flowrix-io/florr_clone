@@ -49,25 +49,24 @@ inline constexpr std::uint32_t kMaxFrameBytes = 1u << 20;   // 1 MiB
 // so does this one. This is simulation behaviour, not a transport
 // implementation detail: contact opportunities, fixed-step mob AI and every
 // one-tick transition depend on it.
-inline constexpr int kTicksPerSecond = 30;
+inline constexpr int kTicksPerSecond = 20;
 inline constexpr double kTickSeconds = 1.0 / kTicksPerSecond;
 inline constexpr double kTickMillis = 1000.0 / kTicksPerSecond;
 
 /// How often each client is sent a snapshot.
 ///
-/// Every tick. It was 20, which a 30 Hz tick can only send one tick and then
-/// two apart: 33 and 67 ms, a 10 Hz beat under everything that moved, and a
-/// client has to run behind by the LONGER gap to glide across it. At the tick
-/// rate the gaps are even and half as long, which is what lets the motion be
-/// both steady and current (gardn sends every one of its ticks too).
-inline constexpr int kSnapshotsPerSecond = kTicksPerSecond;
+/// 20 Hz, below the 30 Hz tick, to cut what the server spends encoding and
+/// writing frames. A tick can only send on a tick, so the gaps alternate 33
+/// and 67 ms, and the client plays back behind by the longer one
+/// (kSnapshotGapMillis in client/interpolation.h). It was every tick from
+/// "new physics" (025385dc) until then: steadier motion, half again the cost.
+inline constexpr int kSnapshotsPerSecond = 20;
 inline constexpr double kSnapshotMillis = 1000.0 / kSnapshotsPerSecond;
 
-/// The most inputs a client sends a second. Twice the tick rate: the server
-/// steers by the newest one each tick finds, so sent AT the tick rate on an
-/// unrelated clock one could be a whole tick old and the next not, and a turn
-/// answered unevenly.
-inline constexpr int kInputsPerSecond = 60;
+/// The most inputs a client sends a second, matched to the snapshot rate. Below
+/// the tick rate, so one tick in three steers by the input the last one used
+/// already; the server always steers by the newest it has.
+inline constexpr int kInputsPerSecond = 20;
 
 // ---------------------------------------------------------------------------
 // Message ids

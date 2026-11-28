@@ -166,7 +166,7 @@ inline FlowerChase flowerChase(double easeTauSeconds, double playbackDelayMillis
     return {delay, tau / 1000.0};
 }
 
-/// Samples kept per entity. At 30 Hz this is half a second of history -- more
+/// Samples kept per entity. At 20 Hz this is 750 ms of history -- more
 /// than the playback delay needs, enough to ride out a burst of late packets.
 inline constexpr int kMobSampleCapacity = 15;
 

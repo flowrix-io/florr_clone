@@ -2476,6 +2476,21 @@ private:
     std::vector<TickPhaseTotal> tickPhaseTotals_;
     TickPhaseTotal tickOtherTotal_{"other"};
 
+    /// The same stamps over a few minutes, for one line in the log
+    /// (reportTickPhases): what each phase costs a tick on average, and what
+    /// the world held while it did. A production box's log is where its tick
+    /// can be read without anyone having the debug panel open, and the slow
+    /// tick lines only ever show the outliers.
+    static constexpr double kTickReportMillis = 300000.0;
+    std::vector<TickPhaseTotal> tickReportTotals_;
+    TickPhaseTotal tickReportOther_{"other"};
+    double tickReportMillis_ = 0;
+    double tickReportMaxMillis_ = 0;
+    int tickReportTicks_ = 0;
+    double nextTickReportMillis_ = 0;
+    /// Logs the window when `print`, and starts the next one either way.
+    void reportTickPhases(bool print);
+
     /// When the next snapshot is due. The wire runs slower than the
     /// simulation: physics wants 30 Hz resolution, clients do not, and the
     /// per-recipient encode/cull/delta pass is the most expensive thing in the
