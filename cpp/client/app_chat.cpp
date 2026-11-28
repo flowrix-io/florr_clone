@@ -228,6 +228,7 @@ constexpr ChatCommand kChatCommands[] = {
     {"/biome", "Show the most populated biome", kForAll},
     {"/boss-timers", "Show each biome's unique/apex cooldown", kForAll},
     {"/players-online", "Show how many players are online", kForAll},
+    {"/profile", "Show a player's level, stats, loadout and inventory: /profile [username]", kForAll},
     {"/admin createpoll", "Open the standalone poll creator", kForAdmins},
     {"/admin save", "Save player progress", kForAdmins},
     {"/admin list-players", "List online players", kForAdmins},

@@ -280,6 +280,9 @@ struct Session {
     /// table, and none is something a person does many times a second.
     double requestAllowance = 10;
     double lastRefillMillis = 0;
+    /// Wall-clock millis before which `/profile` answers nothing: walking a
+    /// whole bag is not something one person needs more than once a second.
+    std::int64_t profileViewNextMillis = 0;
 
     /// The lines this connection said to other players lately, oldest
     /// first, for the repeat check (GameServer::screenChatLine): where each

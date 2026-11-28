@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 98;
+inline constexpr std::uint16_t kProtocolVersion = 99;
 
 /// SkinCatalog's leading byte: what the server says this account may do, so the
 /// client shows the matching chat-autocomplete rows and panels. Advisory only:
@@ -575,6 +575,25 @@ enum class ServerMessage : std::uint8_t {
                         ///< was stale: the client goes back to the server it
                         ///< first dialled and resumes its session there.
                         ///< (Version 98.)
+    PlayerProfileView,  ///< The answer to `/profile <name>`: one account's public
+                        ///< card, which the client opens over the game. str
+                        ///< name, u8 flags (kProfileViewOnline), f64
+                        ///< lastSeenAgoMillis (0 while online or never known),
+                        ///< str joined ("YYYY-MM-DD" UTC, empty if unknown), f64
+                        ///< xp, u16 level, f64 stars, f64 mobsKilled, u16
+                        ///< dailyStreak, u16 mazeLevel (0 when
+                        ///< the maze was never entered), str guild (the tag,
+                        ///< empty for none), u8 slotCount, { u16 itemType, u8
+                        ///< rarity }* (the bar, kNoPetal for an empty slot), u16
+                        ///< stacks, { u16 itemType, u8 rarity, u32 count }* (the
+                        ///< bag). Never sent for a name that is no account: the
+                        ///< asker is told so in chat instead. (Version 99.)
+};
+
+/// PlayerProfileView's flags.
+enum PlayerProfileViewFlags : std::uint8_t {
+    /// The account has a session on the server right now.
+    kProfileViewOnline = 1u << 0,
 };
 
 // ---------------------------------------------------------------------------

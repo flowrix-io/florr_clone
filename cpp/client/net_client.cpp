@@ -106,6 +106,7 @@ const char* serverMessageName(std::uint8_t id) {
         case net::ServerMessage::Revived:             return "revived";
         case net::ServerMessage::CraftResult:         return "craftResult";
         case net::ServerMessage::Leaderboard:         return "leaderboard";
+        case net::ServerMessage::PlayerProfileView:   return "playerProfileView";
         case net::ServerMessage::Pong:                return "pong";
         case net::ServerMessage::Kick:                return "kick";
         case net::ServerMessage::DailyStreak:         return "dailyStreak";
@@ -394,6 +395,8 @@ void NetClient::forgetAccount() {
     chatModerator_ = false;
     skinVotes_.clear();
     favoriteSkins_.clear();
+    playerProfileView_ = PlayerProfileView{};
+    playerProfileRequested_ = false;
     leaderboard_.clear();
     leaderboardPending_ = false;
     notifications_.clear();
@@ -1281,6 +1284,7 @@ void NetClient::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ServerMessage::Revived:      handleRevived(reader); break;
         case net::ServerMessage::CraftResult:  handleCraftResult(reader); break;
         case net::ServerMessage::Leaderboard:  handleLeaderboard(reader); break;
+        case net::ServerMessage::PlayerProfileView: handlePlayerProfileView(reader); break;
         // Timed from when the bytes arrived, not from this read of them. The
         // client reads once a frame, so a reply that came straight back still
         // sat in the page until the next one, and the readout said the frame
@@ -2015,6 +2019,52 @@ void NetClient::handleLeaderboard(ByteReader& reader) {
     totalAccounts_ = total;
     dailyActiveUsers_ = dau;
     leaderboardPending_ = false;
+}
+
+void NetClient::handlePlayerProfileView(ByteReader& reader) {
+    // A number off the wire the panel will format and divide by: a non-finite
+    // one is the server's bug, shown as zero rather than as "nan".
+    const auto finite = [](double value) { return std::isfinite(value) ? value : 0.0; };
+
+    PlayerProfileView next;
+    next.name = reader.str();
+    next.online = (reader.u8() & net::kProfileViewOnline) != 0;
+    next.lastSeenAgoMillis = finite(reader.f64());
+    next.joined = reader.str();
+    next.totalXp = finite(reader.f64());
+    next.level = reader.u16();
+    next.stars = finite(reader.f64());
+    next.mobsKilled = finite(reader.f64());
+    next.streak = reader.u16();
+    next.mazeLevel = reader.u16();
+    next.guild = reader.str();
+
+    const std::size_t petals = content().petalCount();
+    const std::uint8_t slotCount = reader.u8();
+    next.loadout.reserve(slotCount);
+    for (std::uint8_t i = 0; i < slotCount; ++i) {
+        Profile::Slot slot;
+        slot.petalIndex = reader.u16();
+        slot.rarity = clampRarity(reader.u8());
+        // A petal this build has no entry for is an empty slot, not a crash.
+        if (slot.petalIndex >= petals) slot.petalIndex = 0xFFFF;
+        next.loadout.push_back(slot);
+    }
+
+    const std::uint16_t stackCount = reader.u16();
+    next.inventory.reserve(stackCount);
+    for (std::uint16_t i = 0; i < stackCount; ++i) {
+        Profile::Stack stack;
+        stack.petalIndex = reader.u16();
+        stack.rarity = clampRarity(reader.u8());
+        stack.count = reader.u32();
+        if (stack.petalIndex < petals && stack.count > 0) next.inventory.push_back(stack);
+    }
+
+    // Replace only once the whole message decoded.
+    if (!reader.ok()) return;
+    playerProfileView_ = std::move(next);
+    playerProfileRequested_ = true;
 }
 
 void NetClient::handleNotifications(ByteReader& reader) {
