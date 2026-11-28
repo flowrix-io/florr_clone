@@ -309,7 +309,7 @@ void GameServer::reportBossDamage(Entity mob, const MobType& type) {
         net::Connection* connection = listener_.find(connectionId);
         if (connection == nullptr) continue;
         sendChatTo(*connection, net::ChatChannel::System, "",
-                   "<b style=\"color: #8c8cff;\">You dealt " + compactDamage(damage) +
+                   "<b style=\"color: #6666ff;\">You dealt " + compactDamage(damage) +
                        " damage to the " + target + ".</b>");
     }
 }
