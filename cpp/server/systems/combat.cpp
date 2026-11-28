@@ -342,6 +342,21 @@ void creditSwing(World& world, Entity victim, Entity source, double amount) {
     }
     if (credited == NULL_ENTITY) return;
     bounty->credit(credited, amount);
+    // Remember the boss-tier mobs this flower is fighting, for its damage
+    // board. A list append on a component that is already there: nothing
+    // structural. Only Super and above are worth a board, so nothing else is
+    // recorded, and the list is capped.
+    if (const MobType* tier = world.tryGet<MobType>(victim)) {
+        if (tier->rarity == Rarity::Super || tier->rarity == Rarity::Eternal ||
+            tier->rarity == Rarity::Apex) {
+            if (PlayerLocation* location = world.tryGet<PlayerLocation>(credited)) {
+                auto& list = location->damagedBoardMobs;
+                if (list.size() < 16 && std::find(list.begin(), list.end(), victim) == list.end()) {
+                    list.push_back(victim);
+                }
+            }
+        }
+    }
 
     // A swing inside a dungeon is a swing on the nest outside it, by the rule
     // an ambush nest's brood follows below: the nest cannot be hit, and its

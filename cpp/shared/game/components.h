@@ -448,6 +448,9 @@ struct SpongeDamageState {
 /// mob rather than whoever happened to land the last hit.
 struct Bounty {
     double xp = 0;
+    /// When the mob was spawned, on the server's clock. 0 when unknown. Only
+    /// the damage board's "spawned ... ago" line reads it.
+    double spawnedAtMillis = 0;
     struct Share {
         Entity player = NULL_ENTITY;
         double damage = 0;
@@ -766,6 +769,10 @@ struct PlayerLocation {
     /// replicate. Clamped server-side -- a client claiming a 40000-unit
     /// viewport is asking to see the whole map.
     Vec2 viewport{kViewportWidth, kViewportHeight};
+    /// Super, Eternal and Apex mobs this flower has damaged and the damage
+    /// board has not picked up yet. Combat appends, GameServer::
+    /// sendMobDamageBoard drains it into the session's own list.
+    std::vector<Entity> damagedBoardMobs;
 };
 
 /// Progress toward a teleporter jump.

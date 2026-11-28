@@ -97,6 +97,27 @@ struct Session {
     /// produced. What is genuinely per-body -- position, health, the ring --
     /// is exactly what a second body is for.
     Entity splitOther = NULL_ENTITY;
+
+    // -- the mob damage board (GameServer::sendMobDamageBoard) ----------------
+    /// The boss-tier mobs this player has damaged and is still following: the
+    /// board shows the nearest of them. Dropped when the mob is gone or two
+    /// minutes after the player's last hit on it.
+    struct BoardTrack {
+        Entity mob = NULL_ENTITY;
+        /// This player's damage on the mob the last time the board looked: a
+        /// rise means they are still hitting it.
+        double own = 0;
+        double lastHitMillis = 0;
+    };
+    std::vector<BoardTrack> boardTracks;
+    /// Rate limit: the board is rebuilt and resent no more than every 250 ms.
+    double boardNextSendMillis = 0;
+    /// A board is on the client's screen and needs clearing when it ends.
+    bool boardShown = false;
+    /// The client's Show Mob Damage Board setting (net::SetMobDamageBoard).
+    bool boardWanted = true;
+    /// Whether the board also covers Super mobs (the client's Super setting).
+    bool boardSuper = true;
     /// The attack/defend bits the half of a split flower that is NOT being
     /// steered holds: what this player's flower does with no button held,
     /// from the InputInvertAttack / InputInvertDefend bits of their last input

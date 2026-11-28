@@ -364,6 +364,7 @@ void App::drawHud(Canvas& canvas, double time) {
     drawSquadInvite(canvas);
 
     drawMinimap(canvas);
+    drawMobDamageBoard(canvas, time);
 
     const double bossBarsBottom = drawBossBars(canvas, altHeld);
     // Under the boss bars, which share the top of the screen with it and are

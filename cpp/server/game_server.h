@@ -1504,6 +1504,11 @@ private:
     /// first would arrive one day's reward short.
     void sendDailyStreak(Session&, net::Connection&);
     void sendNotice(net::Connection&, net::NoticeSeverity, const std::string& text);
+    /// The live "who is damaging this mob" panel: tells one player's client the
+    /// top damage shares on the mob it last hit. Called once per snapshot for
+    /// each playing session; sends at most every 250 ms, and a clear when the
+    /// fight ends.
+    void sendMobDamageBoard(Session&, net::Connection&, double nowMillis);
     /// The shop's own reply channel. A refused purchase or code is a modal on
     /// the shop card in the reference, not a line in the chat, so it cannot
     /// travel as a Notice.

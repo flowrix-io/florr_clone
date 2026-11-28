@@ -1014,6 +1014,7 @@ Entity SpawnSystem::spawnMobAt(World& world, const Terrain& terrain, const Conte
     // A mob pays the XP of the tier it actually stands at, in any realm.
     Bounty bounty;
     bounty.xp = stats.xp;
+    bounty.spawnedAtMillis = nowMillis;
     world.add<Bounty>(e, std::move(bounty));
 
     MobAi ai;

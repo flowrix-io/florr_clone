@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 99;
+inline constexpr std::uint16_t kProtocolVersion = 100;
 
 /// SkinCatalog's leading byte: what the server says this account may do, so the
 /// client shows the matching chat-autocomplete rows and panels. Advisory only:
@@ -281,6 +281,10 @@ enum class ClientMessage : std::uint8_t {
                         ///< opened: carry on the session that ticket was issued
                         ///< for here, instead of signing in. Answered with
                         ///< Attached. (Version 98.)
+    SetMobDamageBoard,  ///< u8 bits -- bit 0 the Show Mob Damage Board setting
+                        ///< (0 stops the server building and sending the panel
+                        ///< to this client at all), bit 1 its Super setting.
+                        ///< A session starts at 3. (Version 99.)
 };
 
 enum class ServerMessage : std::uint8_t {
@@ -588,6 +592,19 @@ enum class ServerMessage : std::uint8_t {
                         ///< stacks, { u16 itemType, u8 rarity, u32 count }* (the
                         ///< bag). Never sent for a name that is no account: the
                         ///< asker is told so in chat instead. (Version 99.)
+    MobDamageBoard,     ///< u8 count, then, when count > 0: u16 mobIndex, u8
+                        ///< rarity, u32 ageMillis (0xFFFFFFFF when unknown),
+                        ///< { str name, u16 rank, u16 permille, u8 flags }*count.
+                        ///< Who is damaging the mob this flower last hit: the
+                        ///< top ten by damage, then this flower's own row if it
+                        ///< ranks lower, each with its true rank. `permille` is
+                        ///< the player's damage as thousandths of the MOB'S
+                        ///< MAX HEALTH (capped at 1000). flags: 1 = this
+                        ///< player's own row, 2 = earns loot (the loot rule's
+                        ///< own answer), 4 = in this player's squad and paid.
+                        ///< Only Eternal and Apex mobs, and Super when the
+                        ///< client has not turned it off. Count 0 clears the
+                        ///< panel. Resent every quarter second. (Version 100.)
 };
 
 /// PlayerProfileView's flags.

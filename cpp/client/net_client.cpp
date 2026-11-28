@@ -89,6 +89,7 @@ const char* clientMessageName(std::uint8_t id) {
         case net::ClientMessage::StartTrialChamber:   return "startTrialChamber";
         case net::ClientMessage::GuildSetOfficer:     return "guildSetOfficer";
         case net::ClientMessage::Attach:              return "attach";
+        case net::ClientMessage::SetMobDamageBoard:   return "setMobDamageBoard";
     }
     return "unknown";
 }
@@ -151,6 +152,7 @@ const char* serverMessageName(std::uint8_t id) {
         case net::ServerMessage::TrialRewardClaimed:  return "trialRewardClaimed";
         case net::ServerMessage::Redirect:            return "redirect";
         case net::ServerMessage::Attached:            return "attached";
+        case net::ServerMessage::MobDamageBoard:      return "mobDamageBoard";
     }
     return "unknown";
 }
@@ -720,6 +722,16 @@ void NetClient::favoriteSkin(const std::string& id, bool favorite) {
     send(w);
 }
 
+void NetClient::setMobDamageBoardPrefs(bool wanted, bool includeSuper) {
+    const std::uint8_t bits = static_cast<std::uint8_t>((wanted ? 1 : 0) | (includeSuper ? 2 : 0));
+    if (bits == mobDamageBoardPrefsSent_) return;
+    mobDamageBoardPrefsSent_ = bits;
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::SetMobDamageBoard);
+    w.u8(bits);
+    send(w);
+}
+
 void NetClient::requestLeaderboard(bool includeAdmins) {
     leaderboardPending_ = true;
     ByteWriter w;
@@ -1285,6 +1297,7 @@ void NetClient::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ServerMessage::CraftResult:  handleCraftResult(reader); break;
         case net::ServerMessage::Leaderboard:  handleLeaderboard(reader); break;
         case net::ServerMessage::PlayerProfileView: handlePlayerProfileView(reader); break;
+        case net::ServerMessage::MobDamageBoard: handleMobDamageBoard(reader); break;
         // Timed from when the bytes arrived, not from this read of them. The
         // client reads once a frame, so a reply that came straight back still
         // sat in the page until the next one, and the readout said the frame
@@ -2067,6 +2080,40 @@ void NetClient::handlePlayerProfileView(ByteReader& reader) {
     playerProfileRequested_ = true;
 }
 
+void NetClient::handleMobDamageBoard(ByteReader& reader) {
+    const std::uint8_t count = reader.u8();
+    if (!reader.ok()) return;
+    if (count == 0) {
+        mobDamageBoard_ = MobDamageBoardState{};
+        return;
+    }
+    MobDamageBoardState board;
+    board.mobIndex = reader.u16();
+    board.rarity = clampRarity(reader.u8());
+    const std::uint32_t age = reader.u32();
+    board.ageMillis = age == 0xFFFFFFFFu ? -1.0 : static_cast<double>(age);
+    board.rows.reserve(count);
+    for (std::uint8_t i = 0; i < count; ++i) {
+        MobBoardRow row;
+        row.name = reader.str();
+        row.rank = reader.u16();
+        row.permille = reader.u16();
+        const std::uint8_t flags = reader.u8();
+        row.self = (flags & 1) != 0;
+        row.eligible = (flags & 2) != 0;
+        row.squad = (flags & 4) != 0;
+        board.rows.push_back(std::move(row));
+    }
+    if (!reader.ok()) return;
+    // A mob index this build has no art or name for is a server newer than the
+    // client; the handshake's content hash keeps that from happening, but a
+    // bad index must never reach content().mob().
+    if (board.mobIndex >= content().mobCount()) return;
+    board.active = true;
+    board.receivedAtMillis = renderClockMillis();
+    mobDamageBoard_ = std::move(board);
+}
+
 void NetClient::handleNotifications(ByteReader& reader) {
     const bool more = reader.boolean();
     const std::uint16_t count = reader.u16();
@@ -2221,6 +2268,10 @@ void NetClient::installLocalCollision(Realm realm) {
 }
 
 void NetClient::handleJoinAccepted(ByteReader& reader) {
+    // Joining resets nothing on the server's session, but a reconnect makes a
+    // new one that wants the board; forget what was sent so the next frame
+    // restates the setting.
+    mobDamageBoardPrefsSent_ = 3;
     trial_ = TrialView{};
     reader.u32();   // the body's net id: the first snapshot names it (SpawnIsSelf)
     const Vec2 spawn = reader.position();
