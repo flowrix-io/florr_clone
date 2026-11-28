@@ -22,6 +22,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -64,11 +65,29 @@ struct AssemblyRecipe {
     };
     std::vector<Stack> inputs;
     std::vector<Stack> outputs;
+    /// A selectable extra at every eligible station, beside its rolled recipe.
+    bool availableAtEveryStation = false;
+    Rarity minRarity = Rarity::Common;
+    Rarity maxRarity = Rarity::Apex;
+    /// Empty means any map. Explicit ids include prestige maps separately.
+    std::vector<std::string> maps;
+
+    bool availableAt(Rarity rarity, const std::string& mapId) const {
+        return rarityIndex(rarity) >= rarityIndex(minRarity) &&
+               rarityIndex(rarity) <= rarityIndex(maxRarity) &&
+               (maps.empty() || std::find(maps.begin(), maps.end(), mapId) != maps.end());
+    }
 
     /// How many of `petalIndex` one run of the recipe takes.
     std::int64_t takes(std::uint16_t petalIndex) const {
         std::int64_t n = 0;
         for (const Stack& input : inputs) n += input.petal == petalIndex ? input.count : 0;
+        return n;
+    }
+
+    std::int64_t makes(std::uint16_t petalIndex) const {
+        std::int64_t n = 0;
+        for (const Stack& output : outputs) n += output.petal == petalIndex ? output.count : 0;
         return n;
     }
 };
@@ -161,6 +180,26 @@ struct ProjectileSpec {
     std::string summonMobId;
     std::uint16_t summonMobIndex = kInvalidIndex;
     int summonMax = 0;
+};
+
+/// A petal that returns an incoming mob projectile intact. These are the
+/// common-tier values; buildPetalStats applies the speed and reload curves.
+struct ProjectileReflectionSpec {
+    bool present = false;
+    double speedMultiplier = 1.5;
+    double speedMultiplierPerRarity = 0.25;
+    double damageMultiplier = 0.1;
+    double damageMultiplierPerRarity = 0.1;
+    /// Optional exact multipliers override the linear curve, including values
+    /// above 1 that amplify damage (finite, up to 1000x). Special tiers use
+    /// Apex's multiplier.
+    std::array<std::optional<double>, kLadderRarityCount> damageMultiplierByRarity{};
+    double reloadDivisorPerRarity = 1.35;
+    /// Positive milliseconds subtracted after the reload curve, with a 1 ms
+    /// minimum (the runtime treats zero as an unspecified reload).
+    /// Exact rarity keys only: Universal/Admin do not inherit Apex's value.
+    /// The ordinary Admin reload multiplier still applies afterward.
+    std::array<double, kRarityCount> reloadReductionMillisByRarity{};
 };
 
 /// A mob that throws lightning.
@@ -852,6 +891,9 @@ struct PetalConfig {
     std::vector<RarityFill> rarityFills;
 
     double damage = 0;
+    /// Normal melee copies the struck mob's body damage instead of this
+    /// petal's fixed damage. Projectile reflection keeps its separate curve.
+    bool damageFromMobBody = false;
     double health = 0;
     double size = 1;            ///< diameter in "size units"; see petalStats()
     /// Art only, exactly as MobConfig::visualScale is: it multiplies the drawn
@@ -883,6 +925,7 @@ struct PetalConfig {
     /// field still push for 5.  Zero is reserved for petals that opt out.
     double knockback = 5;
     ProjectileSpec projectile;
+    ProjectileReflectionSpec projectileReflection;
     double range = 0;           ///< reach for the petals that have one
     /// Armour this petal STRIPS from what it touches, before rarity. Only bur
     /// has one. Stated at the common tier like every other petal stat.
@@ -1195,6 +1238,12 @@ struct PetalStats {
     /// Fraction of dealt damage healed back to the flower; flat by tier.
     double lifesteal = 0;
     double reloadMillis = kDefaultPetalReloadMillis;
+    /// Zero for ordinary petals. A reflecting petal multiplies the incoming
+    /// projectile's speed by this value while reversing its direction.
+    double reflectionSpeedMultiplier = 0;
+    /// Multiplier applied to reflected projectile and copied mob-body damage.
+    /// Exact rarity overrides can exceed one. Zero for ordinary petals.
+    double reflectionDamageMultiplier = 0;
     double poisonPerSecond = 0;
     double poisonDurationMillis = 0;
     /// Flat across the ladder; see PetalConfig::extraPoisonMillis.

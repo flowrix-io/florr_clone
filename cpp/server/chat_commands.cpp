@@ -1189,6 +1189,9 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
             command("corrupt &lt;username&gt; [on|off|toggle] - Corrupted flowers fight players "
                     "anywhere, not just in PVP");
             command("god [on|off|toggle] - Make yourself invulnerable");
+            command("kill &lt;username&gt; - Kill a player's flower (or a bot); they respawn "
+                    "as usual");
+            command("kick &lt;username&gt; - Send a player back to the title screen");
             command("phase [on|off|toggle] - Pass through walls");
             command("control &lt;username&gt; - Steer another player's flower with your own "
                     "controls");
@@ -2718,6 +2721,99 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         }
         out(on ? "You are now invulnerable. Use god off to undo it."
                : "You are no longer invulnerable.");
+        return;
+    }
+
+    // -- kill and kick -----------------------------------------------------
+    //
+    // kill drops a flower where it stands -- the ordinary corpse, death card
+    // and respawn, as the admin cursor's removal does, with no killer
+    // credited -- and kick takes it out of the world altogether, its client
+    // sent back to the title screen the way a talent reset in a prestige
+    // biome sends one (LeftWorld). Neither reaches an admin of the caller's
+    // own tier or above, ban_admin's rule, nor a full admin from a grant,
+    // mute's: a console lent for one life cannot throw its lender out.
+
+    if (verb == "kill" || verb == "kick") {
+        const bool kicking = verb == "kick";
+        if (words.size() != 2) {
+            out(kicking ? "Usage: kick <username>  (sends them back to the title screen)"
+                        : "Usage: kill <username>  (kills their flower; they respawn as usual)");
+            return;
+        }
+        CommandTarget target;
+        if (!resolveCommandTarget(words[1], target)) {
+            out("Player \"" + words[1] + "\" not found. Use list-players to see available "
+                "players.");
+            return;
+        }
+        Session* victim = target.session;
+        if (victim == nullptr && kicking) {
+            out(target.name + " is a bot, and only a player can be kicked. Use kill instead.");
+            return;
+        }
+        if (victim != nullptr && victim != &session && effectiveAdmin(*victim)) {
+            if (!session.admin && victim->admin) {
+                out(victim->username + " is a full admin and cannot be " +
+                    (kicking ? "kicked." : "killed."));
+                return;
+            }
+            const int ownTier = adminTier(session);
+            const int theirTier = adminTier(*victim);
+            if (theirTier <= ownTier) {
+                out("You can only " + verb + " admins of a lower tier than your own (" +
+                    adminTierLabel(ownTier) + "). " + victim->username + " is " +
+                    adminTierLabel(theirTier) + ".");
+                return;
+            }
+        }
+        // Resolved, but its body is on another server: the gateway sends
+        // these to the target's server (gwServerForCommand), so this is only
+        // a flower between servers.
+        if (victim != nullptr && !victim->playing()) {
+            out(victim->username + " is not in the world right now. Try again in a moment.");
+            return;
+        }
+
+        if (kicking) {
+            leaveWorld(*victim);
+            if (net::Connection* peer = listener_.find(victim->connection)) {
+                ByteWriter w;
+                w.u8(static_cast<std::uint8_t>(net::ServerMessage::LeftWorld));
+                peer->send(w);
+                // The answer a LeaveGame gets, which the client expects next.
+                sendProfile(*victim, *peer);
+                sendNotice(*peer, net::NoticeSeverity::Warning,
+                           "An admin sent you back to the title screen.");
+            }
+            audit("kicked " + victim->username + " to the title screen");
+            out("Kicked " + victim->username + " to the title screen.");
+            return;
+        }
+
+        // Both halves of a split flower, or the player would simply carry on
+        // in the half left standing. Health straight to zero, past god mode
+        // and respawn protection alike: that is what the command is for.
+        int felled = 0;
+        const std::array<Entity, 2> bodies =
+            victim != nullptr ? bodiesOf(*victim) : std::array<Entity, 2>{target.entity, NULL_ENTITY};
+        for (const Entity body : bodies) {
+            if (!isStanding(world_, body)) continue;
+            if (Health* health = world_.tryGet<Health>(body)) health->current = 0;
+            world_.add<Dead>(body);
+            ++felled;
+        }
+        if (felled == 0) {
+            out(target.name + "'s flower is already dead.");
+            return;
+        }
+        if (victim != nullptr) {
+            if (net::Connection* peer = listener_.find(victim->connection)) {
+                sendNotice(*peer, net::NoticeSeverity::Bad, "An admin killed your flower.");
+            }
+        }
+        audit("killed " + target.name);
+        out("Killed " + target.name + ".");
         return;
     }
 

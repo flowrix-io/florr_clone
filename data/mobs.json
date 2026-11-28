@@ -2140,7 +2140,55 @@
                 { "from": [{ "petal": "square", "count": 2 }], "to": "pentagon" },
                 { "from": [{ "petal": "computer_chip", "count": 30 }], "to": "c++" },
                 { "from": ["missile", "computer_chip"], "to": "guided_missile" },
-                { "from": ["c++", "yin_yang"], "to": "c--"}
+                { "from": ["c++", "yin_yang"], "to": "c--"},
+                {
+                    "from": [
+                        {
+                            "petal": "glass",
+                            "count": 30
+                        }
+                    ],
+                    "to": "prism_mirror",
+                    "availableAtEveryStation": true,
+                    "minRarity": "super",
+                    "maxRarity": "super",
+                    "maps": [
+                        "computer",
+                        "prestige_computer"
+                    ]
+                },
+                {
+                    "from": [
+                        {
+                            "petal": "glass",
+                            "count": 50
+                        }
+                    ],
+                    "to": "prism_mirror",
+                    "availableAtEveryStation": true,
+                    "minRarity": "unique",
+                    "maxRarity": "unique",
+                    "maps": [
+                        "computer",
+                        "prestige_computer"
+                    ]
+                },
+                {
+                    "from": [
+                        {
+                            "petal": "glass",
+                            "count": 30
+                        }
+                    ],
+                    "to": "prism_mirror",
+                    "availableAtEveryStation": true,
+                    "minRarity": "apex",
+                    "maxRarity": "apex",
+                    "maps": [
+                        "computer",
+                        "prestige_computer"
+                    ]
+                }
             ]
         },
         "noEggDrop": true

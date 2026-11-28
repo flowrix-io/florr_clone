@@ -2808,8 +2808,8 @@ TEST(the_shipped_assembler_makes_a_sawblade_out_of_a_mimic_and_a_ram) {
     // The user's mimic + RAM = sawblade, and every one of florr's own recipes
     // (its client's table, 0x10234f910) whose petals all exist here -- ten of
     // its twenty (user, 2026-10-14) -- and two squares = pentagon (user,
-    // 2026-10-26).
-    CHECK_EQ(config.npc.recipes.size(), std::size_t(12));
+    // 2026-10-26), the computer-chip recipe, and Prism's three tier-specific extras.
+    CHECK_EQ(config.npc.recipes.size(), std::size_t(18));
     const int saw = recipeMaking(assembler, "sawblade");
     CHECK(saw >= 0);
     if (saw < 0) return;
@@ -3283,7 +3283,10 @@ TEST(each_assembler_rolls_one_recipe_and_the_client_is_told_which) {
     for (const Entity e : assemblersIn(world)) {
         const std::uint8_t recipe = world.get<Npc>(e).recipe;
         CHECK(recipe < recipes);
-        if (recipe < recipes) ++seen[recipe];
+        if (recipe < recipes) {
+            CHECK(!content().mob(content().mobIndex("assembler")).npc.recipes[recipe].availableAtEveryStation);
+            ++seen[recipe];
+        }
     }
     // Ten rolls over eleven recipes are not all the same one.
     int distinct = 0;

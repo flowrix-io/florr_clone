@@ -82,6 +82,24 @@ public:
     void queryRect(Realm realm, Vec2 min, Vec2 max, std::vector<Entity>& out) const;
     void queryRect(Realm realm, const Rect& area, std::vector<Entity>& out) const;
 
+    /// Every entity whose FILED circle overlaps the disc, in one realm, each
+    /// once -- the circles query() would hand back minus the ones that are
+    /// nowhere near. Still candidates: a body moved since it was filed is
+    /// found where it was filed, so a caller that moves bodies widens its
+    /// radius by what they may have moved, as it would for query(). A non-
+    /// finite filed radius always overlaps; a negative one counts as zero.
+    ///
+    /// For a small disc asked many times over: a projectile is a few units
+    /// across, and query() hands it every petal, flower and mob in a 600-unit
+    /// cell -- a hundred candidates for its one or two hits, ten thousand
+    /// times a tick where the shooters stand together. Each bucket a query
+    /// like this touches is split, the first time it is asked in an epoch,
+    /// into kFineSplit x kFineSplit sub-cells holding the circles inline, so
+    /// the test is a dense scan of a cell or two and nothing else is read.
+    /// Buckets no such query reaches are never split. The order is not
+    /// query()'s: a caller that wants one sorts the answer.
+    void queryOverlapping(Realm realm, Vec2 center, double radius, std::vector<Entity>& out) const;
+
     /// Entities inserted since the last clear, across every realm. An entity
     /// spanning several cells counts once.
     std::size_t size() const { return inserted_; }
@@ -137,6 +155,12 @@ private:
         /// next insert clears it. That is the whole trick behind an O(1)
         /// clear().
         std::vector<std::uint32_t> bucketEpoch;
+        /// queryOverlapping()'s split of each bucket: which epoch it was split
+        /// in (0 for not this one, and reset by an insert into the bucket),
+        /// and where in fine_ the split is. Scratch for a const read, as
+        /// stamp_ is.
+        mutable std::vector<std::uint32_t> fineEpoch;
+        mutable std::vector<std::uint32_t> fineSlot;
 
         std::size_t bucketAt(int cx, int cy) const {
             return static_cast<std::size_t>(cy) * static_cast<std::size_t>(cols) +
@@ -174,6 +198,35 @@ private:
     bool refiled_ = false;
     /// Parallel to filed_: see filedCircle().
     std::vector<FiledCircle> filedCircles_;
+
+    /// queryOverlapping()'s sub-cells: a bucket is split this many ways on
+    /// each axis, 75 units at the default cell, a little wider than a fast
+    /// shot's whole query. Finer files a petal ring's petals under more
+    /// sub-cells each and a boss under up to the square of this.
+    static constexpr int kFineSplit = 8;
+    static constexpr int kFineCells = kFineSplit * kFineSplit;
+    struct FineEntry {
+        Entity entity = NULL_ENTITY;
+        Vec2 position;
+        /// The filed radius as the overlap test reads it: zero for a
+        /// negative one, and infinite for one that is not a number.
+        double reach = 0;
+    };
+    /// One bucket split: sub-cell `c`'s entries are entries[start[c],
+    /// start[c + 1]), sub-cells row by row, so a span of one row is one run.
+    /// An entity is under every sub-cell of the bucket its circle touches.
+    struct FineBucket {
+        std::array<std::uint32_t, kFineCells + 1> start{};
+        std::vector<FineEntry> entries;
+    };
+    /// Splits made this epoch, reused from one epoch to the next for their
+    /// capacity: fine_[0, fineUsed_) are live.
+    mutable std::vector<FineBucket> fine_;
+    mutable std::size_t fineUsed_ = 0;
+    mutable std::uint32_t fineEpoch_ = 0;
+    const FineBucket& fineBucket(const Layer& source, std::size_t bucket, int cx, int cy) const;
+    int fineIndex(double offset) const;
+    static void fitFine(Layer& layer);
 };
 
 } // namespace flix

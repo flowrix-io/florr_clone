@@ -221,6 +221,8 @@ void DropTables::resolve(const ContentRegistry& content) {
         const PetalConfig& petal = content.petal(index);
         if (petal.isAdminPetal) continue;
         if (petal.id == "cutter" || petal.id == "lightning_cutter") continue;
+        // Prism is made from Glass in the crafting panel, not mob loot.
+        if (petal.id == "prism_mirror") continue;
         // Handed out by a rule of their own: the sacrifice, the crown.
         if (petalHasOwnSource(petal)) continue;
         // A magic petal is CONVERTED into, never dropped. Leaving it in the

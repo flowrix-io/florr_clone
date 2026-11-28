@@ -438,6 +438,14 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         hit.altText = hit.text;
         hit.labelColor = kStatHealth;
     }
+    if (config.damageFromMobBody) {
+        const double share = config.projectileReflection.present
+                                 ? stats.reflectionDamageMultiplier : 1.0;
+        hit.text = damageLabel + percentNumber(share) + "% of target mob's body damage";
+        hit.altText = hit.text;
+        hit.labelColor = kStatDamage;
+        hit.markup = false;
+    }
     if (!petalWardsHits(config)) {
         // A row only for a stat the petal has, as gardn's card does: an iris
         // hits with nothing but its poison and a gas has no health pool, and a
@@ -447,7 +455,7 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         // A privet's point of health is there only so that anything breaks
         // it; florr's card has no HP row for it, and neither does this one.
         if (stats.health > 0.0 && !petalSpentOnHit(config)) lines.push_back(hp);
-        if (stats.damage != 0.0) lines.push_back(hit);
+        if (stats.damage != 0.0 || config.damageFromMobBody) lines.push_back(hit);
         // The plain lightning's strike lands on this many mobs, its nearest
         // (florr's Petal/Attribute/Bounces). Its glitch form is uncapped.
         if (config.id == "lightning") {
@@ -691,6 +699,20 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         dodge.alpha = 0.56;
         dodge.labelColor = kStatGeneric;
         lines.push_back(dodge);
+    }
+
+    if (stats.reflectionSpeedMultiplier > 0.0) {
+        char speed[32];
+        std::snprintf(speed, sizeof speed, "%g", stats.reflectionSpeedMultiplier);
+        TooltipLine reflect{"Reflected Projectile Speed: " + std::string(speed) + "x", 12.0};
+        reflect.alpha = 0.56;
+        reflect.labelColor = kStatReflection;
+        lines.push_back(reflect);
+        TooltipLine damage{"Reflected Damage: " +
+                               exactNumber(stats.reflectionDamageMultiplier * 100.0) + "%", 12.0};
+        damage.alpha = 0.56;
+        damage.labelColor = kStatReflection;
+        lines.push_back(damage);
     }
 
     // Salt. What it repays depends on who bit, so the card states the one
