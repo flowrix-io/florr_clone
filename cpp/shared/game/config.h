@@ -190,6 +190,10 @@ struct ProjectileReflectionSpec {
     double speedMultiplierPerRarity = 0.25;
     double damageMultiplier = 0.1;
     double damageMultiplierPerRarity = 0.1;
+    /// The most one hit of the petal's may deal at common -- a returned shot
+    /// or a copied body hit, after the multiplier above. It climbs the petal
+    /// damage ladder (petalStrengthScale). Zero leaves the petal uncapped.
+    double damageCap = 0.0;
     /// Optional exact multipliers override the linear curve, including values
     /// above 1 that amplify damage (finite, up to 1000x). Special tiers use
     /// Apex's multiplier.
@@ -1244,6 +1248,9 @@ struct PetalStats {
     /// Multiplier applied to reflected projectile and copied mob-body damage.
     /// Exact rarity overrides can exceed one. Zero for ordinary petals.
     double reflectionDamageMultiplier = 0;
+    /// The most one reflected shot or copied body hit may deal, on the petal
+    /// damage ladder. Zero: uncapped (and every ordinary petal).
+    double reflectionDamageCap = 0;
     double poisonPerSecond = 0;
     double poisonDurationMillis = 0;
     /// Flat across the ladder; see PetalConfig::extraPoisonMillis.

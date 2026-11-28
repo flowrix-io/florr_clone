@@ -586,6 +586,9 @@ private:
         /// A Prism Mirror sends hostile shots back instead of damaging them.
         double reflectionSpeedMultiplier = 0.0;
         double reflectionDamageMultiplier = 1.0;
+        /// The most one of its returned shots or copied body hits may deal.
+        /// Zero: uncapped.
+        double reflectionDamageCap = 0.0;
         /// A yin yang's: a `convertsFrom` mob it lands on becomes a
         /// `convertsInto` (MobConversion). kInvalidIndex for every other body.
         std::uint16_t convertsFrom = kInvalidIndex;
@@ -701,6 +704,7 @@ private:
         double travel = 0;
         double reflectionSpeedMultiplier = 0;
         double reflectionDamageMultiplier = 1.0;
+        double reflectionDamageCap = 0;
         /// The point on the shot's path closest to the victim.
         Vec2 at;
     };
@@ -779,8 +783,10 @@ private:
     void tickProjectiles(World& world, const SpatialGrid& grid, const ContentRegistry& content,
                          double nowMillis);
     /// Transfers the existing shot and spends the mirror's ordinary reload.
+    /// The returned shot deals at most `damageCap` (zero: uncapped).
     bool reflectProjectile(World& world, Entity mirror, Entity shot,
-                           double speedMultiplier, double damageMultiplier, Vec2 at, bool swept);
+                           double speedMultiplier, double damageMultiplier, double damageCap,
+                           Vec2 at, bool swept);
 
     /// Files every projectile in the shot index, and resolves the flower each
     /// one is answerable to. Run at the top of both phases, at the same points the

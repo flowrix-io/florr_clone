@@ -5172,6 +5172,12 @@ constexpr double kPrismMirrorReturnedShares[kRarityCount] = {
     0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.7, 4.0, 400.0, 400.0, 400.0
 };
 
+/// 40 at common, on the 3x petal damage ladder.
+double prismDamageCap(Rarity rarity) {
+    const ContentRegistry& content = testsupport::shippedContent();
+    return content.petalStats(content.petalIndex("prism_mirror"), rarity).reflectionDamageCap;
+}
+
 Entity equipPrismMirror(Arena& arena, Entity owner, Vec2 at,
                        Rarity rarity = Rarity::Common) {
     const ContentRegistry& content = testsupport::shippedContent();
@@ -5441,7 +5447,11 @@ TEST(prism_mirror_melee_uses_its_reflection_percentage_without_extra_talent_scal
                                                    static_cast<Rarity>(tier));
             a.step(1000.0, content);
             const double returnedShare = kPrismMirrorReturnedShares[tier];
-            CHECK_NEAR((initialHealth - a.health(mob)) / bodyDamage, returnedShare, 1e-9);
+            // ...up to the tier's damage cap, which the owner's bonus does not
+            // lift either.
+            const double expected = std::min(bodyDamage * returnedShare,
+                                              prismDamageCap(static_cast<Rarity>(tier)));
+            CHECK_NEAR(initialHealth - a.health(mob), expected, 1e-6);
             CHECK(!a.world.has<Dead>(mob));
             CHECK(!a.world.has<Health>(mirror));
             CHECK(!a.world.has<Dead>(mirror));
@@ -5450,23 +5460,24 @@ TEST(prism_mirror_melee_uses_its_reflection_percentage_without_extra_talent_scal
     }
 }
 
-TEST(prism_mirror_apex_hornet_body_dps_uses_updated_damage_and_armor) {
+TEST(prism_mirror_body_hits_on_an_apex_hornet_stop_at_the_damage_cap_before_armor) {
     const ContentRegistry& content = testsupport::shippedContent();
     const auto hornetIndex = content.mobIndex("hornet");
     CHECK(hornetIndex != kInvalidIndex);
     if (hornetIndex == kInvalidIndex) return;
     const auto& hornet = content.mobStats(hornetIndex, Rarity::Apex);
-    // The current dev Apex body-damage scale is 328050, independent of
-    // the projectile/petal damage ladder and the Hornet's health ladder.
     CHECK_NEAR(hornet.damage, 16402500.0, 1e-9);
     CHECK_NEAR(hornet.armor, 729.0, 1e-9);
-    CHECK_NEAR(hornet.health, 48000000000.0, 1e-9);
+    // Uncapped, a Super, Eternal and Apex mirror would return 0.7x, 4x and
+    // 400x of that 16.4M body. The cap (40 at common, on the 3x petal damage
+    // ladder) is reached first, and armour comes off what is left.
     const struct { Rarity rarity; double netHit; } cases[] = {
-        {Rarity::Super, 11481021.0},
-        {Rarity::Eternal, 65609271.0},
-        {Rarity::Apex, 6560999271.0}
+        {Rarity::Super, 87480.0 - 729.0},
+        {Rarity::Eternal, 262440.0 - 729.0},
+        {Rarity::Apex, 787320.0 - 729.0}
     };
     for (const auto& sample : cases) {
+        CHECK_NEAR(prismDamageCap(sample.rarity) - hornet.armor, sample.netHit, 1e-9);
         Arena a;
         const Entity owner = a.player({1500, 1000});
         a.world.add<PlayerModifiers>(owner);
@@ -5478,32 +5489,32 @@ TEST(prism_mirror_apex_hornet_body_dps_uses_updated_damage_and_armor) {
         const Entity mirror = equipPrismMirror(a, owner, {1010, 1000}, sample.rarity);
         a.step(1000.0, content);
         CHECK_NEAR(hornet.health - a.health(target), sample.netHit, 1e-6);
-        CHECK(!a.world.has<Dead>(target));
         a.step(1999.0, content);
         CHECK_NEAR(hornet.health - a.health(target), sample.netHit, 1e-6);
-        CHECK(!a.world.has<Dead>(target));
         a.step(2000.0, content);
         CHECK_NEAR(hornet.health - a.health(target), sample.netHit * 2.0, 1e-6);
         CHECK(!a.world.has<Dead>(target));
-        if (sample.rarity == Rarity::Apex) {
-            // Current dev gives an Apex Hornet 48 billion HP. At 400x it
-            // survives seven body hits and dies on the eighth, keeping the
-            // upstream health balance while checking damage and kill credit.
-            for (int hit = 3; hit <= 7; ++hit) {
-                a.step(hit * 1000.0, content);
-                CHECK_NEAR(hornet.health - a.health(target), sample.netHit * hit, 1e-6);
-                CHECK(!a.world.has<Dead>(target));
-            }
-            CHECK_NEAR(a.health(target), 2073005103.0, 1e-6);
-            a.step(7999.0, content);
-            CHECK_NEAR(a.health(target), 2073005103.0, 1e-6);
-            CHECK(!a.world.has<Dead>(target));
-            a.step(8000.0, content);
-            CHECK_NEAR(a.health(target), 0.0, 1e-9);
-            CHECK(a.world.has<Dead>(target));
-            CHECK_EQ(a.world.get<Dead>(target).killer, owner);
-        }
         CHECK(!a.world.has<Dead>(mirror));
+    }
+}
+
+TEST(prism_mirror_returned_shots_stop_at_the_damage_cap) {
+    const ContentRegistry& content = testsupport::shippedContent();
+    for (const Rarity rarity : {Rarity::Common, Rarity::Rare, Rarity::Apex}) {
+        Arena a;
+        const Entity owner = a.player({1500, 1000});
+        const Entity shooter = a.mob({500, 1000}, 1e12);
+        equipPrismMirror(a, owner, {1000, 1000}, rarity);
+        // Far more than any tier's cap even at common's 10%.
+        const double incoming = 1e9;
+        const Entity shot = spawnDurableShot(a, {1000, 1000}, {300, 0}, incoming, 2000.0,
+                                            shooter, shooter, 7.0, Team::Hostiles);
+        a.step(1000.0, content);
+        CHECK_EQ(a.world.get<Projectile>(shot).owner, owner);
+        CHECK_NEAR(a.world.get<Projectile>(shot).damage, prismDamageCap(rarity), 1e-9);
+        a.world.get<Transform>(shot).position = {500, 1000};
+        a.step(1100.0, content);
+        CHECK_NEAR(1e12 - a.health(shooter), prismDamageCap(rarity), 1e-3);
     }
 }
 
@@ -5519,7 +5530,8 @@ TEST(prism_mirror_phases_through_mobs_without_recoil_or_knockback_like_glass) {
     const Entity mirror = equipPrismMirror(a, owner, {1000, 1000});
 
     a.step(1000.0, content);
-    CHECK_NEAR(a.health(mob), 19000.0, 1e-9);
+    // 10% of a 10000 body, held to common's cap of 40.
+    CHECK_NEAR(a.health(mob), 19960.0, 1e-9);
     CHECK(!a.world.has<Health>(mirror));
     CHECK(!a.world.has<Dead>(mirror));
     CHECK(!a.world.has<Knockback>(mob));
@@ -5530,7 +5542,7 @@ TEST(prism_mirror_phases_through_mobs_without_recoil_or_knockback_like_glass) {
     movement.run(a.world, terrain, 1200.0, 0.1);
     CHECK_NEAR(a.world.get<Transform>(mob).position.x, 1040.0, 1e-9);
     CHECK_NEAR(a.world.get<Transform>(mirror).position.x, 1000.0, 1e-9);
-    CHECK_NEAR(a.health(mob), 19000.0, 1e-9);
+    CHECK_NEAR(a.health(mob), 19960.0, 1e-9);
     CHECK(!a.world.has<Dead>(mirror));
 }
 

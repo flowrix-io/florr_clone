@@ -2746,6 +2746,8 @@ void CombatSystem::gatherPetals(World& world, const ContentRegistry& content, do
         source.reflectionSpeedMultiplier = stats.reflectionSpeedMultiplier;
         source.reflectionDamageMultiplier = config.projectileReflection.present
                                                 ? stats.reflectionDamageMultiplier : 1.0;
+        source.reflectionDamageCap = config.projectileReflection.present
+                                         ? stats.reflectionDamageCap : 0.0;
         source.isLoose = loose;
         source.hitKind = petalHitKind(content, petal.configIndex);
         // A tomato hits harder the longer it has been out; a reload starts it
@@ -3037,7 +3039,8 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid,
             if (source.reflectionSpeedMultiplier > 0.0 &&
                 reflectProjectile(world, source.attacker, victim,
                                   source.reflectionSpeedMultiplier,
-                                  source.reflectionDamageMultiplier, transform->position, false)) {
+                                  source.reflectionDamageMultiplier,
+                                  source.reflectionDamageCap, transform->position, false)) {
                 break; // the mirror is now reloading
             }
             if (!canHit(world, victim, source.attacker, nowMillis)) continue;
@@ -3073,6 +3076,10 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid,
             double swing = copiesBody ? mirroredBodyDamage(world, victim) *
                                            source.reflectionDamageMultiplier
                                      : swingDamage(world, source.damage, source.critDamage, victim);
+            // ...and no more than the Prism's damage cap for its tier.
+            if (copiesBody && source.reflectionDamageCap > 0.0) {
+                swing = std::min(swing, source.reflectionDamageCap);
+            }
             // The first Icosahedron hit keeps its normal damage; each bounce
             // retains 75% of the previous hit, using the petal's current stats.
             if (const auto* petal = world.tryGet<PetalInstance>(source.attacker)) {
@@ -3495,7 +3502,7 @@ void CombatSystem::resolvePetalPvp(World& world, const MeleeSource& source, Enti
 
 bool CombatSystem::reflectProjectile(World& world, Entity mirror, Entity shot,
                                      double speedMultiplier, double damageMultiplier,
-                                     Vec2 at, bool swept) {
+                                     double damageCap, Vec2 at, bool swept) {
     if (!(speedMultiplier > 0.0) || !world.isAlive(mirror) || world.has<Dead>(mirror) ||
         !world.isAlive(shot) || world.has<Dead>(shot)) return false;
     const PetalInstance* petal = world.tryGet<PetalInstance>(mirror);
@@ -3532,6 +3539,7 @@ bool CombatSystem::reflectProjectile(World& world, Entity mirror, Entity shot,
     returned.owner = owner;
     returned.creditTo = credit;
     returned.damage *= damageMultiplier;
+    if (damageCap > 0.0) returned.damage = std::min(returned.damage, damageCap);
     returned.slot = slot;
     returned.lastPosition = at;
     returned.lastStepVelocity = reflected;
@@ -3702,12 +3710,14 @@ void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
                                    canDamage(world, shot.entity, victim);
             double reflectionBoost = 0.0;
             double reflectionDamage = 1.0;
+            double reflectionCap = 0.0;
             if (reflectable && !world.has<Dead>(victim)) {
                 if (const auto* mirror = world.tryGet<PetalInstance>(victim)) {
                     const PetalStats mirrorStats = content.petalStats(mirror->configIndex,
                                                                     mirror->rarity);
                     reflectionBoost = mirrorStats.reflectionSpeedMultiplier;
                     reflectionDamage = mirrorStats.reflectionDamageMultiplier;
+                    reflectionCap = mirrorStats.reflectionDamageCap;
                 }
             }
             if (!canInfect && !(reflectionBoost > 0.0) &&
@@ -3720,7 +3730,7 @@ void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
                                              0.0, flownLength)
                                      : 0.0;
             impacts_.push_back({victim, offset, distanceSquared, entry,
-                                reflectionBoost, reflectionDamage, nearest});
+                                reflectionBoost, reflectionDamage, reflectionCap, nearest});
         }
         if (impacts_.empty()) continue;
 
@@ -3759,7 +3769,8 @@ void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
                     ? flown * (impact.travel / flownLength) : Vec2{});
                 if (reflectProjectile(world, impact.victim, shot.entity,
                                       impact.reflectionSpeedMultiplier,
-                                      impact.reflectionDamageMultiplier, contact, true)) {
+                                      impact.reflectionDamageMultiplier,
+                                      impact.reflectionDamageCap, contact, true)) {
                     break; // all remaining impacts belong to the incoming path
                 }
             }

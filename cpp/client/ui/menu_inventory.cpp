@@ -713,6 +713,13 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         damage.alpha = 0.56;
         damage.labelColor = kStatReflection;
         lines.push_back(damage);
+        if (stats.reflectionDamageCap > 0.0) {
+            TooltipLine cap{"Damage Cap: " + abbreviate(stats.reflectionDamageCap), 12.0};
+            cap.altText = "Damage Cap: " + exactNumber(stats.reflectionDamageCap);
+            cap.alpha = 0.56;
+            cap.labelColor = kStatReflection;
+            lines.push_back(cap);
+        }
     }
 
     // Salt. What it repays depends on who bit, so the card states the one

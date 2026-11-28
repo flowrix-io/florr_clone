@@ -607,6 +607,35 @@ TEST(projectile_reflection_rarity_overrides_allow_amplification_and_sanitize_ext
                0.0, 1e-9);
 }
 
+TEST(projectile_reflection_damage_cap_climbs_the_petal_damage_ladder) {
+    ContentRegistry r;
+    CHECK(loadPetals(r, R"JSON({
+      "capped": {"damage": 0, "health": 1, "projectileReflection": {"damageCap": 40}},
+      "uncapped": {"damage": 0, "health": 1, "projectileReflection": {}},
+      "plain": {"damage": 10, "health": 10}
+    })JSON"));
+    const ContentRegistry& actual = shipped().registry;
+    const auto prism = actual.petalIndex("prism_mirror");
+    CHECK(prism != kInvalidIndex);
+    if (prism == kInvalidIndex) return;
+    CHECK_NEAR(actual.petal(prism).projectileReflection.damageCap, 40.0, 1e-9);
+    for (int tier = 0; tier < kRarityCount; ++tier) {
+        const Rarity rarity = static_cast<Rarity>(tier);
+        // Admin's petal damage is Universal's (buildPetalStats), so is its cap.
+        const double expected = 40.0 * petalStrengthScale(
+            rarity == Rarity::Admin ? Rarity::Universal : rarity);
+        CHECK_NEAR(r.petalStats(r.petalIndex("capped"), rarity).reflectionDamageCap,
+                   expected, 1e-6);
+        CHECK_NEAR(actual.petalStats(prism, rarity).reflectionDamageCap, expected, 1e-6);
+        CHECK_NEAR(r.petalStats(r.petalIndex("uncapped"), rarity).reflectionDamageCap, 0.0, 1e-9);
+        CHECK_NEAR(r.petalStats(r.petalIndex("plain"), rarity).reflectionDamageCap, 0.0, 1e-9);
+    }
+    CHECK_NEAR(actual.petalStats(prism, Rarity::Common).reflectionDamageCap, 40.0, 1e-9);
+    CHECK_NEAR(actual.petalStats(prism, Rarity::Uncommon).reflectionDamageCap, 120.0, 1e-9);
+    CHECK_NEAR(actual.petalStats(prism, Rarity::Apex).reflectionDamageCap, 787320.0, 1e-6);
+    CHECK(!warned(r, "damageCap"));
+}
+
 TEST(projectile_reflection_prism_reload_reduces_only_super_eternal_and_apex_by_100ms) {
     const ContentRegistry& r = shipped().registry;
     const auto prism = r.petalIndex("prism_mirror");

@@ -368,6 +368,7 @@ ProjectileReflectionSpec parseProjectileReflection(Ctx& ctx, const Json& owner) 
     spec.damageMultiplier = ctx.range(node, "damageMultiplier", 0.1, 0.0, 1.0);
     spec.damageMultiplierPerRarity =
         ctx.range(node, "damageMultiplierPerRarity", 0.1, 0.0, 1.0);
+    spec.damageCap = ctx.range(node, "damageCap", 0.0, 0.0, kMaxBaseStat);
     if (node.contains("damageMultiplierByRarity")) {
         const Json& shares = node["damageMultiplierByRarity"];
         if (!shares.isObject()) {
@@ -2073,6 +2074,7 @@ PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
         const auto& exactShare = c.projectileReflection.damageMultiplierByRarity[
             static_cast<std::size_t>(ladderIndex(graded))];
         if (exactShare) s.reflectionDamageMultiplier = *exactShare;
+        s.reflectionDamageCap = c.projectileReflection.damageCap * strength;
         s.reloadMillis /= std::pow(c.projectileReflection.reloadDivisorPerRarity,
                                    reflectionTier);
         const double reloadReduction = c.projectileReflection.reloadReductionMillisByRarity[

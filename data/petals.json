@@ -2304,6 +2304,7 @@
             "reloadDivisorPerRarity": 1.35,
             "damageMultiplier": 0.1,
             "damageMultiplierPerRarity": 0.1,
+            "damageCap": 40,
             "damageMultiplierByRarity": {
                 "super": 0.7,
                 "eternal": 4,
